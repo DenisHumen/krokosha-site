@@ -43,7 +43,7 @@ Environment: GITHUB_TOKEN — optional read-only token for the GitHub API, store
 EOF
 }
 
-DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL=no SKIP_DNS=no
+DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no
 EXTRA_PORTS=()
 
@@ -90,6 +90,12 @@ fi
 if [[ ${#EXTRA_PORTS[@]} -eq 0 ]]; then
   read -r -a EXTRA_PORTS <<<"$(env_get FIREWALL_ALLOW)"
 fi
+# Remembered too: an update must not switch on a firewall the operator declined,
+# nor start failing on a DNS check that cannot pass behind NAT.
+: "${SKIP_FIREWALL:=$(env_get SKIP_FIREWALL)}"
+: "${SKIP_DNS:=$(env_get SKIP_DNS_CHECK)}"
+: "${SKIP_FIREWALL:=no}"
+: "${SKIP_DNS:=no}"
 : "${TLS_MODE:=letsencrypt}"
 : "${REPO_URL:=$DEFAULT_REPO}"
 : "${REPO_BRANCH:=main}"
@@ -289,6 +295,8 @@ env_set TLS_MODE "$TLS_MODE"
 env_set REPO_URL "$REPO_URL"
 env_set REPO_BRANCH "$REPO_BRANCH"
 env_set FIREWALL_ALLOW "${EXTRA_PORTS[*]:-}"
+env_set SKIP_FIREWALL "$SKIP_FIREWALL"
+env_set SKIP_DNS_CHECK "$SKIP_DNS"
 if [[ -n ${GITHUB_TOKEN:-} ]]; then
   env_set GITHUB_TOKEN "$GITHUB_TOKEN"
 elif [[ -z $(env_get GITHUB_TOKEN) ]]; then

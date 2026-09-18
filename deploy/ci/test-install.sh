@@ -106,6 +106,7 @@ echo "::endgroup::"
 echo "Idempotency"
 check "site still answers" test "$(status "https://$DOMAIN/")" = 200
 check "settings survived" grep -q "^FIREWALL_ALLOW=8443/tcp" /etc/krokosha/env
+check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/krokosha/env
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 
