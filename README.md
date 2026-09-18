@@ -2,7 +2,7 @@
 
 Source of [krokosha.xyz](https://krokosha.xyz), the personal site of **Krokosha**, a network & infrastructure engineer (networks, servers, DevOps, tooling).
 
-> **Status:** phase 1. The Astro site (three languages, full SEO, temporary markup) builds from `content/` and from GitHub data pulled by the Go sync (`krokosha-cli sync`); design work runs in parallel in `design/`. Next: installer, then the API (analytics, admin, leads).
+> **Status:** phase 1. The Astro site (three languages, full SEO, temporary markup) builds from `content/` and from GitHub data pulled by the Go sync (`krokosha-cli sync`); design work runs in parallel in `design/`. One command installs it on a clean Ubuntu server (`deploy/install.sh`, tested end to end in CI). Next: the API (analytics, admin, leads, Telegram bot), mail.
 
 ## Stack
 

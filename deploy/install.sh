@@ -269,7 +269,7 @@ if [[ ! -d $KROKOSHA_REPO/.git ]]; then
     as_site_user git config --global --add safe.directory "${REPO_URL#file://}/.git"
     as_site_user git config --global --add safe.directory "${REPO_URL#file://}"
   fi
-  as_site_user git clone --quiet --branch "$REPO_BRANCH" "$REPO_URL" "$KROKOSHA_REPO"
+  as_site_user git -c init.defaultBranch=main -c advice.detachedHead=false clone --quiet --branch "$REPO_BRANCH" "$REPO_URL" "$KROKOSHA_REPO"
   ok "cloned $REPO_URL ($REPO_BRANCH)"
 else
   as_site_user git -C "$KROKOSHA_REPO" remote set-url origin "$REPO_URL"
