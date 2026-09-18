@@ -1,0 +1,78 @@
+---
+// All public repositories are shown; well-developed ones are larger (contract §5).
+import type { SitePageData } from '../lib/page-data.ts';
+import type { Tier } from '../lib/schema.ts';
+import ProjectCard from './ProjectCard.astro';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { lang, site, projects } = Astro.props.data;
+const texts = site.projects;
+const byTier = (tier: Tier) => projects.public.filter((project) => project.tier === tier);
+const compact = byTier('compact');
+---
+
+<section class="section" id="projects" data-section="projects">
+  <h2 data-slot="site.projects.heading">{texts.heading}</h2>
+  <p class="muted" data-slot="site.projects.note">
+    {texts.note}
+  </p>
+  {projects.stale && (
+    <p class="notice" role="status" data-slot="site.projects.error_note">
+      {texts.error_note}
+    </p>
+  )}
+
+  <div data-slot="projects.public">
+    <ul class="cards cards-featured">
+      {byTier('featured').map((project) => (
+        <ProjectCard project={project} labels={texts.labels} lang={lang} />
+      ))}
+    </ul>
+    <ul class="cards">
+      {byTier('standard').map((project) => (
+        <ProjectCard project={project} labels={texts.labels} lang={lang} />
+      ))}
+    </ul>
+    {compact.length > 0 && (
+      <details>
+        <summary data-track="projects-show-all">
+          <span data-slot="site.projects.show_all_label">{texts.show_all_label}</span>
+          <span class="mono muted">+{compact.length}</span>
+        </summary>
+        <ul class="cards cards-compact">
+          {compact.map((project) => (
+            <ProjectCard project={project} labels={texts.labels} lang={lang} />
+          ))}
+        </ul>
+      </details>
+    )}
+  </div>
+
+  {projects.private.length > 0 && (
+    <>
+      <h3 data-slot="site.projects.private_heading">{texts.private_heading}</h3>
+      <p class="muted" data-slot="site.projects.private_note">
+        {texts.private_note}
+      </p>
+      <ul class="cards" data-slot="projects.private">
+        {projects.private.map((project) => (
+          <li class="card" data-component="private-card">
+            <h4 data-field="title">{project.title}</h4>
+            <p data-field="description">{project.description}</p>
+            <ul class="pills" data-field="tags">
+              {project.tags.map((tag) => (
+                <li class="pill mono">{tag}</li>
+              ))}
+            </ul>
+            <span class="badge mono" data-field="note">
+              {project.note}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )}
+</section>

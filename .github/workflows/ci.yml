@@ -1,0 +1,60 @@
+name: CI
+
+# Runs on every pull request (main accepts changes only through PRs) and on main itself.
+# No path filters on purpose: the jobs are required checks, and a required check that never starts
+# would block the PR forever.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web (lint, types, tests, build)
+    runs-on: ubuntu-24.04 # same OS as the VPS
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      # Actions are pinned to commit SHAs; Dependabot keeps them fresh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: ESLint (TypeScript, Astro, accessibility)
+        run: npm run lint
+
+      - name: Types (astro check)
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: mock/ matches content/ (docs/contract.md)
+        run: npm run mock:check
+
+      - name: Build
+        run: npm run build
+
+      - name: Check the built site
+        run: node scripts/check-dist.mjs

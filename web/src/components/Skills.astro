@@ -1,0 +1,49 @@
+---
+// The whole tree is in the HTML from the start (brief A4: SEO); expanding is purely visual.
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { site, skills } = Astro.props.data;
+---
+
+<section class="section" id="skills" data-section="skills">
+  <h2 data-slot="site.ui.headings.skills">{site.ui.headings.skills}</h2>
+  <ul class="skill-tree" data-slot="skills">
+    {skills.map((category) => (
+      <li
+        data-component="skill-node"
+        data-level="category"
+        data-icon={category.icon}
+        id={`skill-${category.id}`}
+      >
+        <h3 data-field="title" data-track={`skill-${category.id}`}>
+          {category.title}
+        </h3>
+        <ul>
+          {category.children.map((group) => (
+            <li data-component="skill-node" data-level="group" id={`skill-${group.id}`}>
+              <h4 data-field="title">{group.title}</h4>
+              <ul class="pills">
+                {group.children.map((skill) => (
+                  <li data-component="skill-node" data-level="skill" id={`skill-${skill.id}`}>
+                    <span class="pill mono" data-field="title">
+                      {skill.title}
+                    </span>
+                    {skill.note && (
+                      <span class="muted" data-field="note">
+                        {skill.note}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </li>
+    ))}
+  </ul>
+</section>

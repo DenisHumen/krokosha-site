@@ -1,0 +1,63 @@
+---
+// One template for every public repository (contract §3: `project-card`); `tier` decides how big it is.
+import type { Locale } from '../i18n/locales.ts';
+import type { Site } from '../lib/data.ts';
+import type { PublicProject } from '../lib/schema.ts';
+
+interface Props {
+  project: PublicProject;
+  labels: Site['projects']['labels'];
+  lang: Locale;
+}
+
+const { project, labels, lang } = Astro.props;
+const updated = new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeZone: 'UTC' }).format(
+  new Date(`${project.updatedAt}T00:00:00Z`),
+);
+---
+
+<li class="card" data-component="project-card" data-tier={project.tier}>
+  <h3>
+    <a href={project.url} rel="noopener" data-field="url" data-track={`project-${project.name}`}>
+      <span data-field="name">{project.name}</span>
+    </a>
+    {project.archived && (
+      <span class="badge mono" data-field="archived">
+        {labels.archived}
+      </span>
+    )}
+  </h3>
+  {project.description && <p data-field="description">{project.description}</p>}
+  {project.topics.length > 0 && (
+    <ul class="pills" data-field="topics">
+      {project.topics.map((topic) => (
+        <li class="pill mono">{topic}</li>
+      ))}
+    </ul>
+  )}
+  <p class="meta mono muted">
+    {project.language && (
+      <span data-field="language">
+        {/* SVG fill instead of an inline style: the language colour works under a strict CSP. */}
+        {project.languageColor && (
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <circle cx="5" cy="5" r="5" fill={project.languageColor} />
+          </svg>
+        )}
+        {project.language}
+      </span>
+    )}
+    {project.stars > 0 && <span data-field="stars">★ {project.stars}</span>}
+    <span>
+      {labels.updated}
+      <time datetime={project.updatedAt} data-field="updatedAt">
+        {updated}
+      </time>
+    </span>
+    {project.homepage && (
+      <a href={project.homepage} rel="noopener" data-field="homepage">
+        {labels.website}
+      </a>
+    )}
+  </p>
+</li>

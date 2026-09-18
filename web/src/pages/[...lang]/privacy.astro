@@ -1,0 +1,53 @@
+---
+// Privacy policy — required for analytics, the contact form and ads (brief A3, B5).
+import { render } from 'astro:content';
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { getTextPage, updatedDate } from '../../lib/pages.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+import { breadcrumbsJsonLd } from '../../lib/seo.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const entry = await getTextPage('privacy', lang);
+const { Content } = await render(entry);
+
+const { title, status } = entry.data;
+const updated = updatedDate(entry);
+const origin = Astro.site ?? new URL(import.meta.env.SITE);
+const breadcrumbs = breadcrumbsJsonLd(origin, lang, [
+  { name: data.profile.nickname, page: '' },
+  { name: title, page: 'privacy' },
+]);
+const description =
+  entry.body
+    ?.split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .find((block) => block !== '' && !block.startsWith('#'))
+    ?.replace(/[*_`]/g, '') ?? title;
+---
+
+<Base
+  data={data}
+  page="privacy"
+  title={`${title} — ${data.profile.nickname}`}
+  description={description}
+  noindex={status === 'draft'}
+  jsonLd={[breadcrumbs]}
+>
+  <article class="section prose">
+    <p class="mono muted">
+      <a href={localePath(lang)}>← {data.site.not_found.back}</a>
+    </p>
+    <h1>{title}</h1>
+    {updated && (
+      <p class="mono muted">
+        {data.site.projects.labels.updated} <time datetime={updated}>{updated}</time>
+      </p>
+    )}
+    <Content />
+  </article>
+</Base>

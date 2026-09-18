@@ -1,0 +1,41 @@
+---
+import Contacts from '../../components/Contacts.astro';
+import Curtain from '../../components/Curtain.astro';
+import Hero from '../../components/Hero.astro';
+import Projects from '../../components/Projects.astro';
+import Services from '../../components/Services.astro';
+import Skills from '../../components/Skills.astro';
+import Stats from '../../components/Stats.astro';
+import { localeFromParam } from '../../i18n/locales.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+import { absoluteUrl, homeJsonLd } from '../../lib/seo.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const data = await getPageData(localeFromParam(Astro.params.lang));
+const origin = Astro.site ?? new URL(import.meta.env.SITE);
+const jsonLd = homeJsonLd({
+  site: origin,
+  data,
+  avatarUrl: absoluteUrl(origin, data.avatarImages.largest),
+  ogImageUrl: absoluteUrl(origin, '/img/og-default.png'),
+});
+---
+
+<Base
+  data={data}
+  page=""
+  title={data.seo.title}
+  description={data.seo.description}
+  jsonLd={[jsonLd]}
+>
+  <Hero data={data} />
+  <Services data={data} />
+  <Skills data={data} />
+  <Projects data={data} />
+  <Stats data={data} />
+  <Curtain data={data} />
+  <Contacts data={data} />
+</Base>

@@ -1,0 +1,30 @@
+---
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { site } = Astro.props.data;
+---
+
+<section class="section" id="services" data-section="services">
+  <h2 data-slot="site.ui.headings.services">{site.ui.headings.services}</h2>
+  {/* Each `id` is a landing anchor for ads: /#networks, /#devops… (brief B7) */}
+  <ol class="services" data-slot="site.services">
+    {site.services.map((service) => (
+      <li class="service" id={service.id} data-component="service-block">
+        <span class="number mono" data-field="number">
+          {service.number}
+        </span>
+        <div>
+          <h3 data-field="title">{service.title}</h3>
+          <p class="mono muted" data-field="subtitle">
+            {service.subtitle}
+          </p>
+          <p data-field="text">{service.text}</p>
+        </div>
+      </li>
+    ))}
+  </ol>
+</section>

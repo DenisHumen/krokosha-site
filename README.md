@@ -2,7 +2,7 @@
 
 Source of [krokosha.xyz](https://krokosha.xyz), the personal site of **Krokosha**, a network & infrastructure engineer (networks, servers, DevOps, tooling).
 
-> **Status:** phase 0. The repository skeleton, data contract and design brief are in place, and design work runs in parallel. No application code yet.
+> **Status:** phase 1. The Astro skeleton (three languages, full SEO, temporary markup) builds from `content/`; design work runs in parallel in `design/`. Next: Go API with GitHub sync, installer.
 
 ## Stack
 
@@ -32,6 +32,17 @@ krokosha-site/
 
 Each top-level directory has its own `README.md` describing its sub-structure and rules.
 
+## Development
+
+```bash
+cd web
+npm ci
+npm run dev      # http://localhost:4321
+npm run verify   # everything CI runs: format, lint, types, tests, mock check, build, dist check
+```
+
+See [web/README.md](web/README.md) for details.
+
 ## Key documents
 
 - [docs/brief/MASTER_PROMPT.md](docs/brief/MASTER_PROMPT.md): full project brief (RU)
@@ -41,7 +52,7 @@ Each top-level directory has its own `README.md` describing its sub-structure an
 
 ## Contributing
 
-`main` is protected: every change goes through a pull request. Design changes touch `design/` only (see [design/README.md](design/README.md)).
+`main` is protected: every change goes through a pull request, and CI must pass. Design changes touch `design/` only (see [design/README.md](design/README.md)).
 
 ## License
 

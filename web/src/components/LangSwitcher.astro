@@ -1,0 +1,30 @@
+---
+import { localePath } from '../i18n/locales.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+  page: string;
+}
+
+const { data, page } = Astro.props;
+const { i18n, ui } = data.site;
+---
+
+<nav aria-label={ui.language}>
+  <ul class="lang-switcher" data-slot="site.i18n">
+    {i18n.locales.map(({ code, label }) => (
+      <li>
+        <a
+          href={localePath(code, page)}
+          hreflang={code}
+          lang={code}
+          aria-current={code === i18n.locale ? 'page' : undefined}
+          data-track={`lang-${code}`}
+        >
+          {label}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

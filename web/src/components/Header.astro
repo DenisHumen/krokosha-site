@@ -1,0 +1,41 @@
+---
+import { localePath } from '../i18n/locales.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+import LangSwitcher from './LangSwitcher.astro';
+import ThemeToggle from './ThemeToggle.astro';
+
+interface Props {
+  data: SitePageData;
+  page: string;
+}
+
+const { data, page } = Astro.props;
+const { lang, site, profile } = data;
+const home = localePath(lang);
+// On the home page anchors are local; elsewhere they lead back to the home page.
+const anchorBase = page === '' ? '' : home;
+---
+
+<header class="site-header">
+  <a class="brand" href={home} data-slot="profile.nickname">
+    {profile.nickname}
+  </a>
+  <nav aria-label={profile.nickname}>
+    <ul class="nav" data-slot="site.nav">
+      {site.nav.map((item) => (
+        <li>
+          <a href={`${anchorBase}#${item.anchor}`}>
+            <span class="mono" data-field="number">
+              {item.number}
+            </span>
+            <span data-field="label">{item.label}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+  <div class="header-tools">
+    <LangSwitcher data={data} page={page} />
+    <ThemeToggle label={site.ui.theme_toggle} />
+  </div>
+</header>

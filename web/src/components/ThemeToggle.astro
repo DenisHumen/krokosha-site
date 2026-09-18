@@ -1,0 +1,30 @@
+---
+interface Props {
+  label: string;
+}
+
+const { label } = Astro.props;
+---
+
+<button class="theme-toggle" type="button" aria-label={label} title={label} data-theme-toggle>
+  <span aria-hidden="true">◐</span>
+</button>
+
+<script>
+  // Light ↔ dark. Until the visitor chooses, the system theme applies (see public/assets/theme.js).
+  const root = document.documentElement;
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')) {
+    button.addEventListener('click', () => {
+      const current = root.dataset.theme ?? (systemDark.matches ? 'dark' : 'light');
+      const next = current === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem('theme', next);
+      } catch {
+        // Storage is blocked: the choice lasts until the page is closed.
+      }
+    });
+  }
+</script>

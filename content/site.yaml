@@ -6,6 +6,10 @@
 # либо словарь { en: …, uk: …, ru: … }. CI будет проверять, что у словаря заполнены все три языка.
 # Плейсхолдеры в фигурных скобках ({years}, {id}, {email}…) подставляет сборка.
 
+# Адрес сайта: из него строятся canonical, hreflang, sitemap.xml и Open Graph.
+# При установке на другой домен перекрывается переменной окружения SITE_URL.
+url: https://krokosha.xyz
+
 profile:
   name: { en: "Denis", uk: "Денис", ru: "Денис" }
   nickname: Krokosha
@@ -280,6 +284,31 @@ footer:
     en: "Something is coming here soon."
     uk: "Скоро тут дещо з'явиться."
     ru: "Здесь скоро кое-что появится."
+
+# То, что видят поисковики и соцсети: <title>, описание в выдаче, карточка при отправке ссылки.
+# В site.json (данные для дизайна) не попадает.
+seo:                                    # черновик; ключевые запросы — бриф B7, упомянуты только подтверждённые навыки
+  title:                                # до ~60 символов
+    en: "Denis (Krokosha) — Network & Infrastructure Engineer, DevOps"
+    uk: "Денис (Krokosha) — мережевий та інфраструктурний інженер, DevOps"
+    ru: "Денис (Krokosha) — сетевой и инфраструктурный инженер, DevOps"
+  description:                          # до ~160 символов; {experience} → «9 years» / «9 років» / «9 лет»
+    en: "Network and infrastructure engineer from Ukraine: MikroTik and Cisco, servers and storage, Docker, Kubernetes, Nginx, high-speed LANs. {experience} of hands-on work."
+    uk: "Інженер мереж та інфраструктури з України: MikroTik і Cisco, сервери та СЗД, Docker, Kubernetes, Nginx, швидкісні локальні мережі. {experience} практики."
+    ru: "Инженер сетей и инфраструктуры из Украины: MikroTik и Cisco, серверы и СХД, Docker, Kubernetes, Nginx, скоростные локальные сети. {experience} практики."
+  og_image_alt:
+    en: "Krokosha — network and infrastructure engineering"
+    uk: "Krokosha — мережі та інфраструктура"
+    ru: "Krokosha — сети и инфраструктура"
+  # Разметка schema.org (ProfessionalService): название услуги и где она оказывается.
+  service_name:
+    en: "Krokosha — network and infrastructure engineering"
+    uk: "Krokosha — інженерія мереж та інфраструктури"
+    ru: "Krokosha — инженерия сетей и инфраструктуры"
+  area_served:                          # TODO(Денис): подтвердить — в брифе «Украина + удалённо — уточнить»
+    - { en: "Ukraine", uk: "Україна", ru: "Украина" }
+    - { en: "Remote, worldwide", uk: "Віддалено, весь світ", ru: "Удалённо, весь мир" }
+  country_code: UA
 
 flags:
   skills:

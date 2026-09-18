@@ -1,0 +1,12 @@
+{
+  "extends": "astro/tsconfigs/strictest",
+  "compilerOptions": {
+    // Library code runs in three places — Astro (Vite), Vitest and plain `node` (scripts/gen-mock.ts) —
+    // so relative imports carry the real `.ts` extension, which Node's type stripping requires.
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist", "node_modules"]
+}

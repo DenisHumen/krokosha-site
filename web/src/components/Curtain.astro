@@ -1,0 +1,22 @@
+---
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { curtain } = Astro.props.data.site;
+---
+
+<section class="section curtain" data-section="curtain">
+  <h2 data-slot="site.curtain.heading">{curtain.heading}</h2>
+  <p data-slot="site.curtain.text">{curtain.text}</p>
+  <a
+    class="button button-primary"
+    href="#contacts"
+    data-track="cta-discuss"
+    data-slot="site.curtain.cta"
+  >
+    {curtain.cta}
+  </a>
+</section>
