@@ -163,6 +163,19 @@ check "a wrong password is refused" test "$(admin_post /login --data-urlencode l
 check "the right password signs in" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
 check "the session cookie is Secure, HttpOnly and host-only" grep -qP '^#HttpOnly_\S+\tFALSE\t/\tTRUE\t\d+\t__Host-ks\t' "$JAR"
 check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADMIN/")
+# Reports follow the owner's day (content/site.yaml → timezone), this machine runs on UTC: around
+# midnight the visit recorded above may belong to either day, so both are asked for.
+# (grep -q stops reading at the first match; curl's complaint about the closed pipe is noise.)
+both_days() { { admin_get "$ADMIN$1" && admin_get "$ADMIN$1?p=day&d=$(date -u +%F)"; } 2>/dev/null || true; }
+check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1</title>' <(both_days /)
+check "the list of visits" grep -q 'google.com' <(both_days /visits)
+check "CSV export of page views" grep -q ',/uk/,uk,search,google.com,google,cpc,' <(both_days /export/pageviews.csv)
+check "CSV export of events" grep -q ',click,cta-telegram,' <(both_days /export/events.csv)
+# nginx must pass the live feed on event by event: the first one arrives at once, not when a buffer fills.
+check "the live feed streams through nginx" grep -q '^event: active' <(admin_get --no-buffer --max-time 3 "$ADMIN/live" 2>/dev/null || true)
+check "the owner's own page view is answered like any other" test "$(beacon "${view/00112233aabbccdd/00112233aabbcc03}" --cookie "$JAR")" = 204
+sleep 2
+check "but it is not counted: the owner is not a visitor" test "$(sql 'SELECT COUNT(*) FROM analytics_pageviews')" = 1
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303

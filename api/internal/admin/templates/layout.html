@@ -7,6 +7,7 @@
     <meta name="color-scheme" content="dark" />
     <title>{{.Title}} · Krokosha</title>
     <link rel="stylesheet" href="{{path "/static/admin.css"}}" />
+    {{if .Session}}<script src="{{path "/static/admin.js"}}" defer></script>{{end}}
   </head>
   <body>
     {{if .Session}}
@@ -14,6 +15,7 @@
         <a class="brand" href="{{path "/"}}">KROKOSHA</a>
         <nav aria-label="Разделы">
           <a href="{{path "/"}}" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Обзор</a>
+          <a href="{{path "/visits"}}" {{if eq .Nav "visits"}}aria-current="page"{{end}}>Визиты</a>
           <a href="{{path "/account"}}" {{if eq .Nav "account"}}aria-current="page"{{end}}>Аккаунт</a>
         </nav>
         <form class="signout" method="post" action="{{path "/logout"}}">
@@ -33,3 +35,47 @@
     {{if .Session}}<footer class="footnote muted">версия {{.Version}}</footer>{{end}}
   </body>
 </html>
+
+{{/* The period switcher of the reference dashboard: ‹ period ›, Day / Week / Month, a custom range. */}}
+{{define "period"}}
+  <div class="period">
+    <div class="period-step">
+      <a class="period-arrow" href="{{href .Route .Prev}}" aria-label="Предыдущий период">‹</a>
+      {{if .Next}}
+        <a class="period-arrow" href="{{href .Route .Next}}" aria-label="Следующий период">›</a>
+      {{else}}
+        <span class="period-arrow is-off" aria-hidden="true">›</span>
+      {{end}}
+    </div>
+    <div class="segmented" role="group" aria-label="Период">
+      <a href="{{href .Route .Day}}" {{if eq .Period.Kind "day"}}aria-current="true"{{end}}>День</a>
+      <a href="{{href .Route .Week}}" {{if eq .Period.Kind "week"}}aria-current="true"{{end}}>Неделя</a>
+      <a href="{{href .Route .Month}}" {{if eq .Period.Kind "month"}}aria-current="true"{{end}}>Месяц</a>
+    </div>
+    <form class="range" method="get" action="{{path .Route}}">
+      <input type="hidden" name="p" value="custom" />
+      <label class="visually-hidden" for="range-from">Начало периода</label>
+      <input id="range-from" type="date" name="from" value="{{.From}}" max="{{.Today}}" required />
+      <span class="muted" aria-hidden="true">—</span>
+      <label class="visually-hidden" for="range-to">Конец периода</label>
+      <input id="range-to" type="date" name="to" value="{{.To}}" max="{{.Today}}" required />
+      <button class="button button-ghost" type="submit">Показать</button>
+    </form>
+  </div>
+{{end}}
+
+{{/* A breakdown: share, name, bar, count — «45%  Code  ▬▬▬  2 hr 46 min» in the reference. */}}
+{{define "shares"}}
+  <ul class="rows">
+    {{range $index, $share := .}}
+      <li class="row">
+        <span class="row-share">{{pct $share.Percent}}</span>
+        <span class="row-name">{{$share.Name}}</span>
+        {{bar $share.Percent "accent"}}
+        <span class="row-value">{{$share.Count}}</span>
+      </li>
+    {{else}}
+      <li class="muted">Нет данных за период.</li>
+    {{end}}
+  </ul>
+{{end}}

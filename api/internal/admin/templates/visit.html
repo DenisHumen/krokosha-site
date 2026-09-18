@@ -1,0 +1,52 @@
+{{define "content"}}
+  {{$v := .Data.Detail.Visit}}
+  <div class="page-head">
+    <h1>Визит {{time $v.Started}}</h1>
+    <a class="button button-ghost" href="{{href "/visits" .Data.Back}}">← К списку</a>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2 class="card-title">Посетитель</h2>
+      <div class="card-body">
+        <dl class="facts">
+          <div><dt>Псевдоним на день</dt><dd class="mono">{{$v.Visitor}}</dd></div>
+          <div><dt>Источник</dt><dd>{{source $v.Source}}{{if $v.Referrer}} · {{$v.Referrer}}{{end}}{{if $v.Campaign}} · {{$v.Campaign}}{{end}}</dd></div>
+          <div><dt>Устройство</dt><dd>{{device $v.Device}} · {{$v.Browser}} · {{$v.OS}}</dd></div>
+          <div><dt>Язык страницы</dt><dd>{{language $v.Lang}}</dd></div>
+          <div><dt>Сеть</dt><dd class="mono">{{$v.IPPrefix}}</dd></div>
+          <div><dt>Страна</dt><dd>{{country $v.Country}}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Итог</h2>
+      <div class="card-body">
+        <div class="figures">
+          <div><p class="figure-label">Страниц</p><p class="figure">{{$v.Pages}}</p></div>
+          <div><p class="figure-label">На экране</p><p class="figure">{{duration $v.ViewMs}}</p></div>
+          <div><p class="figure-label">Действий</p><p class="figure">{{$v.Actions}}</p></div>
+        </div>
+        <dl class="facts">
+          <div><dt>Прокрутка</dt><dd>до {{$v.MaxScroll}}%</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="card card-wide">
+      <h2 class="card-title">Путь по сайту</h2>
+      <div class="card-body">
+        <ol class="feed feed-static">
+          {{range .Data.Detail.Steps}}
+            <li {{if eq .Type "pageview"}}class="feed-page"{{end}}>
+              <time>{{clock .At}}</time>
+              <span class="feed-path">{{.Path}}</span>
+              <span class="feed-text">{{describe .Type .Target}}{{if and (eq .Type "pageview") .Value}} <span class="muted">· на экране {{duration .Value}}</span>{{end}}</span>
+            </li>
+          {{end}}
+        </ol>
+      </div>
+    </section>
+  </div>
+{{end}}

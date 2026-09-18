@@ -71,12 +71,6 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.opts.Prefix+"/login", http.StatusSeeOther)
 }
 
-// --- overview (the dashboards arrive with the next step of the roadmap) --------------------------
-
-func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, http.StatusOK, "overview", view{Title: "Обзор", Nav: "overview"})
-}
-
 // --- the administrator's own account -------------------------------------------------------------
 
 type accountData struct {

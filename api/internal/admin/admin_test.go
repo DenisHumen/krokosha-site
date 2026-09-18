@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base32"
 	"image/png"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
@@ -35,7 +37,12 @@ type site struct {
 	t       *testing.T
 	handler http.Handler
 	cookie  string // value of the session cookie, once signed in
+	db      *sql.DB
+	feed    chan analytics.Live // what the «analytics service» publishes to the live feed
 }
+
+// The dashboards are tested on a fixed day, so that the numbers on the page are known.
+var reportDay = time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
 
 func newSite(t *testing.T) *site {
 	t.Helper()
@@ -58,13 +65,20 @@ func newSite(t *testing.T) *site {
 		t.Fatal(err)
 	}
 
+	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4)}
 	srv := server.New(server.Deps{Env: &config.Env{Listen: "127.0.0.1:0"}, DB: pool, Cache: store, Log: quiet, Started: time.Now()})
-	panel, err := New(Options{Prefix: prefix, SiteHost: "krokosha.xyz", Auth: accounts, Log: quiet, Version: "test"})
+	panel, err := New(Options{
+		Prefix: prefix, SiteHost: "krokosha.xyz", Auth: accounts, Log: quiet, Version: "test",
+		Reports: analytics.NewReports(pool, time.UTC, func() time.Time { return reportDay }),
+		Feed:    func() (<-chan analytics.Live, func()) { return s.feed, func() {} },
+		Active:  func(context.Context, time.Duration) int { return 3 },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	panel.Register(srv.Mux())
-	return &site{t: t, handler: srv.Handler()}
+	s.handler = srv.Handler()
+	return s
 }
 
 type reply struct {

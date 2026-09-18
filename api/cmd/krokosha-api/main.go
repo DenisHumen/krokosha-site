@@ -74,12 +74,15 @@ func run() error {
 	})
 
 	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
+	location := ownerLocation(env.ContentDir, log)
 	stats := analytics.New(analytics.Options{
 		DB:       pool,
 		Cache:    store,
 		Log:      log,
 		SiteHost: siteURL.Hostname(),
-		Location: ownerLocation(env.ContentDir, log),
+		Location: location,
+		// The owner browsing their own site while signed in to the admin area is not a visitor.
+		IgnoreCookie: admin.CookieName,
 	})
 	stats.Register(srv.Mux())
 
@@ -89,6 +92,12 @@ func run() error {
 		Auth:     auth.New(pool, store, log),
 		Log:      log,
 		Version:  version(),
+		Reports:  analytics.NewReports(pool, location, nil),
+		Location: location,
+		Feed:     stats.Subscribe,
+		Active: func(ctx context.Context, window time.Duration) int {
+			return store.CountActive(ctx, analytics.ActiveSet, window)
+		},
 	})
 	if err != nil {
 		return err

@@ -340,6 +340,16 @@ func (s *Service) openSession(ctx context.Context, user User, a Attempt) (string
 
 // Authenticate resolves a cookie token to a live session and marks it as seen.
 func (s *Service) Authenticate(ctx context.Context, token string) (*Session, error) {
+	return s.authenticate(ctx, token, true)
+}
+
+// Check validates a session like Authenticate but does not count as activity. The live feed
+// uses it: a dashboard left open on a screen must not keep its session alive by itself.
+func (s *Service) Check(ctx context.Context, token string) (*Session, error) {
+	return s.authenticate(ctx, token, false)
+}
+
+func (s *Service) authenticate(ctx context.Context, token string, active bool) (*Session, error) {
 	if len(token) != 43 { // 32 bytes, base64url without padding
 		return nil, ErrNoSession
 	}
@@ -364,7 +374,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 		return nil, ErrNoSession
 	}
 	// One write a minute is enough to keep the idle timer honest.
-	if now.Sub(lastSeen) > time.Minute {
+	if active && now.Sub(lastSeen) > time.Minute {
 		_, _ = s.db.ExecContext(ctx, `UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?`, now, hash[:])
 	}
 	return session, nil

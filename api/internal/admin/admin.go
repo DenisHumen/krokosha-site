@@ -24,9 +24,11 @@ import (
 //go:embed templates/*.html static/*
 var assets embed.FS
 
-// cookieName uses the __Host- prefix: browsers then insist on Secure, Path=/ and no Domain,
+// CookieName uses the __Host- prefix: browsers then insist on Secure, Path=/ and no Domain,
 // so no sub-domain and no plain-HTTP page can ever set or read it.
-const cookieName = "__Host-ks"
+const CookieName = "__Host-ks"
+
+const cookieName = CookieName
 
 // Options configure the admin area.
 type Options struct {
@@ -36,6 +38,14 @@ type Options struct {
 	Auth     *auth.Service
 	Log      *slog.Logger
 	Version  string
+
+	// Reports read the statistics; Location is the owner's time zone — every time on screen is theirs.
+	Reports  *analytics.Reports
+	Location *time.Location
+	// Feed subscribes to accepted analytics events (analytics.Service.Subscribe).
+	Feed func() (feed <-chan analytics.Live, cancel func())
+	// Active answers «how many visitors were seen within the window».
+	Active func(ctx context.Context, window time.Duration) int
 }
 
 // Handler serves the admin area.
@@ -47,12 +57,40 @@ type Handler struct {
 
 // New parses the embedded templates.
 func New(opts Options) (*Handler, error) {
+	if opts.Location == nil {
+		opts.Location = time.UTC
+	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
 		"path": func(parts ...string) string { return opts.Prefix + strings.Join(parts, "") },
-		"time": func(t time.Time) string { return t.Local().Format("02.01.2006 15:04") },
+		// href builds a link with a query made by this package (periodQuery): html/template would
+		// otherwise escape its «=» and «&» as if they were data.
+		"href": func(path, query string) template.URL {
+			if query == "" {
+				return template.URL(opts.Prefix + path) //nolint:gosec // our own prefix and route
+			}
+			return template.URL(opts.Prefix + path + "?" + query) //nolint:gosec // query comes from url.Values.Encode
+		},
+		"time":     func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		"clock":    func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
+		"day":      func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
+		"duration": func(ms any) string { return duration(toInt64(ms)) },
+		"pct":      formatPercent,
+		"ring":     ring,
+		"bar":      bar,
+		"describe": describe,
+		"section":  named(sectionNames, "—"),
+		"source":   named(sourceNames, "—"),
+		"device":   named(deviceNames, "—"),
+		"language": named(languageNames, "не указан"),
+		"contact":  named(contactNames, "—"),
+		"country":  named(map[string]string{}, "не определена"),
+		"plural":   plural,
+		"tone": func(index int) string { // the accents of the reference dashboard, in turn
+			return [...]string{"accent", "cyan", "pink"}[index%3]
+		},
 	}
-	for _, page := range []string{"login", "overview", "account"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "account", "error"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -78,6 +116,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/logout", h.private(h.logout))
 
 	mux.Handle("GET "+p+"/{$}", h.private(h.overview))
+	mux.Handle("GET "+p+"/live", h.private(h.live))
+	mux.Handle("GET "+p+"/visits", h.private(h.visits))
+	mux.Handle("GET "+p+"/visits/{id}", h.private(h.visit))
+	mux.Handle("GET "+p+"/export/{table}", h.private(h.export))
 	mux.Handle("GET "+p+"/account", h.private(h.account))
 	mux.Handle("POST "+p+"/account/password", h.private(h.changePassword))
 	mux.Handle("POST "+p+"/account/totp/begin", h.private(h.totpBegin))
@@ -135,7 +177,12 @@ func (h *Handler) private(next http.HandlerFunc) http.Handler {
 			h.toLogin(w, r)
 			return
 		}
-		session, err := h.opts.Auth.Authenticate(r.Context(), cookie.Value)
+		// The live feed polls by itself: it must not keep an abandoned session alive.
+		authenticate := h.opts.Auth.Authenticate
+		if strings.HasSuffix(r.URL.Path, "/live") {
+			authenticate = h.opts.Auth.Check
+		}
+		session, err := authenticate(r.Context(), cookie.Value)
 		if err != nil {
 			if !errors.Is(err, auth.ErrNoSession) {
 				h.opts.Log.Error("cannot check the session", "error", err)
