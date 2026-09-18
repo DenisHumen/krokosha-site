@@ -1,0 +1,52 @@
+# --- Agent artifacts (not part of the project) ---
+.claude/
+CLAUDE.md
+AGENTS.md
+PLAN.md
+PREP.md
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!deploy/**/*.example
+
+# --- Generated content (GitHub sync output) ---
+content/generated/*
+!content/generated/.gitkeep
+
+# --- Node / Astro ---
+node_modules/
+web/dist/
+web/.astro/
+.npm/
+*.tsbuildinfo
+
+# --- Go ---
+api/bin/
+*.test
+*.out
+coverage.*
+
+# --- Local data ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.mmdb
+
+# --- Test / tooling output ---
+.lighthouseci/
+playwright-report/
+test-results/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
