@@ -30,13 +30,12 @@ require_root() {
 }
 
 # as_site_user CMD… — run a command as the unprivileged site user with a clean environment.
-as_site_user() {
-  runuser -u "$KROKOSHA_USER" -- env -i \
-    HOME="$KROKOSHA_STATE" \
-    PATH="$KROKOSHA_ROOT/toolchain/node/bin:$KROKOSHA_ROOT/toolchain/go/bin:/usr/local/bin:/usr/bin:/bin" \
-    LANG=C.UTF-8 \
-    "$@"
-}
+# It starts in /: the caller's working directory (an admin's home, say) may be closed to that user,
+# and git refuses to run from a directory it cannot read.
+as_site_user() (
+  cd /
+  exec runuser -u "$KROKOSHA_USER" -- env -i     HOME="$KROKOSHA_STATE"     PATH="$KROKOSHA_ROOT/toolchain/node/bin:$KROKOSHA_ROOT/toolchain/go/bin:/usr/local/bin:/usr/bin:/bin"     LANG=C.UTF-8     "$@"
+)
 
 # install_if_changed SRC DST [MODE] [OWNER:GROUP] — copies only when the content differs.
 # Returns 0 when the file was written, 1 when it was already up to date.
