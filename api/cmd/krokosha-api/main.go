@@ -22,7 +22,9 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
+	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
 
@@ -64,13 +66,14 @@ func run() error {
 	}
 	defer store.Close()
 
+	started := time.Now()
 	srv := server.New(server.Deps{
 		Env:     env,
 		DB:      pool,
 		Cache:   store,
 		Log:     log,
 		Version: version(),
-		Started: time.Now(),
+		Started: started,
 	})
 
 	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
@@ -86,6 +89,22 @@ func run() error {
 	})
 	stats.Register(srv.Mux())
 
+	// Everything nginx served, bots included: read from its access log (brief B6).
+	accessLog := nginxlog.New(nginxlog.Options{Path: env.AccessLog, DB: pool, Cache: store, Location: location, Log: log})
+	system := sysstatus.New(sysstatus.Options{
+		StateDir:   env.StateDir,
+		WWWDir:     env.WWWDir,
+		DataDir:    env.DataDir,
+		ContentDir: env.ContentDir,
+		SiteHost:   siteURL.Hostname(),
+		HTTPS:      siteURL.Scheme == "https",
+		DB:         pool,
+		Cache:      store,
+		Version:    version(),
+		Started:    started,
+		LogPolled:  accessLog.LastPoll,
+	})
+
 	panel, err := admin.New(admin.Options{
 		Prefix:   env.AdminPath,
 		SiteHost: siteURL.Hostname(),
@@ -98,6 +117,9 @@ func run() error {
 		Active: func(ctx context.Context, window time.Duration) int {
 			return store.CountActive(ctx, analytics.ActiveSet, window)
 		},
+		Traffic:   nginxlog.NewReports(pool, location),
+		System:    system,
+		LogPolled: accessLog.LastPoll,
 	})
 	if err != nil {
 		return err
@@ -106,10 +128,14 @@ func run() error {
 
 	// Background workers outlive the HTTP server by a moment: they flush what is still queued.
 	var workers sync.WaitGroup
-	workers.Add(1)
+	workers.Add(2)
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)
+	}()
+	go func() {
+		defer workers.Done()
+		accessLog.Run(ctx)
 	}()
 
 	err = srv.Run(ctx)

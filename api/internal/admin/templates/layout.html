@@ -16,6 +16,8 @@
         <nav aria-label="Разделы">
           <a href="{{path "/"}}" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Обзор</a>
           <a href="{{path "/visits"}}" {{if eq .Nav "visits"}}aria-current="page"{{end}}>Визиты</a>
+          <a href="{{path "/traffic"}}" {{if eq .Nav "traffic"}}aria-current="page"{{end}}>Трафик</a>
+          <a href="{{path "/status"}}" {{if eq .Nav "status"}}aria-current="page"{{end}}>Статус</a>
           <a href="{{path "/account"}}" {{if eq .Nav "account"}}aria-current="page"{{end}}>Аккаунт</a>
         </nav>
         <form class="signout" method="post" action="{{path "/logout"}}">

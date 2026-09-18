@@ -405,9 +405,12 @@ api_changed=$ENV_CHANGED
 install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
-for unit in krokosha-sync.service krokosha-sync.timer; do
+for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
 done
+# Where the API leaves requests for a rebuild and the build leaves its report (both run as the
+# site user; the API may write to requests/ only).
+install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/requests" "$KROKOSHA_STATE/status"
 install_if_changed "$DEPLOY/systemd/krokosha-api.service" /etc/systemd/system/krokosha-api.service && api_changed=yes
 # The unit is static; the one path that depends on --data-dir goes into a drop-in.
 api_dropin=$(mktemp)
@@ -593,6 +596,8 @@ step "Timer: GitHub sync and rebuild every 6 hours"
 # ---------------------------------------------------------------------------------------------
 
 systemctl enable --quiet --now krokosha-sync.timer
+# The «rebuild now» button of the admin area.
+systemctl enable --quiet --now krokosha-rebuild.path
 ok "next run: $(systemctl show krokosha-sync.timer --property=NextElapseUSecRealtime --value)"
 
 # ---------------------------------------------------------------------------------------------

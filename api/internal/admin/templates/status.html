@@ -1,0 +1,101 @@
+{{define "content"}}
+  {{$s := .Data.Status}}
+  <div class="page-head">
+    <h1>Статус системы</h1>
+  </div>
+
+  {{range $s.Problems}}
+    <p class="notice {{if eq .Level "error"}}notice-error{{else}}notice-warn{{end}}" role="{{if eq .Level "error"}}alert{{else}}status{{end}}">{{.Text}}</p>
+  {{else}}
+    <p class="notice notice-ok" role="status">Всё в порядке.</p>
+  {{end}}
+
+  <div class="grid">
+    <section class="card">
+      <h2 class="card-title">Сайт</h2>
+      <div class="card-body">
+        <dl class="facts">
+          <div><dt>Живой релиз</dt><dd class="mono">{{if $s.Release}}{{$s.Release}}{{else}}—{{end}}</dd></div>
+          {{if not $s.ReleaseAt.IsZero}}<div><dt>Собран</dt><dd>{{time $s.ReleaseAt}} · {{ago $s.ReleaseAt}}</dd></div>{{end}}
+          {{if $s.Sync.Known}}
+            <div><dt>Последняя сборка</dt><dd>{{if $s.Sync.OK}}<span class="dot dot-ok"></span>успешно{{else}}<span class="dot dot-error"></span>сбой на шаге «{{$s.Sync.Step}}»{{end}} · {{ago $s.Sync.FinishedAt}}</dd></div>
+            <div><dt>Длилась</dt><dd>{{elapsed ($s.Sync.FinishedAt.Sub $s.Sync.StartedAt)}}</dd></div>
+          {{else}}
+            <div><dt>Последняя сборка</dt><dd class="muted">отчёта ещё нет</dd></div>
+          {{end}}
+          {{if $s.GitHub.Known}}
+            <div><dt>Данные GitHub</dt><dd>{{if $s.GitHub.Stale}}<span class="dot dot-warn"></span>устарели{{else}}<span class="dot dot-ok"></span>свежие{{end}} · {{plural $s.GitHub.Repos "репозиторий" "репозитория" "репозиториев"}} · {{ago $s.GitHub.SyncedAt}}</dd></div>
+          {{end}}
+        </dl>
+        <form method="post" action="{{path "/status/rebuild"}}">
+          <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+          <button class="button" type="submit" {{if $s.RebuildRequested}}disabled{{end}}>{{if $s.RebuildRequested}}Пересборка запрошена…{{else}}Пересобрать сейчас{{end}}</button>
+        </form>
+        <p class="muted">Сайт сам пересобирается каждые 6 часов: свежие данные GitHub, стаж, новые тексты из репозитория.</p>
+      </div>
+    </section>
+
+    {{if $s.HTTPS}}
+      <section class="card">
+        <h2 class="card-title">Сертификат</h2>
+        <div class="card-body">
+          {{with $s.Certificate}}
+            <div class="figures">
+              <div><p class="figure-label">Осталось</p><p class="figure">{{if lt .DaysLeft 0}}истёк{{else}}{{plural .DaysLeft "день" "дня" "дней"}}{{end}}</p></div>
+            </div>
+            <dl class="facts">
+              <div><dt>Действует до</dt><dd>{{time .NotAfter}}</dd></div>
+              <div><dt>Выдан</dt><dd>{{.Issuer}}</dd></div>
+              <div><dt>Имена</dt><dd class="mono">{{range $i, $name := .Names}}{{if $i}}, {{end}}{{$name}}{{end}}</dd></div>
+              <div><dt>Доверенный</dt><dd>{{if .Trusted}}<span class="dot dot-ok"></span>да{{else}}<span class="dot dot-warn"></span>нет{{end}}</dd></div>
+            </dl>
+            <p class="muted">Это сертификат, который nginx отдаёт посетителям прямо сейчас. Продлевается сам (certbot.timer).</p>
+          {{else}}
+            <p><span class="dot dot-error"></span>Прочитать не удалось: <span class="mono">{{$s.CertificateError}}</span></p>
+          {{end}}
+        </div>
+      </section>
+    {{end}}
+
+    <section class="card">
+      <h2 class="card-title">Сервер</h2>
+      <div class="card-body">
+        {{if $s.Host.Supported}}
+          <dl class="facts">
+            <div><dt>Нагрузка (1 / 5 / 15 мин)</dt><dd class="mono">{{printf "%.2f / %.2f / %.2f" (index $s.Host.Load 0) (index $s.Host.Load 1) (index $s.Host.Load 2)}} · {{plural $s.Host.CPUs "ядро" "ядра" "ядер"}}</dd></div>
+            <div><dt>Работает без перезагрузки</dt><dd>{{elapsed $s.Host.Uptime}}</dd></div>
+          </dl>
+          <ul class="rows rows-meter">
+            {{template "usage" (usage "Память" $s.Host.MemoryTotal $s.Host.MemoryFree)}}
+            {{if $s.Host.SwapTotal}}{{template "usage" (usage "Swap" $s.Host.SwapTotal $s.Host.SwapFree)}}{{end}}
+            {{range $s.Host.Disks}}{{template "usage" (usage (print "Диск " .Path) .TotalBytes .FreeBytes)}}{{end}}
+          </ul>
+        {{else}}
+          <p class="muted">Показатели сервера доступны только на Linux.</p>
+        {{end}}
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Сервисы</h2>
+      <div class="card-body">
+        <dl class="facts">
+          <div><dt>API</dt><dd><span class="dot dot-ok"></span>версия <span class="mono">{{$s.Version}}</span> · работает {{elapsed $s.Uptime}}</dd></div>
+          <div><dt>MySQL</dt><dd>{{if $s.Database.OK}}<span class="dot dot-ok"></span>{{$s.Database.Version}} · {{bytes $s.Database.SizeBytes}} · {{plural $s.Database.Tables "таблица" "таблицы" "таблиц"}}{{else}}<span class="dot dot-error"></span>не отвечает{{end}}</dd></div>
+          <div><dt>Redis</dt><dd>{{if eq $s.Redis "ok"}}<span class="dot dot-ok"></span>работает{{else if eq $s.Redis "off"}}<span class="dot"></span>не настроен — всё считается в памяти сервиса{{else}}<span class="dot dot-warn"></span>недоступен — лимиты в памяти сервиса{{end}}</dd></div>
+          <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
+        </dl>
+        <p class="muted">Почта появится здесь вместе с почтовым сервером.</p>
+      </div>
+    </section>
+  </div>
+{{end}}
+
+{{define "usage"}}
+  <li class="row">
+    <span class="row-share">{{pct .Percent}}</span>
+    <span class="row-name">{{.Name}}</span>
+    {{meter .Percent}}
+    <span class="row-value">{{bytes .Used}} из {{bytes .Total}}</span>
+  </li>
+{{end}}

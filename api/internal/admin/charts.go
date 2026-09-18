@@ -38,48 +38,75 @@ func niceCeil(value int) int {
 	return value
 }
 
-// timelineChart draws visits per hour (or per day) as stacked bars: organic below, paid on top.
-func timelineChart(overview *analytics.Overview) template.HTML {
-	buckets := overview.Timeline
-	if len(buckets) == 0 {
+// barSeries is one colour of a stacked bar chart.
+type barSeries struct {
+	Class  string // CSS class of its bars (admin.css): chart-bar, chart-bar-ads, chart-bar-bots…
+	Values []int64
+}
+
+// barChartSpec describes a chart over the buckets of a period: hours of a day, or days.
+type barChartSpec struct {
+	Summary string // for screen readers: what the chart shows and the totals
+	Starts  []time.Time
+	Hourly  bool
+	Series  []barSeries            // stacked bottom-up
+	Title   func(index int) string // tooltip of a bucket
+	Axis    func(value int64) string
+	Bytes   bool // the scale counts bytes: round it in binary units
+}
+
+// barChart draws stacked bars with a light grid and a label under every n-th bucket.
+func barChart(spec barChartSpec) template.HTML {
+	if len(spec.Starts) == 0 {
 		return ""
 	}
-	highest := 0
-	for _, bucket := range buckets {
-		highest = max(highest, bucket.Organic+bucket.Ads)
+	var highest int64
+	for i := range spec.Starts {
+		var total int64
+		for _, series := range spec.Series {
+			total += series.Values[i]
+		}
+		highest = max(highest, total)
 	}
-	scale := niceCeil(highest)
+	scale := int64(niceCeil(int(highest)))
+	if spec.Bytes {
+		scale = niceCeilBytes(highest)
+	}
+	axis := spec.Axis
+	if axis == nil {
+		axis = func(value int64) string { return fmt.Sprint(value) }
+	}
 	plotWidth, plotHeight := chartWidth-chartLeft, chartHeight-chartTop-chartBottom
-	slot := plotWidth / float64(len(buckets))
+	slot := plotWidth / float64(len(spec.Starts))
 	barWidth := math.Max(slot*0.72, 1)
 
 	var svg strings.Builder
 	fmt.Fprintf(&svg, `<svg class="chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`,
-		chartWidth, chartHeight, html.EscapeString(timelineSummary(overview)))
+		chartWidth, chartHeight, html.EscapeString(spec.Summary))
 
 	// Grid: the floor, the middle, the top.
-	for _, level := range []int{0, scale / 2, scale} {
+	for _, level := range []int64{0, scale / 2, scale} {
 		y := chartTop + plotHeight - plotHeight*float64(level)/float64(scale)
 		fmt.Fprintf(&svg, `<line class="chart-grid" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>`, chartLeft, y, chartWidth, y)
-		fmt.Fprintf(&svg, `<text class="chart-label" x="%.1f" y="%.1f" text-anchor="end">%d</text>`, chartLeft-6, y+3.5, level)
+		fmt.Fprintf(&svg, `<text class="chart-label" x="%.1f" y="%.1f" text-anchor="end">%s</text>`, chartLeft-6, y+3.5, html.EscapeString(axis(level)))
 	}
 
-	every := labelEvery(len(buckets), overview.Hourly)
-	for i, bucket := range buckets {
+	every := labelEvery(len(spec.Starts), spec.Hourly)
+	for i, start := range spec.Starts {
 		x := chartLeft + slot*float64(i) + (slot-barWidth)/2
-		organic := plotHeight * float64(bucket.Organic) / float64(scale)
-		ads := plotHeight * float64(bucket.Ads) / float64(scale)
-		floor := chartTop + plotHeight
-
-		label := bucketLabel(bucket.Start, overview.Hourly)
-		fmt.Fprintf(&svg, `<g><title>%s</title>`, html.EscapeString(bucketTitle(label, bucket, overview.Hourly)))
-		// An invisible full-height target: the tooltip works on empty hours too.
+		label := bucketLabel(start, spec.Hourly)
+		fmt.Fprintf(&svg, `<g><title>%s</title>`, html.EscapeString(spec.Title(i)))
+		// An invisible full-height target: the tooltip works on empty buckets too.
 		fmt.Fprintf(&svg, `<rect class="chart-slot" x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>`, chartLeft+slot*float64(i), chartTop, slot, plotHeight)
-		if bucket.Organic > 0 {
-			fmt.Fprintf(&svg, `<rect class="chart-bar" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5"/>`, x, floor-organic, barWidth, organic)
-		}
-		if bucket.Ads > 0 {
-			fmt.Fprintf(&svg, `<rect class="chart-bar chart-bar-ads" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5"/>`, x, floor-organic-ads, barWidth, ads)
+		top := chartTop + plotHeight
+		for _, series := range spec.Series {
+			if series.Values[i] <= 0 {
+				continue
+			}
+			height := plotHeight * float64(series.Values[i]) / float64(scale)
+			top -= height
+			fmt.Fprintf(&svg, `<rect class="chart-bar %s" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5"/>`,
+				html.EscapeString(series.Class), x, top, barWidth, height)
 		}
 		svg.WriteString(`</g>`)
 		if i%every == 0 {
@@ -89,6 +116,38 @@ func timelineChart(overview *analytics.Overview) template.HTML {
 	}
 	svg.WriteString(`</svg>`)
 	return template.HTML(svg.String()) //nolint:gosec // built above from numbers and escaped text
+}
+
+// niceCeilBytes rounds a number of bytes up to a round number of its own unit: 1.3 MB → 2 MB.
+func niceCeilBytes(value int64) int64 {
+	unit := int64(1)
+	for value/unit >= 1024 && unit < 1<<40 {
+		unit *= 1024
+	}
+	return int64(niceCeil(int((value+unit-1)/unit))) * unit
+}
+
+// timelineChart draws visits per hour (or per day): people below, paid traffic above them, and —
+// when the «server traffic» reader has data — automated clients on top (brief B6).
+func timelineChart(overview *analytics.Overview, bots []int64) template.HTML {
+	spec := barChartSpec{Summary: timelineSummary(overview), Hourly: overview.Hourly}
+	organic, ads := make([]int64, len(overview.Timeline)), make([]int64, len(overview.Timeline))
+	for i, bucket := range overview.Timeline {
+		spec.Starts = append(spec.Starts, bucket.Start)
+		organic[i], ads[i] = int64(bucket.Organic), int64(bucket.Ads)
+	}
+	spec.Series = []barSeries{{"chart-bar-people", organic}, {"chart-bar-ads", ads}}
+	if len(bots) == len(overview.Timeline) {
+		spec.Series = append(spec.Series, barSeries{"chart-bar-bots", bots})
+	}
+	spec.Title = func(i int) string {
+		title := bucketTitle(bucketLabel(overview.Timeline[i].Start, overview.Hourly), overview.Timeline[i], overview.Hourly)
+		if len(bots) == len(overview.Timeline) && bots[i] > 0 {
+			title += fmt.Sprintf("; ботов: %d", bots[i])
+		}
+		return title
+	}
+	return barChart(spec)
 }
 
 func labelEvery(buckets int, hourly bool) int {
@@ -149,8 +208,14 @@ func ring(percent float64, tone string) template.HTML {
 
 // bar is a thin horizontal progress bar.
 func bar(percent float64, tone string) template.HTML {
+	return toneBar(percent, tone)
+}
+
+func toneBar(percent float64, tone string) template.HTML {
 	filled := math.Max(0, math.Min(percent, 100))
-	if tone != "cyan" && tone != "pink" {
+	switch tone {
+	case "cyan", "pink", "warn", "error":
+	default:
 		tone = "accent"
 	}
 	return template.HTML(fmt.Sprintf( //nolint:gosec // numbers and a class name from the list above
@@ -296,8 +361,91 @@ func toInt64(value any) int64 {
 		return int64(number)
 	case uint32:
 		return int64(number)
+	case uint64:
+		return int64(min(number, math.MaxInt64))
 	case float64:
 		return int64(number)
 	}
 	return 0
+}
+
+// formatBytes prints a size the way people read it: «1,4 МБ».
+func formatBytes(value int64) string {
+	units := [...]string{"Б", "КБ", "МБ", "ГБ", "ТБ"}
+	size, unit := float64(value), 0
+	for size >= 1024 && unit < len(units)-1 {
+		size /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%d Б", value)
+	}
+	precision := 1
+	if size >= 100 {
+		precision = 0
+	}
+	number := strings.Replace(fmt.Sprintf("%.*f", precision, size), ".", ",", 1)
+	return strings.TrimSuffix(number, ",0") + " " + units[unit]
+}
+
+// formatCount groups thousands with a thin space: 12 345.
+func formatCount(value int64) string {
+	digits := fmt.Sprint(value)
+	if value < 0 {
+		return digits
+	}
+	const thinSpace = rune(0x202F) // narrow no-break space: the number never wraps in the middle
+	var out strings.Builder
+	for i, digit := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			out.WriteRune(thinSpace)
+		}
+		out.WriteRune(digit)
+	}
+	return out.String()
+}
+
+// ago says how long ago something happened, roughly: «3 мин назад».
+func ago(elapsed time.Duration) string {
+	switch {
+	case elapsed < 0 || elapsed > 100*365*24*time.Hour:
+		return "—"
+	case elapsed < time.Minute:
+		return "только что"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%d мин назад", int(elapsed.Minutes()))
+	case elapsed < 48*time.Hour:
+		return fmt.Sprintf("%d ч назад", int(elapsed.Hours()))
+	default:
+		return fmt.Sprintf("%d дн. назад", int(elapsed.Hours()/24))
+	}
+}
+
+// meter is a bar whose colour follows how full it is: calm, then a warning, then an alarm.
+func meter(percent float64) template.HTML {
+	tone := "accent"
+	switch {
+	case percent >= 90:
+		tone = "error"
+	case percent >= 80:
+		tone = "warn"
+	}
+	return toneBar(percent, tone)
+}
+
+// usageRow is a line of the «server» card: how full memory or a disk is.
+type usageRow struct {
+	Name    string
+	Percent float64
+	Used    uint64
+	Total   uint64
+}
+
+func usage(name string, total, free uint64) usageRow {
+	row := usageRow{Name: name, Total: total}
+	if total > 0 && free <= total {
+		row.Used = total - free
+		row.Percent = float64(row.Used) * 100 / float64(total)
+	}
+	return row
 }

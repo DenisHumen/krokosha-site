@@ -23,6 +23,13 @@ type Env struct {
 	ContentDir string
 	// DataDir is the root of everything that must survive a migration (docs/architecture.md §6).
 	DataDir string
+	// StateDir holds what can be rebuilt: caches, the report of the last site build, requests
+	// to the build (the «rebuild now» button).
+	StateDir string
+	// WWWDir is where the releases of the site live; «current» points to the live one.
+	WWWDir string
+	// AccessLog is nginx's JSON access log, the source of the «server traffic» screen.
+	AccessLog string
 
 	MySQL MySQL
 	// RedisURL may be empty: the service then keeps rate limits and live data in memory.
@@ -57,6 +64,9 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 		AdminPath:  strings.TrimRight(get("ADMIN_PATH", ""), "/"),
 		ContentDir: get("KROKOSHA_CONTENT_DIR", "/opt/krokosha/repo/content"),
 		DataDir:    get("KROKOSHA_DATA", "/srv/krokosha"),
+		StateDir:   get("KROKOSHA_STATE", "/var/lib/krokosha"),
+		WWWDir:     get("KROKOSHA_WWW", "/var/www/krokosha"),
+		AccessLog:  get("KROKOSHA_ACCESS_LOG", "/var/log/krokosha/nginx-access.json.log"),
 		RedisURL:   get("REDIS_URL", ""),
 		LogLevel:   strings.ToLower(get("KROKOSHA_LOG_LEVEL", "info")),
 		MySQL: MySQL{

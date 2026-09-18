@@ -109,6 +109,7 @@ type overviewData struct {
 	Active   int
 	Feed     []feedLine
 	IsToday  bool
+	HasBots  bool // the traffic reader has counted automated clients for this period
 }
 
 func (h *Handler) feedLine(at time.Time, visitor, path, kind, target string) feedLine {
@@ -127,10 +128,12 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, "cannot read the recent activity", err)
 		return
 	}
+	bots := h.botClients(r.Context(), period.Period)
 	data := overviewData{
 		Period:   period,
 		Overview: overview,
-		Timeline: timelineChart(overview),
+		Timeline: timelineChart(overview, bots),
+		HasBots:  bots != nil,
 		Active:   h.opts.Active(r.Context(), activeWindow),
 		IsToday:  period.Period.Days() == 1 && period.Period.From.Equal(h.opts.Reports.Today()),
 	}
