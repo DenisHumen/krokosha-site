@@ -9,22 +9,46 @@
         "title": "Network hardware",
         "children": [
           {
-            "id": "mikrotik",
-            "title": "MikroTik",
-            "note": "RouterOS",
+            "id": "cisco",
+            "title": "Cisco",
+            "note": "Catalyst · Nexus · ISR/ASR",
             "confirmed": true
           },
           {
-            "id": "cisco",
-            "title": "Cisco",
-            "note": "IOS",
+            "id": "arista",
+            "title": "Arista",
+            "note": null,
             "confirmed": true
           },
           {
             "id": "juniper",
             "title": "Juniper",
             "note": null,
-            "confirmed": false
+            "confirmed": true
+          },
+          {
+            "id": "extreme",
+            "title": "Extreme Networks",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "fortinet",
+            "title": "Fortinet",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "mikrotik",
+            "title": "MikroTik",
+            "note": "RouterOS",
+            "confirmed": true
+          },
+          {
+            "id": "ubiquiti",
+            "title": "Ubiquiti",
+            "note": null,
+            "confirmed": true
           },
           {
             "id": "huawei",
@@ -35,18 +59,6 @@
           {
             "id": "hpe-aruba",
             "title": "HPE / Aruba",
-            "note": null,
-            "confirmed": false
-          },
-          {
-            "id": "ubiquiti",
-            "title": "Ubiquiti",
-            "note": null,
-            "confirmed": false
-          },
-          {
-            "id": "fortinet",
-            "title": "Fortinet",
             "note": null,
             "confirmed": false
           },
@@ -172,22 +184,28 @@
             "confirmed": true
           },
           {
-            "id": "hpe-ilo",
-            "title": "HPE ProLiant / iLO",
-            "note": null,
-            "confirmed": false
+            "id": "dell",
+            "title": "Dell",
+            "note": "Dell EMC",
+            "confirmed": true
           },
           {
-            "id": "dell-idrac",
-            "title": "Dell iDRAC",
+            "id": "hpe",
+            "title": "HPE",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "supermicro",
-            "title": "Supermicro IPMI",
+            "title": "Supermicro",
             "note": null,
-            "confirmed": false
+            "confirmed": true
+          },
+          {
+            "id": "fujitsu",
+            "title": "Fujitsu",
+            "note": null,
+            "confirmed": true
           }
         ]
       },

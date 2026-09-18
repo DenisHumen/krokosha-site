@@ -66,14 +66,14 @@
       "id": "networks",
       "number": "01",
       "title": "Сети и сетевое оборудование",
-      "subtitle": "MikroTik · Cisco",
+      "subtitle": "Cisco · Arista · Juniper · Extreme · Fortinet · MikroTik · Ubiquiti",
       "text": "Настройка маршрутизаторов и коммутаторов, построение и перестройка сетей для офисов и объектов."
     },
     {
       "id": "servers",
       "number": "02",
       "title": "Серверы, СХД и кластеры",
-      "subtitle": "Сборка · диагностика · RAID",
+      "subtitle": "Dell · HPE · Supermicro · Fujitsu",
       "text": "Подбор, сборка и настройка серверов и систем хранения данных, сложные кластерные системы."
     },
     {

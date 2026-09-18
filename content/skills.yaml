@@ -12,15 +12,18 @@
     - id: net-hardware
       title: { en: "Network hardware", uk: "Мережеве обладнання", ru: "Сетевое оборудование" }
       children:
-        - { id: mikrotik,  title: "MikroTik",        note: "RouterOS", confirmed: true }
-        - { id: cisco,     title: "Cisco",           note: "IOS",      confirmed: true }   # TODO(Денис): IOS-XE?
-        - { id: juniper,   title: "Juniper",         note: null, confirmed: false }
-        - { id: huawei,    title: "Huawei",          note: null, confirmed: false }
-        - { id: hpe-aruba, title: "HPE / Aruba",     note: null, confirmed: false }
-        - { id: ubiquiti,  title: "Ubiquiti",        note: null, confirmed: false }
-        - { id: fortinet,  title: "Fortinet",        note: null, confirmed: false }
-        - { id: omada,     title: "TP-Link Omada",   note: null, confirmed: false }
-        - { id: keenetic,  title: "Keenetic",        note: null, confirmed: false }
+        # Вендоры подтверждены Денисом 2026-09-18, порядок — его.
+        - { id: cisco,     title: "Cisco",            note: "Catalyst · Nexus · ISR/ASR", confirmed: true }
+        - { id: arista,    title: "Arista",           note: null, confirmed: true }
+        - { id: juniper,   title: "Juniper",          note: null, confirmed: true }
+        - { id: extreme,   title: "Extreme Networks", note: null, confirmed: true }
+        - { id: fortinet,  title: "Fortinet",         note: null, confirmed: true }
+        - { id: mikrotik,  title: "MikroTik",         note: "RouterOS", confirmed: true }
+        - { id: ubiquiti,  title: "Ubiquiti",         note: null, confirmed: true }
+        - { id: huawei,    title: "Huawei",           note: null, confirmed: false }
+        - { id: hpe-aruba, title: "HPE / Aruba",      note: null, confirmed: false }
+        - { id: omada,     title: "TP-Link Omada",    note: null, confirmed: false }
+        - { id: keenetic,  title: "Keenetic",         note: null, confirmed: false }
         - { id: pfsense,   title: "pfSense / OPNsense", note: null, confirmed: false }
     - id: net-tech
       title: { en: "Network technologies", uk: "Мережеві технології", ru: "Сетевые технологии" }
@@ -61,10 +64,13 @@
           title: { en: "Build & diagnostics", uk: "Збирання та діагностика", ru: "Сборка и диагностика" }
           note: null
           confirmed: true
-        - { id: raid,       title: "RAID",                 note: null, confirmed: true }
-        - { id: hpe-ilo,    title: "HPE ProLiant / iLO",   note: null, confirmed: false }
-        - { id: dell-idrac, title: "Dell iDRAC",           note: null, confirmed: false }
-        - { id: supermicro, title: "Supermicro IPMI",      note: null, confirmed: false }
+        - { id: raid,       title: "RAID",       note: null, confirmed: true }
+        # Вендоры серверов подтверждены Денисом 2026-09-18.
+        # TODO(Денис): при желании добавить в подписи линейки и средства управления (ProLiant / iLO, iDRAC, IPMI…).
+        - { id: dell,       title: "Dell",       note: "Dell EMC", confirmed: true }
+        - { id: hpe,        title: "HPE",        note: null, confirmed: true }
+        - { id: supermicro, title: "Supermicro", note: null, confirmed: true }
+        - { id: fujitsu,    title: "Fujitsu",    note: null, confirmed: true }
     - id: virtualization
       title: { en: "Clusters & virtualization", uk: "Кластери та віртуалізація", ru: "Кластеры и виртуализация" }
       children:

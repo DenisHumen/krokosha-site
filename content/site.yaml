@@ -108,7 +108,7 @@ services:                               # черновик; в текстах т
   - id: networks
     number: "01"
     title: { en: "Networks & network hardware", uk: "Мережі та мережеве обладнання", ru: "Сети и сетевое оборудование" }
-    subtitle: "MikroTik · Cisco"
+    subtitle: "Cisco · Arista · Juniper · Extreme · Fortinet · MikroTik · Ubiquiti"
     text:
       en: "Router and switch configuration, building and rebuilding networks for offices and sites."
       uk: "Налаштування маршрутизаторів і комутаторів, побудова та перебудова мереж для офісів і об'єктів."
@@ -116,7 +116,7 @@ services:                               # черновик; в текстах т
   - id: servers
     number: "02"
     title: { en: "Servers, storage & clusters", uk: "Сервери, СЗД і кластери", ru: "Серверы, СХД и кластеры" }
-    subtitle: { en: "Build · diagnostics · RAID", uk: "Збирання · діагностика · RAID", ru: "Сборка · диагностика · RAID" }
+    subtitle: "Dell · HPE · Supermicro · Fujitsu"
     text:
       en: "Selecting, building and configuring servers and storage systems, complex cluster systems."
       uk: "Підбір, збирання та налаштування серверів і систем зберігання даних, складні кластерні системи."
