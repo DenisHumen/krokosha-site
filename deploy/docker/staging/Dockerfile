@@ -20,6 +20,5 @@ RUN apt-get update \
         sys-kernel-debug.mount sys-kernel-tracing.mount e2scrub_reap.service \
     && systemctl enable ssh
 
-VOLUME ["/var/lib/krokosha", "/var/www/krokosha"]
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
