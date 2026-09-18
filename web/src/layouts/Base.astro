@@ -73,6 +73,8 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
 
     {/* Applies the saved theme before first paint. External and tiny on purpose: CSP stays free of inline scripts. */}
     <script is:inline src="/assets/theme.js"></script>
+    {/* First-party statistics: readable source, no cookies, silent under Do Not Track (brief B5). */}
+    <script is:inline defer src="/assets/analytics.js"></script>
     {jsonLd.map((block) => (
       <script is:inline type="application/ld+json" set:html={serializeJsonLd(block)}></script>
     ))}

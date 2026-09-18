@@ -7,12 +7,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the owner's time zone must resolve even on a system without tzdata
 
+	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
@@ -66,7 +70,44 @@ func run() error {
 		Version: version(),
 		Started: time.Now(),
 	})
-	return srv.Run(ctx)
+
+	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
+	stats := analytics.New(analytics.Options{
+		DB:       pool,
+		Cache:    store,
+		Log:      log,
+		SiteHost: siteURL.Hostname(),
+		Location: ownerLocation(env.ContentDir, log),
+	})
+	stats.Register(srv.Mux())
+
+	// Background workers outlive the HTTP server by a moment: they flush what is still queued.
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		stats.Run(ctx)
+	}()
+
+	err = srv.Run(ctx)
+	stop()
+	workers.Wait()
+	return err
+}
+
+// ownerLocation is the time zone «today» is counted in (content/site.yaml → timezone).
+func ownerLocation(contentDir string, log *slog.Logger) *time.Location {
+	content, err := config.LoadContent(contentDir)
+	if err != nil {
+		log.Warn("cannot read the content directory, reports will use UTC", "error", err)
+		return time.UTC
+	}
+	location, err := time.LoadLocation(content.Site.Timezone)
+	if err != nil || content.Site.Timezone == "" {
+		log.Warn("content/site.yaml: unknown timezone, reports will use UTC", "timezone", content.Site.Timezone)
+		return time.UTC
+	}
+	return location
 }
 
 func newLogger(level string) *slog.Logger {
