@@ -440,7 +440,12 @@ step "Administrator of the admin area"
 # ---------------------------------------------------------------------------------------------
 
 cli() { "$KROKOSHA_ROOT/bin/krokosha-cli" "$@"; }
-admins=$(cli admin list) || die "cannot read the list of administrators (message above)"
+cli_errors=$(mktemp)
+admins=$(cli admin list 2>"$cli_errors") || {
+  cat "$cli_errors" >&2
+  die "cannot read the list of administrators (message above)"
+}
+rm -f "$cli_errors"
 if [[ -n $admins ]]; then
   ok "accounts: $(awk '{print $1}' <<<"$admins" | paste -sd ' ')"
   [[ -z $ADMIN_LOGIN ]] || grep -qiE "^$ADMIN_LOGIN " <<<"$admins" ||
