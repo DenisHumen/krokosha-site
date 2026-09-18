@@ -66,6 +66,24 @@ jobs:
     defaults:
       run:
         working-directory: api
+    # The same engines as in production, for the integration tests (api/internal/testenv).
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: krokosha-test
+        ports: ["33306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pkrokosha-test --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+      redis:
+        image: redis:8-alpine
+        ports: ["36379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      KROKOSHA_TEST_MYSQL: 127.0.0.1:33306
+      KROKOSHA_TEST_REDIS: 127.0.0.1:36379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

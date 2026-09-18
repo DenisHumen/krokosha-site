@@ -88,6 +88,23 @@ check "settings are private" test "$(stat -c '%a %U' /etc/krokosha/env)" = "600 
 check "rebuild timer is enabled" systemctl is-enabled --quiet krokosha-sync.timer
 check "JSON access log is written" bash -c "tail -n 1 /var/log/krokosha/nginx-access.json.log | python3 -c 'import json,sys; json.loads(sys.stdin.read())'"
 
+echo "Data, database, API"
+check "/etc/krokosha is a link into the data root" test "$(readlink -f /etc/krokosha)" = /srv/krokosha/config
+check "MySQL data lives in the data root" test -d /srv/krokosha/mysql/krokosha
+check "Redis data lives in the data root" bash -c "ls /srv/krokosha/redis | grep -q ."
+check "MySQL root password is not in the service environment" bash -c "! grep -q MYSQL_ROOT_PASSWORD /etc/krokosha/env"
+check "MySQL listens on loopback only" bash -c "ss -Htln 'sport = :3306' | awk '{print \$4}' | grep -qx '127.0.0.1:3306' && ! ss -Htln 'sport = :3306' | grep -qE '(0\.0\.0\.0|\*|\[::\]):3306'"
+check "Redis listens on loopback only" bash -c "ss -Htln 'sport = :6379' | awk '{print \$4}' | grep -qx '127.0.0.1:6379' && ! ss -Htln 'sport = :6379' | grep -qE '(0\.0\.0\.0|\*|\[::\]):6379'"
+check "Redis refuses clients without the password" bash -c "docker exec krokosha-redis-1 redis-cli ping 2>&1 | grep -q NOAUTH"
+check "API answers on loopback with details" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
+check "API sees Redis" grep -q '"redis":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
+check "API is reachable through nginx" test "$(status "https://$DOMAIN/api/health")" = 200
+check "visitors get the bare status only" bash -c "! curl -sk --max-time 5 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/api/health | grep -q version"
+check "API is not reachable from outside nginx" bash -c "ss -Htln 'sport = :8080' | awk '{print \$4}' | grep -qx '127.0.0.1:8080'"
+check "database schema is migrated" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT COUNT(*) FROM schema_migrations\"' 2>/dev/null | grep -qE '^[1-9]'"
+check "API service restarts cleanly" bash -c "systemctl restart krokosha-api && for i in \$(seq 1 30); do curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null && exit 0; sleep 1; done; exit 1"
+echo "  memory: $(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | tr '\n' ';')"
+
 echo "Firewall"
 check "UFW is active" bash -c "ufw status | grep -q 'Status: active'"
 check "SSH stays open" bash -c "ufw status | grep -qE '^22/tcp +ALLOW'"
@@ -101,13 +118,16 @@ fi
 
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
+secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH)=' /etc/krokosha/env | sha256sum)
 "$SOURCE/deploy/install.sh" --from-env --yes
 echo "::endgroup::"
 echo "Idempotency"
 check "site still answers" test "$(status "https://$DOMAIN/")" = 200
 check "settings survived" grep -q "^FIREWALL_ALLOW=8443/tcp" /etc/krokosha/env
+check "API still answers" grep -q '"status":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
 check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/krokosha/env
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
+check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 
 echo "::group::update.sh"
@@ -126,7 +146,9 @@ check "at most three releases are kept" test "$(find /var/www/krokosha/releases 
 echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
 echo "::endgroup::"
-check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha ]]"
+check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
+check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
+check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "user is gone" bash -c "! id krokosha >/dev/null 2>&1"
 check "nginx configuration is still valid" nginx -t
 

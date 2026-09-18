@@ -1,0 +1,64 @@
+# Stateful services of the site: MySQL (source of truth) and Redis (fast, disposable data).
+# Started by install.sh:
+#
+#   docker compose --env-file /etc/krokosha/env --env-file /etc/krokosha/mysql-root.env \
+#     -f /opt/krokosha/repo/deploy/compose/compose.yaml up -d --wait
+#
+# Both listen on the loopback interface of the host only. All data lives under KROKOSHA_DATA
+# (one directory to copy when moving to another server, docs/architecture.md §6).
+# Memory limits are hard: the VPS has 2 GB for everything (docs/architecture.md §7).
+name: krokosha
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in /etc/krokosha/mysql-root.env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-krokosha}
+      MYSQL_USER: ${MYSQL_USER:-krokosha}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in /etc/krokosha/env}
+    volumes:
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/mysql:/var/lib/mysql
+      - ./mysql/krokosha.cnf:/etc/mysql/conf.d/krokosha.cnf:ro
+    ports:
+      - "127.0.0.1:3306:3306"
+    mem_limit: 512m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set in /etc/krokosha/env}
+    # Append-only file, fsync every second: a restart keeps counters and buffers.
+    # When memory runs out the least recently used keys go first — nothing here is irreplaceable.
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server --requirepass "$$REDIS_PASSWORD"
+        --appendonly yes --appendfsync everysec --save ""
+        --maxmemory 48mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/redis:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    mem_limit: 96m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging

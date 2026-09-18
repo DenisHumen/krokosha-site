@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Removes what install.sh created: services, nginx site, code, releases, the system user.
+# Removes what install.sh created: services, containers, nginx site, code, releases, the system user.
+# The data root (database, mail, settings) is KEPT unless --purge is given.
 #
 # Left alone on purpose: installed packages (nginx, certbot, ufw, fail2ban), firewall rules,
 # Let's Encrypt certificates, and anything that does not belong to the site.
 #
 #   sudo ./uninstall.sh            asks for confirmation
 #   sudo ./uninstall.sh --yes      no questions (tests)
-#   sudo ./uninstall.sh --purge    also deletes settings and secrets in /etc/krokosha
+#   sudo ./uninstall.sh --purge    also deletes the data root: database, mail, settings, secrets
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -28,15 +29,28 @@ main() {
   if [[ $assume_yes == no ]]; then
     [[ -t 0 ]] || die "refusing to uninstall without confirmation; pass --yes"
     printf 'This removes the site from this server: %s, %s, %s.\n' "$KROKOSHA_ROOT" "$KROKOSHA_WWW" "$KROKOSHA_STATE" >&2
+    if [[ $purge == yes ]]; then
+      printf 'WITH --purge: the data root is deleted too — the database, mail and settings are gone for good.\n' >&2
+    fi
     read -r -p "Type the word 'remove' to continue: " answer
     [[ $answer == remove ]] || die "cancelled"
   fi
 
+  local data_dir
+  data_dir=$(env_get KROKOSHA_DATA)
+
   step "Stopping services"
-  systemctl disable --now krokosha-sync.timer 2>/dev/null || true
+  systemctl disable --now krokosha-sync.timer krokosha-api.service 2>/dev/null || true
   systemctl stop krokosha-sync.service 2>/dev/null || true
-  rm -f /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer
+  rm -rf /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer \
+    /etc/systemd/system/krokosha-api.service /etc/systemd/system/krokosha-api.service.d
   systemctl daemon-reload
+
+  step "Stopping the containers (MySQL, Redis)"
+  if have docker && [[ -f $KROKOSHA_REPO/deploy/compose/compose.yaml && -f $KROKOSHA_ENV ]]; then
+    docker compose --env-file "$KROKOSHA_ENV" --env-file "$KROKOSHA_ETC/mysql-root.env" \
+      --file "$KROKOSHA_REPO/deploy/compose/compose.yaml" down --remove-orphans 2>/dev/null || true
+  fi
 
   step "Removing the nginx site"
   rm -f /etc/nginx/sites-enabled/krokosha.conf /etc/nginx/sites-available/krokosha.conf \
@@ -52,9 +66,12 @@ main() {
   rm -rf "$KROKOSHA_ROOT" "$KROKOSHA_WWW" "$KROKOSHA_STATE" /var/log/krokosha
   if [[ $purge == yes ]]; then
     rm -rf "$KROKOSHA_ETC"
-    ok "settings and secrets removed"
+    if [[ -n $data_dir && $data_dir == /* && $data_dir != / && -d $data_dir ]]; then
+      rm -rf "$data_dir"
+    fi
+    ok "data root removed: database, settings and secrets are gone"
   else
-    warn "$KROKOSHA_ETC is kept (settings, secrets); --purge removes it"
+    warn "the data root ${data_dir:-/srv/krokosha} is kept (database, settings, secrets); --purge removes it"
   fi
   if id "$KROKOSHA_USER" >/dev/null 2>&1; then
     userdel "$KROKOSHA_USER" 2>/dev/null || true

@@ -1,0 +1,31 @@
+# Throw-away MySQL and Redis for the integration tests, on ports that do not clash with a real
+# installation. Data lives in memory and disappears with the containers.
+#
+#   docker compose -f compose.test.yaml up -d --wait
+#   KROKOSHA_TEST_MYSQL=127.0.0.1:33306 KROKOSHA_TEST_REDIS=127.0.0.1:36379 go test ./...
+#   docker compose -f compose.test.yaml down
+#
+# Without the two variables the integration tests are skipped and only unit tests run.
+name: krokosha-test
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: krokosha-test
+    command: ["--performance-schema=OFF", "--skip-log-bin", "--innodb-buffer-pool-size=64M", "--innodb-flush-log-at-trx-commit=0"]
+    tmpfs: ["/var/lib/mysql"]
+    ports: ["127.0.0.1:33306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pkrokosha-test", "--silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["127.0.0.1:36379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
