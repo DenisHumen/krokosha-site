@@ -1,0 +1,90 @@
+---
+// Base layout: <head> with full SEO (brief B7), header, footer.
+// Markup is temporary (phase 1). Visual components from design/ replace it in phase 2;
+// data-slot / data-track / data-section attributes follow docs/contract.md.
+import '../styles/global.css';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { OG_LOCALE, LOCALES, localePath } from '../i18n/locales.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+import { absoluteUrl, alternateLinks, serializeJsonLd } from '../lib/seo.ts';
+
+interface Props {
+  data: SitePageData;
+  /** Page path without the language prefix: '' for home, 'privacy'… */
+  page: string;
+  title: string;
+  description: string;
+  /** Service pages (404, play) and drafts are kept out of search results. */
+  noindex?: boolean;
+  jsonLd?: Record<string, unknown>[];
+}
+
+const { data, page, title, description, noindex = false, jsonLd = [] } = Astro.props;
+const { lang, site, seo } = data;
+const origin = Astro.site ?? new URL(import.meta.env.SITE);
+
+const canonical = absoluteUrl(origin, localePath(lang, page));
+const ogImage = absoluteUrl(origin, '/img/og-default.png');
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex ? (
+      <meta name="robots" content="noindex, follow" />
+    ) : (
+      <meta name="robots" content="index, follow, max-image-preview:large" />
+    )}
+    {!noindex && (
+      <>
+        <link rel="canonical" href={canonical} />
+        {alternateLinks(origin, page).map(({ hreflang, href }) => (
+          <link rel="alternate" hreflang={hreflang} href={href} />
+        ))}
+      </>
+    )}
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={data.profile.nickname} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={OG_LOCALE[lang]} />
+    {LOCALES.filter((code) => code !== lang).map((code) => (
+      <meta property="og:locale:alternate" content={OG_LOCALE[code]} />
+    ))}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={seo.ogImageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ededeb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)" />
+
+    {/* Applies the saved theme before first paint. External and tiny on purpose: CSP stays free of inline scripts. */}
+    <script is:inline src="/assets/theme.js"></script>
+    {jsonLd.map((block) => (
+      <script is:inline type="application/ld+json" set:html={serializeJsonLd(block)}></script>
+    ))}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      {site.ui.skip_to_content}
+    </a>
+    <Header data={data} page={page} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer data={data} />
+  </body>
+</html>

@@ -1,0 +1,63 @@
+---
+import type { SitePageData } from '../lib/page-data.ts';
+import Avatar from './Avatar.astro';
+import SocialLinks from './SocialLinks.astro';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { data } = Astro.props;
+const { profile, site } = data;
+const { hero } = site;
+---
+
+<section class="section hero" id="hero" data-section="hero">
+  <h1 class="headline">
+    <span class="muted" data-slot="site.hero.headline.muted">
+      {hero.headline.muted}
+    </span>
+    <span data-slot="site.hero.headline.strong">{hero.headline.strong}</span>
+  </h1>
+  <p class="lead" data-slot="site.hero.lead">
+    {hero.lead}
+  </p>
+
+  <div class="person">
+    <Avatar data={data} size={96} eager />
+    <div>
+      <p>
+        <strong data-slot="profile.name">{profile.name}</strong>
+        <span class="muted">
+          (<span data-slot="profile.nickname">{profile.nickname}</span>)
+        </span>
+      </p>
+      <p data-slot="profile.role">{profile.role}</p>
+      {/* Items are separated by CSS gaps, so formatting of this file cannot glue them together. */}
+      <ul class="facts mono">
+        <li>
+          <span data-slot="profile.experience_years">{profile.experience_years}</span>+
+          <span data-slot="site.hero.experience_label">{hero.experience_label}</span>
+        </li>
+        <li data-slot="profile.location">{profile.location}</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="actions">
+    <SocialLinks
+      socials={profile.socials}
+      variant="cta"
+      ctaLabels={{ telegram: hero.cta.telegram, email: hero.cta.email }}
+    />
+    <a class="button" href="#contacts" data-track="cta-discuss" data-slot="site.hero.cta.discuss">
+      {hero.cta.discuss}
+    </a>
+  </div>
+
+  <p class="captions mono">
+    <span data-slot="site.hero.captions.left">{hero.captions.left}</span>
+    <span data-slot="site.hero.captions.center">{hero.captions.center}</span>
+    <span data-slot="site.hero.captions.right">{hero.captions.right}</span>
+  </p>
+</section>

@@ -1,0 +1,183 @@
+// Checks the built site (dist/) before it may go live: used by CI and by the deploy scripts
+// (brief B3: «проверка релиза» before the `current` symlink is switched).
+//
+//   node scripts/check-dist.mjs [dist-dir]
+//
+// No dependencies on purpose: it must run on the VPS right after `astro build`.
+
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const dist = resolve(process.argv[2] ?? 'dist');
+const LOCALES = { en: '', uk: 'uk/', ru: 'ru/' };
+const SECTIONS = [
+  'hero',
+  'services',
+  'skills',
+  'projects',
+  'stats',
+  'curtain',
+  'contacts',
+  'footer',
+];
+const MIN_HOME_BYTES = 10_000;
+
+const errors = [];
+const fail = (file, message) => errors.push(`${file}: ${message}`);
+
+function read(file) {
+  const path = join(dist, file);
+  if (!existsSync(path)) {
+    fail(file, 'file is missing');
+    return null;
+  }
+  return readFileSync(path, 'utf8');
+}
+
+const count = (html, pattern) => (html.match(pattern) ?? []).length;
+const attr = (html, pattern) => pattern.exec(html)?.[1] ?? null;
+
+/** Text a visitor can see: no tags, scripts or styles. */
+const visibleText = (html) =>
+  html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ');
+
+function checkPage(file, lang, { indexable }) {
+  const html = read(file);
+  if (html === null) return null;
+
+  if (attr(html, /<html[^>]*\blang="([^"]+)"/) !== lang)
+    fail(file, `<html lang> must be "${lang}"`);
+  if (count(html, /<h1[\s>]/g) !== 1)
+    fail(file, `expected exactly one <h1>, found ${count(html, /<h1[\s>]/g)}`);
+  if (!/<title>[^<]{10,}<\/title>/.test(html)) fail(file, '<title> is missing or too short');
+  if (!/<meta name="description" content="[^"]{20,}"/.test(html))
+    fail(file, 'meta description is missing or too short');
+  if (!/<meta name="viewport"/.test(html)) fail(file, 'viewport meta is missing');
+  if (!/http-equiv="content-security-policy"/.test(html))
+    fail(file, 'Content-Security-Policy meta is missing');
+
+  const robots = attr(html, /<meta name="robots" content="([^"]+)"/) ?? '';
+  if (indexable) {
+    if (robots.includes('noindex')) fail(file, 'must be indexable but has noindex');
+    if (!/<link rel="canonical" href="https:\/\/[^"]+"/.test(html))
+      fail(file, 'canonical link is missing');
+    for (const code of [...Object.keys(LOCALES), 'x-default']) {
+      if (!new RegExp(`<link rel="alternate" hreflang="${code}" href="https://[^"]+"`).test(html)) {
+        fail(file, `hreflang="${code}" alternate is missing`);
+      }
+    }
+    if (!/<meta property="og:image" content="https:\/\/[^"]+"/.test(html))
+      fail(file, 'og:image is missing');
+  } else if (!robots.includes('noindex')) {
+    fail(file, 'service page must be noindex');
+  }
+
+  const text = visibleText(html);
+  if (/TODO/.test(text)) fail(file, 'a TODO marker is visible on the page');
+  const placeholder = /\{[a-z_]+\}/.exec(text);
+  if (placeholder) fail(file, `unresolved placeholder ${placeholder[0]} is visible on the page`);
+
+  for (const match of html.matchAll(
+    /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g,
+  )) {
+    try {
+      JSON.parse(match[1]);
+    } catch (error) {
+      fail(file, `JSON-LD does not parse: ${error.message}`);
+    }
+  }
+
+  return html;
+}
+
+function checkInternalLinks(file, html) {
+  for (const [, href] of html.matchAll(/\b(?:href|src)="(\/[^"#?]*)[^"]*"/g)) {
+    if (href.startsWith('//')) continue;
+    const target = join(dist, decodeURIComponent(href));
+    const ok =
+      existsSync(target) && (statSync(target).isFile() || existsSync(join(target, 'index.html')));
+    if (!ok) fail(file, `broken internal link: ${href}`);
+  }
+}
+
+// Home pages
+for (const [lang, prefix] of Object.entries(LOCALES)) {
+  const file = `${prefix}index.html`;
+  const html = checkPage(file, lang, { indexable: true });
+  if (html === null) continue;
+  if (Buffer.byteLength(html) < MIN_HOME_BYTES)
+    fail(file, `suspiciously small (< ${MIN_HOME_BYTES} bytes)`);
+  for (const section of SECTIONS) {
+    if (!html.includes(`data-section="${section}"`)) fail(file, `section "${section}" is missing`);
+  }
+  for (const track of [
+    'cta-telegram',
+    'cta-email',
+    'cta-discuss',
+    'social-github',
+    'game-entry',
+    `lang-${lang}`,
+  ]) {
+    if (!html.includes(`data-track="${track}"`)) fail(file, `data-track="${track}" is missing`);
+  }
+  const graph = /<script[^>]*ld\+json[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
+  const types = graph ? (JSON.parse(graph)['@graph'] ?? []).map((node) => node['@type']) : [];
+  for (const type of ['Person', 'WebSite', 'ProfessionalService', 'ItemList']) {
+    if (!types.includes(type)) fail(file, `JSON-LD ${type} is missing`);
+  }
+  checkInternalLinks(file, html);
+}
+
+// Service pages
+for (const [lang, prefix] of Object.entries(LOCALES)) {
+  for (const page of ['404', 'play']) {
+    const html = checkPage(`${prefix}${page}/index.html`, lang, { indexable: false });
+    if (html) checkInternalLinks(`${prefix}${page}/index.html`, html);
+  }
+  const privacy = read(`${prefix}privacy/index.html`);
+  if (privacy) {
+    // A draft policy is noindex; a published one must be indexable.
+    const isDraft = /<meta name="robots" content="noindex/.test(privacy);
+    checkPage(`${prefix}privacy/index.html`, lang, { indexable: !isDraft });
+    checkInternalLinks(`${prefix}privacy/index.html`, privacy);
+  }
+}
+
+// robots.txt and sitemap.xml
+const robotsTxt = read('robots.txt');
+if (robotsTxt && !/^Sitemap: https:\/\/\S+\/sitemap\.xml$/m.test(robotsTxt)) {
+  fail('robots.txt', 'Sitemap line is missing');
+}
+const sitemap = read('sitemap.xml');
+if (sitemap) {
+  const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+  for (const prefix of Object.values(LOCALES)) {
+    if (!locs.some((loc) => new URL(loc).pathname === `/${prefix}`)) {
+      fail('sitemap.xml', `home page /${prefix} is missing`);
+    }
+  }
+  for (const loc of locs) {
+    const path = new URL(loc).pathname;
+    if (/\/(404|play|api)\//.test(path)) fail('sitemap.xml', `service page listed: ${path}`);
+    if (!existsSync(join(dist, path, 'index.html')))
+      fail('sitemap.xml', `listed page does not exist: ${path}`);
+  }
+}
+
+// Nothing hidden or temporary may be published.
+const walk = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
+  );
+if (existsSync(dist)) {
+  for (const path of walk(dist)) {
+    const name = path.slice(dist.length + 1).replaceAll('\\', '/');
+    if (/(^|\/)\.|\.map$|\.(ya?ml|env)$/.test(name)) fail(name, 'must not be published');
+  }
+}
+
+if (errors.length > 0) {
+  console.error(`check-dist: ${errors.length} problem(s) in ${dist}\n  ${errors.join('\n  ')}`);
+  process.exit(1);
+}
+console.log(`check-dist: OK (${dist})`);

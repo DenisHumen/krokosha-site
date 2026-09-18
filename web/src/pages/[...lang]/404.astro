@@ -1,0 +1,32 @@
+---
+// «Packet lost». Built as /404.html, /uk/404/ and /ru/404/; Nginx picks one by the URL prefix.
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const { not_found } = data.site;
+---
+
+<Base
+  data={data}
+  page="404"
+  title={`${not_found.title} — ${data.profile.nickname}`}
+  description={not_found.text}
+  noindex
+>
+  <section class="section center" data-section="not-found">
+    <p class="mono muted">404</p>
+    <h1 data-slot="site.not_found.title">{not_found.title}</h1>
+    <p data-slot="site.not_found.text">{not_found.text}</p>
+    <p>
+      <a class="button button-primary" href={localePath(lang)} data-slot="site.not_found.back">
+        {not_found.back}
+      </a>
+    </p>
+  </section>
+</Base>

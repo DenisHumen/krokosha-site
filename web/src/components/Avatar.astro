@@ -1,0 +1,30 @@
+---
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+  /** Rendered size in CSS pixels. Fixed width/height keep the layout stable (no CLS). */
+  size: number;
+  /** The hero avatar is part of the first screen: load it eagerly. */
+  eager?: boolean;
+}
+
+const { data, size, eager = false } = Astro.props;
+const { avif, webp } = data.avatarImages;
+---
+
+<picture data-slot="profile.avatar">
+  <source type="image/avif" srcset={avif.srcset} sizes={`${size}px`} />
+  <img
+    class="avatar"
+    src={webp.src}
+    srcset={webp.srcset}
+    sizes={`${size}px`}
+    width={size}
+    height={size}
+    alt={data.profile.avatar.alt}
+    loading={eager ? 'eager' : 'lazy'}
+    fetchpriority={eager ? 'high' : undefined}
+    decoding="async"
+  />
+</picture>

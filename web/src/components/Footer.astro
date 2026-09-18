@@ -1,0 +1,33 @@
+---
+import { fill } from '../i18n/localize.ts';
+import { localePath } from '../i18n/locales.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+import { getTextPage } from '../lib/pages.ts';
+import SocialLinks from './SocialLinks.astro';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { data } = Astro.props;
+const { lang, site, profile, buildTime } = data;
+const year = new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'UTC' }).format(buildTime);
+const privacy = await getTextPage('privacy', lang);
+---
+
+<footer class="site-footer" data-section="footer">
+  <SocialLinks socials={profile.socials} variant="icons" />
+  <p class="footer-meta mono muted">
+    <span data-slot="site.footer.copyright">{fill(site.footer.copyright, { year })}</span>
+    <a href={localePath(lang, 'privacy')}>{privacy.data.title}</a>
+  </p>
+  {/* Hidden entrance to the mini-game (brief part D): leads to a «coming soon» stub. */}
+  <a
+    class="game-entry mono"
+    href={localePath(lang, 'play')}
+    data-track="game-entry"
+    data-slot="site.footer.game_entry"
+  >
+    {site.footer.game_entry}
+  </a>
+</footer>

@@ -1,0 +1,35 @@
+---
+// One template for every social button (contract §3: `social-button`).
+import type { Social } from '../lib/data.ts';
+
+interface Props {
+  socials: Social[];
+  /** `cta` — large buttons, primary ones are tracked as conversions; `icons` — compact row. */
+  variant: 'cta' | 'icons';
+  /** Button texts for primary socials, e.g. { telegram: 'Message on Telegram' }. */
+  ctaLabels?: Record<string, string>;
+}
+
+const { socials, variant, ctaLabels = {} } = Astro.props;
+const external = (url: string) => url.startsWith('https://');
+---
+
+<ul class:list={['socials', `socials-${variant}`]} data-slot="socials">
+  {socials.map((social) => {
+    const isCta = variant === 'cta' && social.primary === true;
+    return (
+      <li data-component="social-button">
+        <a
+          class:list={['button', { 'button-primary': isCta }]}
+          href={social.url}
+          data-field="url"
+          data-social={social.id}
+          data-track={isCta ? `cta-${social.id}` : `social-${social.id}`}
+          rel={external(social.url) ? 'me noopener' : undefined}
+        >
+          <span data-field="label">{(isCta && ctaLabels[social.id]) || social.label}</span>
+        </a>
+      </li>
+    );
+  })}
+</ul>

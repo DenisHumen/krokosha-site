@@ -1,0 +1,30 @@
+---
+// Reserved route of the mini-game (brief part D — concept only). For now: a «coming soon» stub.
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const { footer, not_found } = data.site;
+---
+
+<Base
+  data={data}
+  page="play"
+  title={`${footer.game_entry} — ${data.profile.nickname}`}
+  description={footer.play_stub}
+  noindex
+>
+  <section class="section center">
+    <h1 data-slot="site.footer.play_stub">{footer.play_stub}</h1>
+    <p>
+      <a class="button" href={localePath(lang)}>
+        {not_found.back}
+      </a>
+    </p>
+  </section>
+</Base>

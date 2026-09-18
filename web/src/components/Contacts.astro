@@ -1,0 +1,22 @@
+---
+// Quick-contact buttons. The «Discuss a project» form (brief B10.1) arrives together with the leads API:
+// a form that posts to an endpoint which does not exist yet would lose requests.
+import type { SitePageData } from '../lib/page-data.ts';
+import SocialLinks from './SocialLinks.astro';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { profile, site } = Astro.props.data;
+---
+
+<section class="section" id="contacts" data-section="contacts">
+  <h2 data-slot="site.contacts.heading">{site.contacts.heading}</h2>
+  <p data-slot="site.contacts.text">{site.contacts.text}</p>
+  <SocialLinks
+    socials={profile.socials}
+    variant="cta"
+    ctaLabels={{ telegram: site.hero.cta.telegram }}
+  />
+</section>
