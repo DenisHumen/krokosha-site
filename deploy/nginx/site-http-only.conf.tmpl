@@ -30,6 +30,14 @@ server {
         try_files $uri =404;
     }
 
+    # The API: analytics events, the contact form, later the admin area.
+    location /api/ {
+        limit_req zone=krokosha_api burst=40 nodelay;
+        limit_req_status 429;
+        client_max_body_size 64k;
+        include snippets/krokosha-proxy.conf;
+    }
+
     location ~ /\. {
         return 404;
     }

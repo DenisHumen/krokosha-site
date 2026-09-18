@@ -33,6 +33,8 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
                          may be repeated. WireGuard interfaces are detected automatically
   --skip-firewall        do not configure UFW
   --skip-dns-check       do not verify that DOMAIN points to this server
+  --data-dir DIR         where everything that must survive lives: database, mail, settings
+                         (default: /srv/krokosha). Copy this one directory to move the site
   --repo URL             git repository to install from (default: $DEFAULT_REPO)
   --branch NAME          branch or tag (default: main)
   --from-env             take every setting from $KROKOSHA_ENV (what update.sh does)
@@ -44,7 +46,7 @@ EOF
 }
 
 DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
-REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no
+REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 EXTRA_PORTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -57,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --allow) EXTRA_PORTS+=("${2:?--allow needs a value}"); shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=yes; shift ;;
     --skip-dns-check) SKIP_DNS=yes; shift ;;
+    --data-dir) DATA_DIR=${2:?--data-dir needs a value}; shift 2 ;;
     --repo) REPO_URL=${2:?--repo needs a value}; shift 2 ;;
     --branch) REPO_BRANCH=${2:?--branch needs a value}; shift 2 ;;
     --from-env) FROM_ENV=yes; shift ;;
@@ -96,6 +99,8 @@ fi
 : "${SKIP_DNS:=$(env_get SKIP_DNS_CHECK)}"
 : "${SKIP_FIREWALL:=no}"
 : "${SKIP_DNS:=no}"
+: "${DATA_DIR:=$(env_get KROKOSHA_DATA)}"
+: "${DATA_DIR:=/srv/krokosha}"
 : "${TLS_MODE:=letsencrypt}"
 : "${REPO_URL:=$DEFAULT_REPO}"
 : "${REPO_BRANCH:=main}"
@@ -107,6 +112,8 @@ DOMAIN=${DOMAIN,,}
 valid_domain "$DOMAIN" || die "not a valid domain name: $DOMAIN"
 valid_email "$ADMIN_EMAIL" || die "not a valid email address: $ADMIN_EMAIL"
 case $TLS_MODE in letsencrypt | selfsigned | none) ;; *) die "--tls must be letsencrypt, selfsigned or none" ;; esac
+[[ $DATA_DIR == /* && $DATA_DIR != / ]] || die "--data-dir must be an absolute path"
+DATA_DIR=${DATA_DIR%/}
 for port in "${EXTRA_PORTS[@]}"; do
   valid_port "$port" || die "--allow expects PORT/tcp or PORT/udp, got: $port"
 done
@@ -189,6 +196,11 @@ packages=(nginx git curl ca-certificates xz-utils rsync openssl logrotate)
 [[ $TLS_MODE == letsencrypt ]] && packages+=(certbot)
 [[ $SKIP_FIREWALL == no ]] && packages+=(ufw)
 packages+=(fail2ban python3-systemd)
+# MySQL, Redis and the mail server run in Docker. The distribution's own packages are used;
+# an already working Docker (any origin) is left alone.
+if ! have docker || ! docker compose version >/dev/null 2>&1; then
+  packages+=(docker.io docker-compose-v2)
+fi
 # A freshly installed nginx or module needs a restart, not a reload, to be picked up.
 NGINX_RESTART=no
 dpkg-query -W -f='${Status}' libnginx-mod-http-brotli-filter 2>/dev/null | grep -q 'ok installed' || NGINX_RESTART=yes
@@ -220,9 +232,22 @@ install -d -m 0755 -o root -g root "$KROKOSHA_ROOT" "$KROKOSHA_ROOT/bin" "$KROKO
 install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE" "$KROKOSHA_STATE/cache"
 install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW" "$WWW/releases"
 install -d -m 0755 -o root -g root "$WWW/acme"
-install -d -m 0750 -o root -g "$KROKOSHA_USER" "$KROKOSHA_ETC"
+# The data root: everything that cannot be rebuilt (docs/architecture.md §6).
+install -d -m 0755 -o root -g root "$DATA_DIR"
+install -d -m 0750 -o root -g "$KROKOSHA_USER" "$DATA_DIR/config"
+install -d -m 0700 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$DATA_DIR/attachments"
+install -d -m 0700 -o root -g root "$DATA_DIR/backups"
+# Owned by the containers' own users; created without touching existing permissions.
+mkdir -p "$DATA_DIR/mysql" "$DATA_DIR/redis"
+# Settings and secrets belong to the data too: /etc/krokosha is a link into the data root.
+if [[ -d $KROKOSHA_ETC && ! -L $KROKOSHA_ETC ]]; then
+  cp -a "$KROKOSHA_ETC/." "$DATA_DIR/config/"
+  rm -rf "$KROKOSHA_ETC"
+fi
+ln -sfn "$DATA_DIR/config" "$KROKOSHA_ETC"
 install -d -m 0755 -o root -g adm /var/log/krokosha
-ok "$KROKOSHA_ROOT, $KROKOSHA_STATE, $WWW, $KROKOSHA_ETC"
+ok "$KROKOSHA_ROOT, $KROKOSHA_STATE, $WWW"
+ok "data root: $DATA_DIR ($KROKOSHA_ETC → $DATA_DIR/config)"
 
 # ---------------------------------------------------------------------------------------------
 step "Build toolchain (official tarballs, verified by SHA-256)"
@@ -297,6 +322,26 @@ env_set REPO_BRANCH "$REPO_BRANCH"
 env_set FIREWALL_ALLOW "${EXTRA_PORTS[*]:-}"
 env_set SKIP_FIREWALL "$SKIP_FIREWALL"
 env_set SKIP_DNS_CHECK "$SKIP_DNS"
+env_set KROKOSHA_DATA "$DATA_DIR"
+env_set KROKOSHA_CONTENT_DIR "$KROKOSHA_REPO/content"
+
+# Generated once and kept: changing them later would lock the services out of their own data.
+env_default() { [[ -n $(env_get "$1") ]] || env_set "$1" "$2"; }
+env_default MYSQL_ADDR 127.0.0.1:3306
+env_default MYSQL_DATABASE krokosha
+env_default MYSQL_USER krokosha
+env_default MYSQL_PASSWORD "$(openssl rand -hex 24)"
+env_default REDIS_PASSWORD "$(openssl rand -hex 24)"
+env_set REDIS_URL "redis://:$(env_get REDIS_PASSWORD)@127.0.0.1:6379/0"
+# The admin area hides behind a random path (brief B6); it is shown at the end of the installation.
+env_default ADMIN_PATH "/_$(openssl rand -hex 5)"
+# The database root password is needed by the container only — the API never sees it.
+MYSQL_ROOT_ENV="$KROKOSHA_ETC/mysql-root.env"
+if [[ ! -s $MYSQL_ROOT_ENV ]]; then
+  (umask 077 && printf 'MYSQL_ROOT_PASSWORD=%s\n' "$(openssl rand -hex 24)" >"$MYSQL_ROOT_ENV")
+fi
+chmod 0600 "$MYSQL_ROOT_ENV"
+chown root:root "$MYSQL_ROOT_ENV"
 if [[ -n ${GITHUB_TOKEN:-} ]]; then
   env_set GITHUB_TOKEN "$GITHUB_TOKEN"
 elif [[ -z $(env_get GITHUB_TOKEN) ]]; then
@@ -306,18 +351,65 @@ fi
 ok "saved (mode 600, readable by root only)"
 
 # ---------------------------------------------------------------------------------------------
-step "Building the CLI and the site"
+step "Database and cache (MySQL and Redis in Docker)"
 # ---------------------------------------------------------------------------------------------
 
+systemctl enable --quiet --now docker
+compose() {
+  docker compose --env-file "$KROKOSHA_ENV" --env-file "$MYSQL_ROOT_ENV" \
+    --file "$DEPLOY/compose/compose.yaml" "$@"
+}
+compose pull --quiet
+# --wait returns when both containers report healthy.
+compose up --detach --wait --remove-orphans || {
+  compose ps >&2 || true
+  compose logs --tail 40 >&2 || true
+  die "MySQL or Redis did not become healthy (log above)"
+}
+ok "MySQL and Redis are healthy, data in $DATA_DIR/mysql and $DATA_DIR/redis, reachable from this host only"
+
+# ---------------------------------------------------------------------------------------------
+step "Building the programs and the site"
+# ---------------------------------------------------------------------------------------------
+
+as_site_user mkdir -p "$KROKOSHA_STATE/cache/bin"
 as_site_user env GOCACHE="$KROKOSHA_STATE/cache/go-build" GOPATH="$KROKOSHA_STATE/cache/go" GOFLAGS=-mod=readonly GOTOOLCHAIN=local CGO_ENABLED=0 \
-  go -C "$KROKOSHA_REPO/api" build -trimpath -ldflags '-s -w' -o "$KROKOSHA_STATE/cache/krokosha-cli" ./cmd/krokosha-cli
-install -m 0755 -o root -g root "$KROKOSHA_STATE/cache/krokosha-cli" "$KROKOSHA_ROOT/bin/krokosha-cli"
-ok "$KROKOSHA_ROOT/bin/krokosha-cli"
+  go -C "$KROKOSHA_REPO/api" build -trimpath -ldflags '-s -w' -o "$KROKOSHA_STATE/cache/bin/" ./cmd/krokosha-cli ./cmd/krokosha-api
+install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-cli" "$KROKOSHA_ROOT/bin/krokosha-cli" 0755 || true
+api_changed=no
+install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
+ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
 for unit in krokosha-sync.service krokosha-sync.timer; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
 done
+install_if_changed "$DEPLOY/systemd/krokosha-api.service" /etc/systemd/system/krokosha-api.service && api_changed=yes
+# The unit is static; the one path that depends on --data-dir goes into a drop-in.
+api_dropin=$(mktemp)
+printf '[Service]\nReadWritePaths=-%s/attachments\n' "$DATA_DIR" >"$api_dropin"
+install_if_changed "$api_dropin" /etc/systemd/system/krokosha-api.service.d/data-dir.conf && api_changed=yes
+rm -f "$api_dropin"
 systemctl daemon-reload
+
+# The API applies database migrations when it starts.
+systemctl enable --quiet krokosha-api.service
+if [[ $api_changed == yes ]] || ! systemctl is-active --quiet krokosha-api.service; then
+  systemctl restart krokosha-api.service
+fi
+api_ok=no
+for _ in $(seq 1 60); do
+  if curl --silent --fail --max-time 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+    api_ok=yes
+    break
+  fi
+  sleep 2
+done
+if [[ $api_ok != yes ]]; then
+  journalctl -u krokosha-api.service -n 40 --no-pager >&2 || true
+  die "the API did not come up (log above)"
+fi
+ok "API is up: $(curl --silent --max-time 3 http://127.0.0.1:8080/api/health)"
+
 # The first build goes through the same unit as every later one: same user, same sandbox.
 if ! systemctl start krokosha-sync.service; then
   journalctl -u krokosha-sync.service -n 40 --no-pager >&2 || true
@@ -339,10 +431,16 @@ cat "$DEPLOY/nginx/snippets/krokosha-gzip.conf" >"$tmp"
 [[ $HAVE_BROTLI == yes ]] && cat "$DEPLOY/nginx/snippets/krokosha-brotli.conf" >>"$tmp"
 install_if_changed "$tmp" /etc/nginx/snippets/krokosha-compression.conf || true
 
-write_headers() { # with_hsts
-  cat "$DEPLOY/nginx/snippets/krokosha-headers.conf" >"$tmp"
-  [[ $1 == yes ]] && cat "$DEPLOY/nginx/snippets/krokosha-hsts.conf" >>"$tmp"
-  install_if_changed "$tmp" /etc/nginx/snippets/krokosha-headers.conf || true
+install_if_changed "$DEPLOY/nginx/snippets/krokosha-headers.conf" /etc/nginx/snippets/krokosha-headers.conf || true
+install_if_changed "$DEPLOY/nginx/snippets/krokosha-proxy.conf" /etc/nginx/snippets/krokosha-proxy.conf || true
+
+write_headers() { # with_hsts: HSTS only with a real certificate, otherwise an empty snippet
+  if [[ $1 == yes ]]; then
+    cat "$DEPLOY/nginx/snippets/krokosha-hsts.conf" >"$tmp"
+  else
+    printf '# HSTS is off: the certificate is not a publicly trusted one.\n' >"$tmp"
+  fi
+  install_if_changed "$tmp" /etc/nginx/snippets/krokosha-hsts.conf || true
 }
 
 # SERVER_NAMES, TLS_CERT and TLS_KEY are read by render() through the @@NAME@@ placeholders.
@@ -505,6 +603,8 @@ cat >&2 <<EOF
   Roll back:  sudo $KROKOSHA_REPO/deploy/rollback.sh
   Logs:       journalctl -u krokosha-sync.service, /var/log/krokosha/
   Settings:   $KROKOSHA_ENV
+  Data:       $DATA_DIR   (database, cache, settings — copy this directory to move the site)
+  API:        $SITE_URL/api/health
 
 EOF
 }

@@ -11,9 +11,9 @@ Source of [krokosha.xyz](https://krokosha.xyz), the personal site of **Krokosha*
 | Frontend | Astro + TypeScript, static HTML, islands for interactivity |
 | Motion | GSAP + ScrollTrigger, Lenis, Canvas/WebGL (hero), Lottie/Rive (characters) |
 | API | Go: a single binary under systemd (analytics, admin, leads, Telegram bot, mail) |
-| Storage | SQLite (WAL) |
+| Storage | MySQL 8.4 (source of truth) + Redis (rate limits, live data, buffers), both in Docker; all data in one directory for easy migration |
 | Edge | Nginx + Let's Encrypt (Certbot) |
-| Mail | docker-mailserver (Postfix, Dovecot, Rspamd, OpenDKIM) |
+| Mail | docker-mailserver (Postfix, Dovecot, Rspamd) on the same server |
 
 Everything shown on the site (projects, avatar, years of experience) is baked into static HTML at build time. A timer re-syncs GitHub data and rebuilds every 6 hours.
 
@@ -48,6 +48,7 @@ See [web/README.md](web/README.md) for details.
 - [docs/brief/MASTER_PROMPT.md](docs/brief/MASTER_PROMPT.md): full project brief (RU)
 - [docs/contract.md](docs/contract.md): data contract between design and backend (RU)
 - [docs/architecture.md](docs/architecture.md): architecture decisions (RU)
+- [docs/roadmap.md](docs/roadmap.md): what is done and what is next (RU)
 - [docs/design/CLAUDE_DESIGN_PROMPT.md](docs/design/CLAUDE_DESIGN_PROMPT.md): the brief for the design agent (RU)
 
 ## Contributing

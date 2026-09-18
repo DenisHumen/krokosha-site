@@ -27,6 +27,10 @@ linters:
         - (*os.File).Close
         - (io.Closer).Close
         - os.Remove
+        - (*database/sql.DB).Close
+        - (*database/sql.Conn).Close
+        - (*database/sql.Rows).Close
+        - (*github.com/DenisHumen/krokosha-site/api/internal/cache.Cache).Close
   exclusions:
     rules:
       - path: _test\.go

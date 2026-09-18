@@ -1,0 +1,40 @@
+# MySQL tuned for a small server: about 300 MB of RAM instead of the default 500+
+# (docs/architecture.md §7). The workload is a personal site — a few writes per second at most.
+[mysqld]
+# The biggest savings
+performance_schema        = OFF
+innodb_buffer_pool_size   = 128M
+innodb_log_buffer_size    = 8M
+innodb_redo_log_capacity  = 64M
+mysqlx                    = OFF
+
+# No replication here: binary logs would only eat disk
+skip-log-bin
+
+# Connections: the API keeps a pool of 12, plus room for backups and a console
+max_connections           = 40
+thread_cache_size         = 8
+table_open_cache          = 256
+table_definition_cache    = 400
+
+# Per-connection buffers
+sort_buffer_size          = 512K
+read_buffer_size          = 256K
+read_rnd_buffer_size      = 256K
+join_buffer_size          = 256K
+tmp_table_size            = 16M
+max_heap_table_size       = 16M
+key_buffer_size           = 8M
+
+# Durability first: a lead must never be lost
+innodb_flush_log_at_trx_commit = 1
+innodb_flush_method       = O_DIRECT
+
+# Text: full Unicode (emoji in messages), time: UTC everywhere
+character-set-server      = utf8mb4
+collation-server          = utf8mb4_unicode_ci
+default-time-zone         = '+00:00'
+
+# Clients are local: no DNS lookups
+skip-name-resolve
+host_cache_size           = 0
