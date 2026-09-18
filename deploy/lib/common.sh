@@ -92,3 +92,8 @@ env_set() {
 valid_domain() { [[ $1 =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]]; }
 valid_email()  { [[ $1 =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; }
 valid_port()   { [[ $1 =~ ^[0-9]{1,5}(:[0-9]{1,5})?/(tcp|udp)$ ]]; }
+# The same rule as the API's (api/internal/config/env.go), minus the paths the site itself uses.
+valid_admin_path() {
+  [[ $1 =~ ^/[A-Za-z0-9_-]{4,64}$ ]] || return 1
+  case ${1,,} in /api | /_astro | /assets | /play | /privacy | /404 | /fonts) return 1 ;; esac
+}

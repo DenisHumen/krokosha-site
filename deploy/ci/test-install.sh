@@ -30,9 +30,16 @@ header() {
 }
 body() { "${CURL[@]}" "$@"; }
 
+# The first administrator is created without a terminal: the password comes from a file.
+ADMIN_PATH=/_ci-Admin42
+ADMIN_PASSWORD='ci: correct horse battery staple'
+ADMIN_PASSWORD_FILE=$(mktemp)
+printf '%s\n' "$ADMIN_PASSWORD" >"$ADMIN_PASSWORD_FILE"
+
 install_site() {
   "$SOURCE/deploy/install.sh" --domain "$DOMAIN" --email ci@example.com \
-    --repo "$SOURCE" --branch ci-test --tls selfsigned --skip-dns-check --yes "$@"
+    --repo "$SOURCE" --branch ci-test --tls selfsigned --skip-dns-check --yes \
+    --admin-path "$ADMIN_PATH" --admin-login ci-admin --admin-password-file "$ADMIN_PASSWORD_FILE" "$@"
 }
 
 echo "::group::A WireGuard interface that the installer must not break"
@@ -127,6 +134,66 @@ check "with its click event" test "$(sql "SELECT COUNT(*) FROM analytics_events 
 check "paid search traffic is recognised" test "$(sql "SELECT CONCAT(referrer_kind, ' ', is_ad, ' ', max_scroll) FROM analytics_pageviews")" = "search 1 50"
 check "the address is stored truncated" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT ip_prefix FROM analytics_pageviews\"' 2>/dev/null | grep -qE '/(24|48)$'"
 
+echo "Admin area"
+ADMIN="https://$DOMAIN$ADMIN_PATH"
+JAR=$(mktemp)
+admin_get() { "${CURL[@]}" --cookie "$JAR" --user-agent "$BROWSER" "$@"; }
+admin_post() { # admin_post PATH [curl options…] → HTTP status; keeps the session cookie in $JAR
+  local path=$1
+  shift
+  "${CURL[@]}" --output /dev/null --write-out '%{http_code}' --cookie "$JAR" --cookie-jar "$JAR" \
+    --user-agent "$BROWSER" --request POST "$ADMIN$path" "$@"
+}
+csrf() { admin_get "$ADMIN/account" | sed -n 's/.*name="csrf" value="\([^"]*\)".*/\1/p' | head -n 1; }
+check "the secret path is the one asked for" grep -qx "ADMIN_PATH=$ADMIN_PATH" /etc/krokosha/env
+check "the installer created the administrator" grep -q '^ci-admin ' <(krokosha-cli admin list)
+check "login form is served under the secret path" grep -q 'name="password"' <(body "$ADMIN/login")
+check "the admin area is not indexed" grep -qi noindex <(header "$ADMIN/login" x-robots-tag)
+check "the admin area is never cached" grep -qi no-store <(header "$ADMIN/login" cache-control)
+csp=$(header "$ADMIN/login" content-security-policy)
+check "its CSP takes scripts and styles from the site only" grep -q "script-src 'self'; style-src 'self'" <<<"$csp"
+check "its CSP allows no inline code" bash -c "! grep -q unsafe-inline" <<<"$csp"
+check "its stylesheet is served" test "$(status "$ADMIN/static/admin.css")" = 200
+check "the bare secret path redirects into the area" test "$(header "$ADMIN" location)" = "$ADMIN_PATH/"
+check "anonymous visitors are sent to the login form" test "$(header "$ADMIN/" location)" = "$ADMIN_PATH/login"
+check "a guessed path is an ordinary 404" test "$(status "https://$DOMAIN/_admin/login")" = 404
+check "plain HTTP never reaches the admin area" test "$(header "http://$DOMAIN$ADMIN_PATH/login" location)" = "$ADMIN/login"
+check "the secret path stays out of the traffic log" bash -c "! grep -q -- '$ADMIN_PATH' /var/log/krokosha/nginx-access.json.log"
+check "a wrong password is refused" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode 'password=wrong wrong wrong')" = 401
+check "the right password signs in" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
+check "the session cookie is Secure, HttpOnly and host-only" grep -qP '^#HttpOnly_\S+\tFALSE\t/\tTRUE\t\d+\t__Host-ks\t' "$JAR"
+check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADMIN/")
+check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
+check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
+check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303
+check "the QR code for the authenticator is a PNG" grep -qi image/png <(admin_get --output /dev/null --dump-header - "$ADMIN/account/totp/qr.png")
+check "signing out ends the session" test "$(admin_post /logout --data-urlencode "csrf=$(csrf)")" = 303
+check "the old cookie is worthless afterwards" test "$(header "$ADMIN/" location)" = "$ADMIN_PATH/login"
+
+check "krokosha-cli is on the PATH" bash -c "command -v krokosha-cli >/dev/null"
+check "CLI: a second administrator" bash -c "printf '%s\n' 'another long password' | krokosha-cli admin create Second --password-stdin >/dev/null && krokosha-cli admin list | grep -q '^second '"
+check "CLI: a short password is refused" bash -c "! printf 'short\n' | krokosha-cli admin create third --password-stdin >/dev/null 2>&1"
+check "CLI: an account can be blocked" krokosha-cli admin disable second
+check "a blocked account cannot sign in" test "$(admin_post /login --data-urlencode login=second --data-urlencode 'password=another long password')" = 401
+check "passwords are stored as argon2id hashes" test "$(sql "SELECT COUNT(*) FROM admin_users WHERE password_hash LIKE '_argon2id_v=19_m=65536,t=3,p=2_%'")" = 2
+check "sign-ins and failures are in the audit log" test "$(sql "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action IN ('admin.login', 'admin.login-failed', 'admin.create')")" = 3
+
+# Two independent brakes. The API's own: ten attempts per login in 15 minutes (asked directly,
+# past nginx). And nginx's: the login form answers a flood with 429 before the API sees it.
+api_login() {
+  curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --user-agent "$BROWSER" \
+    --request POST "http://127.0.0.1:8080$ADMIN_PATH/login" --data-urlencode login=ci-admin --data-urlencode "password=$1"
+}
+last=0
+for _ in $(seq 1 12); do last=$(api_login 'guess guess guess'); done
+check "the API cuts off password guessing" test "$last" = 429
+check "even the right password waits then" test "$(api_login "$ADMIN_PASSWORD")" = 429
+for _ in $(seq 1 25); do last=$(status "$ADMIN/login"); done
+check "nginx limits the login form on its own" test "$last" = 429
+check "the limit does not touch the site itself" test "$(status "https://$DOMAIN/")" = 200
+check "fail2ban watches the admin area" bash -c "fail2ban-client status krokosha-admin | grep -q nginx-admin.json.log"
+check "fail2ban recognises the failed logins" bash -c "fail2ban-regex /var/log/krokosha/nginx-admin.json.log /etc/fail2ban/filter.d/krokosha-admin.conf | grep -qE '^Failregex: [1-9][0-9]* total'"
+
 echo "Firewall"
 check "UFW is active" bash -c "ufw status | grep -q 'Status: active'"
 check "SSH stays open" bash -c "ufw status | grep -qE '^22/tcp +ALLOW'"
@@ -150,6 +217,8 @@ check "API still answers" grep -q '"status":"ok"' <(curl -s --max-time 5 http://
 check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/krokosha/env
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
 check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
+check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
+check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 
 echo "::group::update.sh"
@@ -171,6 +240,8 @@ echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
+check "the CLI link and the fail2ban filter are gone" bash -c "[[ ! -e /usr/local/bin/krokosha-cli && ! -L /usr/local/bin/krokosha-cli && ! -e /etc/fail2ban/filter.d/krokosha-admin.conf ]]"
+check "fail2ban still runs" systemctl is-active --quiet fail2ban
 check "user is gone" bash -c "! id krokosha >/dev/null 2>&1"
 check "nginx configuration is still valid" nginx -t
 

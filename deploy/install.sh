@@ -35,6 +35,12 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
   --skip-dns-check       do not verify that DOMAIN points to this server
   --data-dir DIR         where everything that must survive lives: database, mail, settings
                          (default: /srv/krokosha). Copy this one directory to move the site
+  --admin-path PATH      secret path of the admin area, e.g. /_k7f3a9
+                         (default: a random one, generated once and kept)
+  --admin-login LOGIN    login of the first administrator (asked for if there is none yet)
+  --admin-password-file FILE
+                         take that administrator's password from the first line of FILE instead
+                         of asking for it without echo — for automation; at least 12 characters
   --repo URL             git repository to install from (default: $DEFAULT_REPO)
   --branch NAME          branch or tag (default: main)
   --from-env             take every setting from $KROKOSHA_ENV (what update.sh does)
@@ -47,6 +53,7 @@ EOF
 
 DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
+ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 EXTRA_PORTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -60,6 +67,9 @@ while [[ $# -gt 0 ]]; do
     --skip-firewall) SKIP_FIREWALL=yes; shift ;;
     --skip-dns-check) SKIP_DNS=yes; shift ;;
     --data-dir) DATA_DIR=${2:?--data-dir needs a value}; shift 2 ;;
+    --admin-path) ADMIN_PATH=${2:?--admin-path needs a value}; shift 2 ;;
+    --admin-login) ADMIN_LOGIN=${2:?--admin-login needs a value}; shift 2 ;;
+    --admin-password-file) ADMIN_PASSWORD_FILE=${2:?--admin-password-file needs a value}; shift 2 ;;
     --repo) REPO_URL=${2:?--repo needs a value}; shift 2 ;;
     --branch) REPO_BRANCH=${2:?--branch needs a value}; shift 2 ;;
     --from-env) FROM_ENV=yes; shift ;;
@@ -101,6 +111,10 @@ fi
 : "${SKIP_DNS:=no}"
 : "${DATA_DIR:=$(env_get KROKOSHA_DATA)}"
 : "${DATA_DIR:=/srv/krokosha}"
+# Generated once and kept: bookmarks of the owner point there.
+: "${ADMIN_PATH:=$(env_get ADMIN_PATH)}"
+# (od, not openssl: on a bare server openssl arrives only with the packages below.)
+: "${ADMIN_PATH:=/_$(od -An -N5 -tx1 /dev/urandom | tr -dc '0-9a-f')}"
 : "${TLS_MODE:=letsencrypt}"
 : "${REPO_URL:=$DEFAULT_REPO}"
 : "${REPO_BRANCH:=main}"
@@ -117,6 +131,11 @@ DATA_DIR=${DATA_DIR%/}
 for port in "${EXTRA_PORTS[@]}"; do
   valid_port "$port" || die "--allow expects PORT/tcp or PORT/udp, got: $port"
 done
+ADMIN_PATH=${ADMIN_PATH%/}
+valid_admin_path "$ADMIN_PATH" || die "--admin-path must look like /_k7f3a9: a slash, then 4 to 64 letters, digits, - or _ (and not a path of the site itself)"
+[[ -z $ADMIN_LOGIN || $ADMIN_LOGIN =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$ ]] || die "--admin-login: 3 to 64 latin letters, digits, dots, - or _"
+[[ -z $ADMIN_PASSWORD_FILE || -r $ADMIN_PASSWORD_FILE ]] || die "--admin-password-file: cannot read $ADMIN_PASSWORD_FILE"
+[[ -z $ADMIN_PASSWORD_FILE || -n $ADMIN_LOGIN ]] || die "--admin-password-file needs --admin-login"
 
 WWW=$KROKOSHA_WWW
 SITE_URL="https://$DOMAIN"
@@ -313,6 +332,8 @@ DEPLOY="$KROKOSHA_REPO/deploy"
 step "Settings ($KROKOSHA_ENV)"
 # ---------------------------------------------------------------------------------------------
 
+# The API reads these settings when it starts: if they change, it has to be restarted.
+env_before=$(sha256sum "$KROKOSHA_ENV" 2>/dev/null || true)
 env_set DOMAIN "$DOMAIN"
 env_set ADMIN_EMAIL "$ADMIN_EMAIL"
 env_set SITE_URL "$SITE_URL"
@@ -333,8 +354,8 @@ env_default MYSQL_USER krokosha
 env_default MYSQL_PASSWORD "$(openssl rand -hex 24)"
 env_default REDIS_PASSWORD "$(openssl rand -hex 24)"
 env_set REDIS_URL "redis://:$(env_get REDIS_PASSWORD)@127.0.0.1:6379/0"
-# The admin area hides behind a random path (brief B6); it is shown at the end of the installation.
-env_default ADMIN_PATH "/_$(openssl rand -hex 5)"
+# The admin area hides behind a secret path (brief B6); it is shown at the end of the installation.
+env_set ADMIN_PATH "$ADMIN_PATH"
 # The database root password is needed by the container only — the API never sees it.
 MYSQL_ROOT_ENV="$KROKOSHA_ETC/mysql-root.env"
 if [[ ! -s $MYSQL_ROOT_ENV ]]; then
@@ -348,6 +369,8 @@ elif [[ -z $(env_get GITHUB_TOKEN) ]]; then
   env_set GITHUB_TOKEN ""
   warn "no GITHUB_TOKEN: the GitHub API allows 60 requests per hour, enough thanks to caching. To raise it, put a read-only token into $KROKOSHA_ENV"
 fi
+ENV_CHANGED=no
+[[ $(sha256sum "$KROKOSHA_ENV") == "$env_before" ]] || ENV_CHANGED=yes
 ok "saved (mode 600, readable by root only)"
 
 # ---------------------------------------------------------------------------------------------
@@ -376,7 +399,9 @@ as_site_user mkdir -p "$KROKOSHA_STATE/cache/bin"
 as_site_user env GOCACHE="$KROKOSHA_STATE/cache/go-build" GOPATH="$KROKOSHA_STATE/cache/go" GOFLAGS=-mod=readonly GOTOOLCHAIN=local CGO_ENABLED=0 \
   go -C "$KROKOSHA_REPO/api" build -trimpath -ldflags '-s -w' -o "$KROKOSHA_STATE/cache/bin/" ./cmd/krokosha-cli ./cmd/krokosha-api
 install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-cli" "$KROKOSHA_ROOT/bin/krokosha-cli" 0755 || true
-api_changed=no
+# `sudo krokosha-cli admin passwd LOGIN` should simply work.
+ln -sfn "$KROKOSHA_ROOT/bin/krokosha-cli" /usr/local/bin/krokosha-cli
+api_changed=$ENV_CHANGED
 install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
@@ -410,6 +435,45 @@ if [[ $api_ok != yes ]]; then
 fi
 ok "API is up: $(curl --silent --max-time 3 http://127.0.0.1:8080/api/health)"
 
+# ---------------------------------------------------------------------------------------------
+step "Administrator of the admin area"
+# ---------------------------------------------------------------------------------------------
+
+cli() { "$KROKOSHA_ROOT/bin/krokosha-cli" "$@"; }
+cli_errors=$(mktemp)
+admins=$(cli admin list 2>"$cli_errors") || {
+  cat "$cli_errors" >&2
+  die "cannot read the list of administrators (message above)"
+}
+rm -f "$cli_errors"
+if [[ -n $admins ]]; then
+  ok "accounts: $(awk '{print $1}' <<<"$admins" | paste -sd ' ')"
+  [[ -z $ADMIN_LOGIN ]] || grep -qiE "^$ADMIN_LOGIN " <<<"$admins" ||
+    warn "--admin-login $ADMIN_LOGIN ignored: the first administrator exists already. More accounts: sudo krokosha-cli admin create LOGIN"
+elif [[ -n $ADMIN_PASSWORD_FILE ]]; then
+  head -n 1 "$ADMIN_PASSWORD_FILE" | cli admin create "$ADMIN_LOGIN" --password-stdin >/dev/null ||
+    die "the administrator was not created (message above)"
+  ok "administrator $ADMIN_LOGIN created, password taken from $ADMIN_PASSWORD_FILE — delete that file now"
+elif [[ $ASSUME_YES == no && -t 0 ]]; then
+  [[ -n $ADMIN_LOGIN ]] || ask ADMIN_LOGIN "Login for the admin area (3 to 64 latin letters, digits, dots, - or _)"
+  log "Password for $ADMIN_LOGIN: at least 12 characters, it is not shown while you type."
+  created=no
+  for _ in 1 2 3; do
+    if cli admin create "$ADMIN_LOGIN" >/dev/null; then
+      created=yes
+      break
+    fi
+    warn "let's try again"
+  done
+  if [[ $created == yes ]]; then
+    ok "administrator $ADMIN_LOGIN created. Recommended next: two-factor authentication (admin area → Account)"
+  else
+    warn "no administrator yet. Create one later: sudo krokosha-cli admin create LOGIN"
+  fi
+else
+  warn "no administrator yet, and nobody to ask for a password. Create one: sudo krokosha-cli admin create LOGIN"
+fi
+
 # The first build goes through the same unit as every later one: same user, same sandbox.
 if ! systemctl start krokosha-sync.service; then
   journalctl -u krokosha-sync.service -n 40 --no-pager >&2 || true
@@ -433,6 +497,9 @@ install_if_changed "$tmp" /etc/nginx/snippets/krokosha-compression.conf || true
 
 install_if_changed "$DEPLOY/nginx/snippets/krokosha-headers.conf" /etc/nginx/snippets/krokosha-headers.conf || true
 install_if_changed "$DEPLOY/nginx/snippets/krokosha-proxy.conf" /etc/nginx/snippets/krokosha-proxy.conf || true
+install_if_changed "$DEPLOY/nginx/snippets/krokosha-admin.conf" /etc/nginx/snippets/krokosha-admin.conf || true
+# The log of the admin area exists from the start: fail2ban refuses to start a jail without its file.
+[[ -f /var/log/krokosha/nginx-admin.json.log ]] || install -m 0640 -o www-data -g adm /dev/null /var/log/krokosha/nginx-admin.json.log
 
 write_headers() { # with_hsts: HSTS only with a real certificate, otherwise an empty snippet
   if [[ $1 == yes ]]; then
@@ -443,7 +510,7 @@ write_headers() { # with_hsts: HSTS only with a real certificate, otherwise an e
   install_if_changed "$tmp" /etc/nginx/snippets/krokosha-hsts.conf || true
 }
 
-# SERVER_NAMES, TLS_CERT and TLS_KEY are read by render() through the @@NAME@@ placeholders.
+# SERVER_NAMES, ADMIN_PATH, TLS_CERT and TLS_KEY are read by render() through the @@NAME@@ placeholders.
 # shellcheck disable=SC2034
 SERVER_NAMES=$DOMAIN
 [[ $SERVE_WWW == yes ]] && SERVER_NAMES="$DOMAIN www.$DOMAIN"
@@ -580,12 +647,15 @@ fi
 step "fail2ban"
 # ---------------------------------------------------------------------------------------------
 
-if install_if_changed "$DEPLOY/fail2ban/krokosha.conf" /etc/fail2ban/jail.d/krokosha.conf; then
+fail2ban_changed=no
+install_if_changed "$DEPLOY/fail2ban/filter-krokosha-admin.conf" /etc/fail2ban/filter.d/krokosha-admin.conf && fail2ban_changed=yes
+install_if_changed "$DEPLOY/fail2ban/krokosha.conf" /etc/fail2ban/jail.d/krokosha.conf && fail2ban_changed=yes
+if [[ $fail2ban_changed == yes ]]; then
   systemctl enable --quiet fail2ban || true
   systemctl restart fail2ban || true
 fi
 if systemctl is-active --quiet fail2ban; then
-  ok "sshd jail is on"
+  ok "jails are on: sshd, krokosha-admin (failed logins to the admin area)"
 else
   warn "fail2ban is not running — check: journalctl -u fail2ban. The site itself is not affected"
 fi
@@ -594,9 +664,17 @@ fi
 step "Done"
 # ---------------------------------------------------------------------------------------------
 
+if [[ $TLS_MODE == none ]]; then
+  admin_url="not served: the admin area needs HTTPS (--tls letsencrypt or selfsigned)"
+else
+  admin_url="$SITE_URL$ADMIN_PATH/   (keep this address to yourself)"
+fi
+
 cat >&2 <<EOF
 
   Site:       $SITE_URL
+  Admin area: $admin_url
+  Accounts:   sudo krokosha-cli admin list | create LOGIN | passwd LOGIN | totp-reset LOGIN
   Release:    $(readlink -f "$WWW/current")
   Rebuild:    sudo systemctl start krokosha-sync.service     (runs by itself every 6 hours)
   Update:     sudo $KROKOSHA_REPO/deploy/update.sh

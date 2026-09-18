@@ -1,6 +1,6 @@
 # deploy/ — установка и эксплуатация на VPS
 
-**Статус:** устанавливаются сайт (nginx, сертификат, сборка релизов по таймеру), MySQL и Redis в Docker, API, фаервол, fail2ban. Админка, заявки, бот и почта добавятся в этот же установщик следующими шагами ([docs/roadmap.md](../docs/roadmap.md)).
+**Статус:** устанавливаются сайт (nginx, сертификат, сборка релизов по таймеру), MySQL и Redis в Docker, API, админка с первым администратором, фаервол, fail2ban. Заявки, бот и почта добавятся в этот же установщик следующими шагами ([docs/roadmap.md](../docs/roadmap.md)).
 
 > На VPS пока ничего не выкладывается — проверяем на локальном стенде (ниже).
 
@@ -13,7 +13,7 @@ git clone https://github.com/DenisHumen/krokosha-site.git
 sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@example.com
 ```
 
-Скрипт спросит согласие с условиями Let's Encrypt (или `--agree-tos`). Повторный запуск ничего не ломает: он приводит сервер к тому же состоянию. Все параметры — `install.sh --help`.
+Скрипт спросит согласие с условиями Let's Encrypt (или `--agree-tos`), затем логин и пароль первого администратора (пароль — без эха, дважды, не короче 12 символов). В конце печатает адрес админки — он секретный, сохраните его. Повторный запуск ничего не ломает: он приводит сервер к тому же состоянию. Все параметры — `install.sh --help`.
 
 | Что | Где |
 |---|---|
@@ -24,8 +24,9 @@ sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@exampl
 | Настройки и секреты | `/etc/krokosha` — ссылка на `/srv/krokosha/config`. `env` — `600 root`, описание в [`env/.env.example`](env/.env.example); пароль root MySQL лежит отдельно (`mysql-root.env`), API его не видит |
 | MySQL и Redis | Docker Compose ([`compose/compose.yaml`](compose/compose.yaml)): слушают только `127.0.0.1`, жёсткие лимиты памяти, MySQL настроен на малую память ([`compose/mysql/krokosha.cnf`](compose/mysql/krokosha.cnf)) |
 | API | `krokosha-api.service`: `127.0.0.1:8080`, за nginx (`/api/`), миграции базы применяет при старте |
+| Админка | `https://<домен><ADMIN_PATH>/` — путь случайный (или `--admin-path`), хранится в `/etc/krokosha/env`. Только HTTPS. Учётные записи: `sudo krokosha-cli admin …` ([api/README.md](../api/README.md)) |
 | Кэши | `/var/lib/krokosha` — npm, Go, ответы GitHub; можно удалить без потерь |
-| Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог, 30 дней) |
+| Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог сайта и отдельный — админки, 30 дней) |
 | Пользователь | `krokosha` — системный, без шелла и пароля; от него идут sync и сборка |
 
 ## Локальный стенд
@@ -41,6 +42,8 @@ deploy/docker/staging/staging.sh down     # убрать стенд
 ```
 
 Нужен Docker (на Windows — Docker Desktop, запускать из Git Bash или WSL). Сертификат самоподписанный: браузер предупредит один раз. WireGuard в ядре WSL2 отсутствует, поэтому эта часть проверки выполняется только в CI.
+
+Админка стенда — `https://krokosha.localhost/_staging/`, логин `dev`; пароль случайный, `staging.sh up` печатает его в конце.
 
 ## Обслуживание
 
@@ -72,6 +75,17 @@ npm и сборка запускаются с **чистым окружение�
 - Заголовки безопасности — [`nginx/snippets/krokosha-headers.conf`](nginx/snippets/krokosha-headers.conf). CSP с хэшами скриптов и стилей приходит из сборки (`<meta>`), заголовок добавляет `frame-ancestors`. HSTS — только с настоящим сертификатом.
 - gzip и, если в системе есть модуль, brotli.
 - Access-лог в JSON — источник для экрана «Трафик сервера» в админке.
+- **Админка** проксируется только по HTTPS и только под секретным путём. Её запросы пишутся в отдельный лог (`nginx-admin.json.log`): секретный путь и клики владельца не попадают в статистику трафика. На форму входа — свой лимит: 20 запросов в минуту с адреса (проверка пароля намеренно дорогая).
+
+## fail2ban
+
+- `sshd` — вход по SSH только по ключам, jail просто убирает шум.
+- `krokosha-admin` — неудачные входы в админку: 10 за 15 минут → бан на час (повторные — дольше, до недели), только для портов 80/443. Источник — лог админки в nginx (ответы 401 и 429 на форму входа); API полный адрес нигде не хранит.
+
+```bash
+sudo fail2ban-client status krokosha-admin              # кто забанен
+sudo fail2ban-client set krokosha-admin unbanip АДРЕС   # снять бан (например, свой)
+```
 
 ## Фаервол и то, что уже живёт на сервере
 
@@ -84,7 +98,7 @@ npm и сборка запускаются с **чистым окружение�
 
 ## Проверка в CI
 
-Job `deploy`: shellcheck всех скриптов и [`ci/test-install.sh`](ci/test-install.sh) — настоящая установка на чистой Ubuntu 24.04 (одноразовая VM GitHub) с самоподписанным сертификатом и тестовым WireGuard-интерфейсом: сайт на трёх языках, редиректы, заголовки, кэш, сжатие, фаервол, повторный запуск, `update.sh`, откат, удаление.
+Job `deploy`: shellcheck всех скриптов и [`ci/test-install.sh`](ci/test-install.sh) — настоящая установка на чистой Ubuntu 24.04 (одноразовая VM GitHub) с самоподписанным сертификатом и тестовым WireGuard-интерфейсом: сайт на трёх языках, редиректы, заголовки, кэш, сжатие, база и API, аналитика, админка (вход, cookie, CSRF, лимиты, fail2ban, CLI), фаервол, повторный запуск, `update.sh`, откат, удаление.
 
 ## Структура
 
@@ -102,13 +116,13 @@ deploy/
 ├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
 ├── systemd/            krokosha-api.service, krokosha-sync.service + .timer; позже — krokosha-certwatch
 ├── logrotate/          ротация access-лога: 30 дней
-├── fail2ban/           jail для sshd; позже — админка и почта
+├── fail2ban/           jail для sshd и для входа в админку (+ фильтр); позже — почта
 ├── env/                .env.example — описание /etc/krokosha/env
 ├── ci/                 test-install.sh — интеграционный тест установщика
 ├── certbot/            (позже) хук: перезагрузка сертификата в почтовом контейнере
 └── mailserver/         (позже) docker-mailserver: compose, конфиг, DKIM
 ```
 
-Ещё не сделано из брифа B8: `backup.sh`, `krokosha-certwatch` (штатное продление уже работает через `certbot.timer`), почта, первичный администратор и токен бота — см. [roadmap](../docs/roadmap.md).
+Ещё не сделано из брифа B8: `backup.sh`, `krokosha-certwatch` (штатное продление уже работает через `certbot.timer`), почта и токен бота — см. [roadmap](../docs/roadmap.md).
 
 Правила: `set -euo pipefail`, shellcheck в CI, никаких `curl | bash`, секреты только в `/etc/krokosha/env`.

@@ -16,7 +16,9 @@ import (
 	"time"
 	_ "time/tzdata" // the owner's time zone must resolve even on a system without tzdata
 
+	"github.com/DenisHumen/krokosha-site/api/internal/admin"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
+	"github.com/DenisHumen/krokosha-site/api/internal/auth"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
@@ -80,6 +82,18 @@ func run() error {
 		Location: ownerLocation(env.ContentDir, log),
 	})
 	stats.Register(srv.Mux())
+
+	panel, err := admin.New(admin.Options{
+		Prefix:   env.AdminPath,
+		SiteHost: siteURL.Hostname(),
+		Auth:     auth.New(pool, store, log),
+		Log:      log,
+		Version:  version(),
+	})
+	if err != nil {
+		return err
+	}
+	panel.Register(srv.Mux())
 
 	// Background workers outlive the HTTP server by a moment: they flush what is still queued.
 	var workers sync.WaitGroup

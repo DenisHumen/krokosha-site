@@ -1,0 +1,88 @@
+{{define "content"}}
+  <div class="page-head">
+    <h1>Аккаунт</h1>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2 class="card-title">Пароль</h2>
+      <form class="card-body" method="post" action="{{path "/account/password"}}">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+        <label for="current">Текущий пароль</label>
+        <input id="current" name="current" type="password" autocomplete="current-password" required />
+        <label for="new">Новый пароль <span class="muted">— не меньше 12 символов</span></label>
+        <input id="new" name="new" type="password" autocomplete="new-password" minlength="12" required />
+        <label for="repeat">Новый пароль ещё раз</label>
+        <input id="repeat" name="repeat" type="password" autocomplete="new-password" minlength="12" required />
+        <button class="button" type="submit">Сменить пароль</button>
+        <p class="muted">После смены все остальные сеансы завершатся.</p>
+      </form>
+    </section>
+
+    <section class="card" id="totp">
+      <h2 class="card-title">Двухфакторная аутентификация</h2>
+      <div class="card-body">
+        {{if .Session.User.TOTPEnabled}}
+          <p><span class="dot dot-ok"></span> Включена: при входе спрашивается код из приложения.</p>
+          <form method="post" action="{{path "/account/totp/disable"}}">
+            <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+            <label for="totp-password">Пароль — чтобы выключить</label>
+            <input id="totp-password" name="password" type="password" autocomplete="current-password" required />
+            <button class="button button-ghost" type="submit">Выключить</button>
+          </form>
+        {{else if .Data.TOTPSecret}}
+          <p>Отсканируйте код приложением-аутентификатором (Google Authenticator, Aegis, 1Password…) или введите ключ вручную.</p>
+          <img class="qr" src="{{path "/account/totp/qr.png"}}" width="220" height="220" alt="QR-код для приложения-аутентификатора" />
+          <p class="mono secret">{{.Data.TOTPSecret}}</p>
+          <form method="post" action="{{path "/account/totp/confirm"}}" autocomplete="off">
+            <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+            <label for="totp-code">Код из приложения</label>
+            <input id="totp-code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required />
+            <button class="button" type="submit">Включить</button>
+          </form>
+          <p class="muted">Пока код не подтверждён, вход работает как раньше — по паролю.</p>
+        {{else}}
+          <p><span class="dot dot-warn"></span> Выключена. С ней украденного пароля недостаточно для входа.</p>
+          <form method="post" action="{{path "/account/totp/begin"}}">
+            <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+            <button class="button" type="submit">Настроить</button>
+          </form>
+        {{end}}
+        <p class="muted">Потеряли телефон? На сервере: <span class="mono">krokosha-cli admin totp-reset ЛОГИН</span></p>
+      </div>
+    </section>
+
+    <section class="card card-wide">
+      <h2 class="card-title">Активные сеансы</h2>
+      <div class="card-body">
+        <table class="table">
+          <thead>
+            <tr><th>Браузер</th><th>Сеть</th><th>Вход</th><th>Активность</th><th></th></tr>
+          </thead>
+          <tbody>
+            {{range .Data.Sessions}}
+              <tr>
+                <td>{{.Client}}</td>
+                <td class="mono">{{.IPPrefix}}</td>
+                <td class="mono">{{time .CreatedAt}}</td>
+                <td class="mono">{{time .LastSeen}}</td>
+                <td class="right">
+                  {{if .Current}}
+                    <span class="muted">этот сеанс</span>
+                  {{else}}
+                    <form method="post" action="{{path "/account/sessions/revoke"}}">
+                      <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}" />
+                      <input type="hidden" name="id" value="{{.ID}}" />
+                      <button class="button button-ghost" type="submit">Завершить</button>
+                    </form>
+                  {{end}}
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+        <p class="muted">Сеанс завершается сам через 2 часа без активности и не живёт дольше суток. Адрес показан усечённым — так он и хранится.</p>
+      </div>
+    </section>
+  </div>
+{{end}}
