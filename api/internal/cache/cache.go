@@ -22,6 +22,8 @@ type Cache struct {
 
 	mu      sync.Mutex
 	windows map[string]*window
+	values  map[string]*value
+	active  map[string]map[string]time.Time
 	// degraded remembers that Redis failed, so the log gets one line per outage, not one per request.
 	degraded bool
 }
@@ -31,10 +33,18 @@ type window struct {
 	expires time.Time
 }
 
+type value struct {
+	data    string
+	expires time.Time
+}
+
 // New connects to Redis at url. An empty url means memory only. A Redis that cannot be reached
 // right now is not an error: the cache starts degraded and recovers by itself.
 func New(ctx context.Context, url string, log *slog.Logger) (*Cache, error) {
-	c := &Cache{log: log, now: time.Now, windows: map[string]*window{}}
+	c := &Cache{
+		log: log, now: time.Now,
+		windows: map[string]*window{}, values: map[string]*value{}, active: map[string]map[string]time.Time{},
+	}
 	if url == "" {
 		log.Info("REDIS_URL is not set: rate limits and live data stay in memory")
 		return c, nil
@@ -53,6 +63,13 @@ func New(ctx context.Context, url string, log *slog.Logger) (*Cache, error) {
 		c.markDegraded(err)
 	}
 	return c, nil
+}
+
+// SetClock replaces the time source. For tests that move time forward.
+func (c *Cache) SetClock(now func() time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = now
 }
 
 // Close releases the Redis connections.

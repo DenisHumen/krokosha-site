@@ -35,7 +35,8 @@ web/
 │   ├── pages/        [...lang]/ — index, privacy, play (заглушка), 404; sitemap.xml.ts; robots.txt.ts
 │   ├── styles/       global.css — временные стили каркаса
 │   └── content.config.ts   коллекция текстовых страниц из ../content/pages
-├── public/           favicon, OG-картинка, assets/theme.js (тема до первой отрисовки)
+├── public/           favicon, OG-картинка, assets/theme.js (тема до первой отрисовки),
+│                     assets/analytics.js — статистика посещений: читаемый, < 3 КБ gzip, без cookie (бриф B5)
 ├── scripts/          gen-mock.ts — mock/ из content/; check-dist.mjs — проверка собранного сайта;
 │                     make-placeholders.mjs — временные фавикон / OG / аватар-заглушка
 └── tests/            unit/ — Vitest; e2e/ — Playwright + axe: десктоп и телефон 360 px, обе темы, три языка;

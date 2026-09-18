@@ -105,6 +105,28 @@ check "database schema is migrated" bash -c "docker exec krokosha-mysql-1 sh -c 
 check "API service restarts cleanly" bash -c "systemctl restart krokosha-api && for i in \$(seq 1 30); do curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null && exit 0; sleep 1; done; exit 1"
 echo "  memory: $(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | tr '\n' ';')"
 
+echo "Analytics"
+BROWSER='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+sql() { docker exec krokosha-mysql-1 sh -c "mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"$1\"" 2>/dev/null; }
+beacon() { # beacon BODY [curl options…] → HTTP status of POST /api/e through nginx
+  local body=$1
+  shift
+  "${CURL[@]}" --output /dev/null --write-out '%{http_code}' --request POST "https://$DOMAIN/api/e" \
+    --header 'Content-Type: application/json' --user-agent "$BROWSER" --data "$body" "$@"
+}
+view='{"v":1,"id":"00112233aabbccdd","p":"/uk/","l":"uk","r":"www.google.com","u":{"s":"google","m":"cpc"},"e":[{"t":"pageview","o":0},{"t":"click","x":"cta-telegram","o":700},{"t":"scroll","v":50,"o":900}]}'
+check "the statistics script is served" grep -q 'Never collected' <(body "https://$DOMAIN/assets/analytics.js")
+check "a page view is accepted" test "$(beacon "$view")" = 204
+check "Do Not Track is honoured" test "$(beacon "${view/00112233aabbccdd/00112233aabbcc01}" --header 'DNT: 1')" = 204
+check "bots are not counted" test "$(beacon "${view/00112233aabbccdd/00112233aabbcc02}" --user-agent 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)')" = 204
+check "pages of other sites cannot post" test "$(beacon "$view" --header 'Origin: https://evil.example')" = 403
+check "a malformed batch is refused" test "$(beacon '{"v":1,"cookie":"x"}')" = 400
+sleep 3 # the writer stores in batches, once a second
+check "exactly one page view was stored" test "$(sql 'SELECT COUNT(*) FROM analytics_pageviews')" = 1
+check "with its click event" test "$(sql "SELECT COUNT(*) FROM analytics_events WHERE type='click' AND target='cta-telegram'")" = 1
+check "paid search traffic is recognised" test "$(sql "SELECT CONCAT(referrer_kind, ' ', is_ad, ' ', max_scroll) FROM analytics_pageviews")" = "search 1 50"
+check "the address is stored truncated" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT ip_prefix FROM analytics_pageviews\"' 2>/dev/null | grep -qE '/(24|48)$'"
+
 echo "Firewall"
 check "UFW is active" bash -c "ufw status | grep -q 'Status: active'"
 check "SSH stays open" bash -c "ufw status | grep -qE '^22/tcp +ALLOW'"

@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 const dist = resolve(process.argv[2] ?? 'dist');
 const LOCALES = { en: '', uk: 'uk/', ru: 'ru/' };
@@ -140,6 +141,30 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
     const isDraft = /<meta name="robots" content="noindex/.test(privacy);
     checkPage(`${prefix}privacy/index.html`, lang, { indexable: !isDraft });
     checkInternalLinks(`${prefix}privacy/index.html`, privacy);
+  }
+}
+
+// The statistics script: present on every page, readable, and small (brief B5: < 3 KB gzip).
+{
+  const script = read('assets/analytics.js');
+  if (script) {
+    const gzipped = gzipSync(Buffer.from(script), { level: 9 }).length;
+    if (gzipped > 3072)
+      fail('assets/analytics.js', `${gzipped} bytes gzipped, the limit is 3072 (3 KB)`);
+    const lines = script.split(/\r?\n/);
+    const longest = Math.max(...lines.map((line) => line.length));
+    if (lines.length < 50 || longest > 200) {
+      fail('assets/analytics.js', 'looks minified: it must stay readable');
+    }
+    if (!/Never collected/.test(script)) {
+      fail('assets/analytics.js', 'the header comment that explains what is collected is missing');
+    }
+  }
+  for (const prefix of Object.values(LOCALES)) {
+    const html = read(`${prefix}index.html`);
+    if (html && !/<script[^>]+src="\/assets\/analytics\.js"/.test(html)) {
+      fail(`${prefix}index.html`, 'the statistics script is not included');
+    }
   }
 }
 
