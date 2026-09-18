@@ -85,8 +85,14 @@ func main() {
 	sort.Strings(lines) // the time comes first in a line, so this is chronological order
 
 	out := bufio.NewWriter(os.Stdout)
-	defer out.Flush()
 	for _, line := range lines {
-		fmt.Fprintln(out, line)
+		if _, err := fmt.Fprintln(out, line); err != nil {
+			fmt.Fprintln(os.Stderr, "demolog:", err)
+			os.Exit(1)
+		}
+	}
+	if err := out.Flush(); err != nil {
+		fmt.Fprintln(os.Stderr, "demolog:", err)
+		os.Exit(1)
 	}
 }
