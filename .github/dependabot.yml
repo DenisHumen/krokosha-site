@@ -11,6 +11,14 @@ updates:
       # One PR for routine updates; majors come separately and get a closer look.
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (the native compiler) is not supported by `astro check` and typescript-eslint yet.
+      # Remove this entry once both accept it.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Node typings follow the oldest Node.js the project supports (package.json → engines), not the newest.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     commit-message:
       prefix: deps(web)
 
