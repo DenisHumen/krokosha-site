@@ -1,0 +1,158 @@
+# Основные данные и тексты сайта. Правится без изменения кода.
+# TODO(Денис) — заполнить или подтвердить. «# черновик» — текст написан по брифу, ждёт правки.
+# Языки ещё не выбраны (Q1): тексты пока на русском.
+
+profile:
+  name: Denis
+  nickname: Krokosha
+  role: "Network & Infrastructure Engineer · DevOps"
+  location: Ukraine
+  # Q2: дата начала карьеры, формат YYYY-MM. Стаж = полные годы от этой даты, считается при каждой сборке.
+  # Сейчас должно получаться 8 → подходит любая дата с 2017-10 по 2018-09.
+  career_start: TODO(Денис)
+  avatar_source: https://github.com/DenisHumen.png   # скачивается при sync, раздаётся локально в AVIF/WebP
+  avatar_alt: "Denis (Krokosha)"
+
+github:
+  user: DenisHumen
+
+timezone: Europe/Kyiv
+
+# Q1: какие языки и какой основной
+i18n:
+  default: TODO(Денис)
+  enabled: []
+
+socials:
+  - id: telegram
+    label: Telegram
+    # Q3: в описаниях репозиториев указан t.me/DenisHumen, на старом сайте — t.me/DenisGumen. Какой верный?
+    url: TODO(Денис)
+    primary: true
+  - id: email
+    label: Почта
+    url: TODO(Денис)          # Q3/Q7: например mailto:hello@krokosha.xyz
+    primary: true
+  - id: github
+    label: GitHub
+    url: https://github.com/DenisHumen
+  # Q3: LinkedIn / Upwork / X / другие — добавить сюда
+
+nav:
+  - { number: "01", label: "Услуги",   anchor: services }
+  - { number: "02", label: "Навыки",   anchor: skills }
+  - { number: "03", label: "Проекты",  anchor: projects }
+  - { number: "04", label: "Контакты", anchor: contacts }
+
+hero:                                   # черновик
+  headline:
+    muted: "Сети, серверы, DevOps —"
+    strong: "инфраструктура, которая просто работает"
+  lead: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую рутину."
+  experience_label: "лет в инфраструктуре"   # выводится как «{experience_years}+ лет в инфраструктуре»; склонение делает web
+  captions:
+    left: "Сети · Серверы · DevOps"
+    center: "Проектирую, собираю, настраиваю и сопровождаю."
+    right: "[Листайте вниз]"
+  link_caption: "link up · 10Gbps · full-duplex"   # подпись в момент касания рук (A8)
+  cta:
+    telegram: "Написать в Telegram"
+    email: "Почта"
+    discuss: "Обсудить проект"
+
+# Секция «Что я делаю». anchor — якоря для рекламных объявлений (B7): /#networks, /#servers, /#devops
+services:                               # черновик; в текстах только подтверждённые навыки
+  - id: networks
+    number: "01"
+    title: "Сети и сетевое оборудование"
+    subtitle: "MikroTik · Cisco"
+    text: "Настройка маршрутизаторов и коммутаторов, построение и перестройка сетей для офисов и объектов."
+  - id: servers
+    number: "02"
+    title: "Серверы, СХД и кластеры"
+    subtitle: "Сборка · диагностика · RAID"
+    text: "Подбор, сборка и настройка серверов и систем хранения данных, сложные кластерные системы."
+  - id: devops
+    number: "03"
+    title: "DevOps и контейнеры"
+    subtitle: "Docker · Kubernetes · Nginx · F5 BIG-IP"
+    text: "Контейнеризация, оркестрация, балансировка нагрузки и настройка веб-серверов."
+  - id: highload-lan
+    number: "04"
+    title: "Высоконагруженные ЛВС"
+    subtitle: "Проектирование · скоростные сети"
+    text: "Проектирование локальных сетей под высокую нагрузку и большие скорости передачи данных."
+  - id: tooling
+    number: "05"
+    title: "Разработка инструментов"
+    subtitle: "Python · Rust · TypeScript · Shell"
+    text: "Собственные утилиты и автоматизация под задачи инфраструктуры."
+
+stats:                                  # только цифры из данных, без выдуманных метрик
+  experience: "лет опыта"
+  public_projects: "публичных проектов"
+
+projects:
+  heading: "Проекты"
+  note: "Большинство проектов частные, поэтому ссылки на репозитории доступны не для всех."
+  private_heading: "Коммерческие и приватные проекты"
+  private_note: "Под NDA — код не публикуется, могу рассказать на созвоне."
+  show_all_label: "Все репозитории"     # раскрытие компактного списка
+  error_note: "GitHub сейчас недоступен — показана последняя сохранённая версия."
+
+curtain:                                # тёмная панель-занавес (A9), черновик
+  heading: "Нужна сеть, сервер или кластер, который просто работает?"
+  text: "Расскажите о задаче — отвечу и предложу решение."
+  cta: "Обсудить проект"
+
+contacts:
+  heading: "Контакты"
+  text: "Быстрее всего — в Telegram. Для задачи с деталями — форма ниже."   # черновик
+  form:
+    enabled: true
+    attachments: false                  # B10.1: вложения выключены по умолчанию
+    reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»
+    directions:
+      - { id: networks,     label: "Сети и оборудование" }
+      - { id: servers,      label: "Серверы, СХД, кластеры" }
+      - { id: devops,       label: "DevOps" }
+      - { id: highload-lan, label: "Высоконагруженная ЛВС" }
+      - { id: development,  label: "Разработка" }
+      - { id: other,        label: "Другое" }
+    contact_methods:
+      - { id: email,    label: "Email" }
+      - { id: telegram, label: "Telegram" }
+      - { id: phone,    label: "Телефон" }
+    budgets:                            # TODO(Денис): подтвердить диапазоны
+      - "до $500"
+      - "$500–1k"
+      - "$1–3k"
+      - "$3–10k"
+      - "больше $10k"
+      - "пока не знаю"
+    timelines:                          # TODO(Денис): подтвердить варианты
+      - "срочно"
+      - "1–2 недели"
+      - "месяц"
+      - "не горит"
+
+footer:
+  game_entry: "Не нажимать"             # черновик; ведёт на /play (заглушка «скоро»)
+  play_stub: "Здесь скоро кое-что появится."
+
+flags:
+  skills:
+    show_unconfirmed: false             # показывать навыки с confirmed: false
+  ads:
+    pixels: false                       # Q8: Google Ads / Meta выключены
+    consent_banner: false               # включается автоматически вместе с pixels
+  easter_eggs:
+    enabled: true
+    croc_footer: true                   # крокодил выглядывает из-за футера
+    cat_walker: true                    # кот по верхней границе карточек
+    konami: true                        # «серверная ночью»
+    sudo_terminal: true                 # мини-терминал по набору sudo
+    avatar_reboot: true                 # 5 кликов по аватару → POST-экран
+    console_message: true               # сообщение в DevTools
+    lost_packet_404: true               # игра «найди пакет» на 404
+    achievements: true                  # счётчик найденных пасхалок
