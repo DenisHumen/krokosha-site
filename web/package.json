@@ -1,0 +1,43 @@
+{
+  "name": "krokosha-web",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "krokosha.xyz — static site (Astro). Data comes from ../content and ../content/generated.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "mock": "node --experimental-strip-types scripts/gen-mock.ts",
+    "mock:check": "node --experimental-strip-types scripts/gen-mock.ts --check",
+    "verify": "npm run format:check && npm run lint && npm run check && npm run test && npm run mock:check && npm run build && node scripts/check-dist.mjs"
+  },
+  "dependencies": {
+    "astro": "7.3.3",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.3",
+    "astro-eslint-parser": "3.1.0",
+    "eslint": "10.10.0",
+    "eslint-plugin-astro": "3.2.1",
+    "eslint-plugin-jsx-a11y-x": "0.2.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "prettier-plugin-astro": "1.0.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.1"
+  }
+}
