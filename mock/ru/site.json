@@ -1,24 +1,45 @@
 {
+  "i18n": {
+    "locale": "ru",
+    "default": "en",
+    "locales": [
+      {
+        "code": "en",
+        "label": "EN",
+        "href": "/"
+      },
+      {
+        "code": "uk",
+        "label": "UA",
+        "href": "/uk/"
+      },
+      {
+        "code": "ru",
+        "label": "RU",
+        "href": "/ru/"
+      }
+    ]
+  },
   "nav": [
     {
       "number": "01",
-      "label": "Услуги",
-      "anchor": "services"
+      "anchor": "services",
+      "label": "Услуги"
     },
     {
       "number": "02",
-      "label": "Навыки",
-      "anchor": "skills"
+      "anchor": "skills",
+      "label": "Навыки"
     },
     {
       "number": "03",
-      "label": "Проекты",
-      "anchor": "projects"
+      "anchor": "projects",
+      "label": "Проекты"
     },
     {
       "number": "04",
-      "label": "Контакты",
-      "anchor": "contacts"
+      "anchor": "contacts",
+      "label": "Контакты"
     }
   ],
   "hero": {
@@ -79,7 +100,7 @@
   ],
   "stats": {
     "experience": "лет опыта",
-    "public_projects": "публичных проектов"
+    "public_projects": "публичных проекта"
   },
   "projects": {
     "heading": "Проекты",
@@ -87,7 +108,13 @@
     "private_heading": "Коммерческие и приватные проекты",
     "private_note": "Под NDA — код не публикуется, могу рассказать на созвоне.",
     "show_all_label": "Все репозитории",
-    "error_note": "GitHub сейчас недоступен — показана последняя сохранённая версия."
+    "error_note": "GitHub сейчас недоступен — показана последняя сохранённая версия.",
+    "labels": {
+      "archived": "архив",
+      "updated": "Обновлено",
+      "website": "Сайт",
+      "source": "Код"
+    }
   },
   "curtain": {
     "heading": "Нужна сеть, сервер или кластер, который просто работает?",
@@ -101,6 +128,40 @@
       "enabled": true,
       "attachments": false,
       "reply_within_hours": null,
+      "labels": {
+        "name": "Имя",
+        "contact_method": "Как связаться",
+        "direction": "Направление",
+        "description": "Описание задачи",
+        "description_hint": "20–4000 символов",
+        "budget": "Бюджет",
+        "timeline": "Сроки",
+        "optional": "необязательно",
+        "consent": "Даю согласие на обработку данных согласно {privacy_link}",
+        "privacy_link_text": "политике конфиденциальности",
+        "submit": "Отправить заявку",
+        "sending": "Отправляем…"
+      },
+      "placeholders": {
+        "email": "you@company.com",
+        "telegram": "@username",
+        "phone": "+380 …"
+      },
+      "messages": {
+        "success_title": "Заявка {id} принята",
+        "success_reply": "Отвечу в течение {hours} ч.",
+        "continue_telegram": "Продолжить в Telegram",
+        "server_error": "Не получилось отправить заявку. Напишите на почту: {email}",
+        "rate_limited": "Слишком много заявок. Попробуйте позже или напишите на почту: {email}"
+      },
+      "errors": {
+        "required": "Обязательное поле",
+        "invalid_email": "Проверьте адрес почты",
+        "invalid_telegram": "Проверьте ник в Telegram",
+        "invalid_phone": "Проверьте номер телефона",
+        "description_length": "От 20 до 4000 символов",
+        "consent_required": "Без согласия заявку не отправить"
+      },
       "directions": [
         {
           "id": "networks",
@@ -157,7 +218,26 @@
       ]
     }
   },
+  "ui": {
+    "headings": {
+      "services": "Что я делаю",
+      "skills": "Навыки",
+      "stats": "В цифрах"
+    },
+    "skip_to_content": "Перейти к содержанию",
+    "theme_toggle": "Сменить тему",
+    "language": "Язык",
+    "skills_search": "Поиск по навыкам",
+    "skills_no_results": "Ничего не найдено"
+  },
+  "not_found": {
+    "title": "Пакет потерян",
+    "text": "Страница, которую вы искали, не дошла до адресата.",
+    "game_hint": "Найдите пакет",
+    "back": "На главную"
+  },
   "footer": {
+    "copyright": "© {year} Krokosha",
     "game_entry": "Не нажимать",
     "play_stub": "Здесь скоро кое-что появится."
   },

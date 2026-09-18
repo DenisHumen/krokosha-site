@@ -1,0 +1,31 @@
+{
+  "name": "Денис",
+  "nickname": "Krokosha",
+  "role": "Сетевой и инфраструктурный инженер · DevOps",
+  "experience_years": 8,
+  "avatar": {
+    "src": "/img/avatar-256.avif",
+    "srcset": "/img/avatar-128.avif 128w, /img/avatar-256.avif 256w, /img/avatar-512.avif 512w",
+    "alt": "Денис (Krokosha)"
+  },
+  "location": "Украина",
+  "socials": [
+    {
+      "id": "telegram",
+      "label": "Telegram",
+      "url": "https://t.me/DenisHumen",
+      "primary": true
+    },
+    {
+      "id": "email",
+      "label": "Почта",
+      "url": "mailto:denis@krokosha.xyz",
+      "primary": true
+    },
+    {
+      "id": "github",
+      "label": "GitHub",
+      "url": "https://github.com/DenisHumen"
+    }
+  ]
+}

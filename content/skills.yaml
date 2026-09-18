@@ -1,16 +1,16 @@
 # Дерево навыков: категория → группа → навык.
 # confirmed: true  — подтверждено в брифе.
 # confirmed: false — добавлено как типичное, ждёт подтверждения Дениса (на сайте скрыто, пока flags.skills.show_unconfirmed = false).
-# note — одна короткая строка под навыком; null, если подписи нет.
+# title / note — строка (одинаково на всех языках) или словарь { en, uk, ru }. note: null — без подписи.
 # Весь текст дерева попадает в HTML сразу (SEO), раскрытие только визуальное.
 # TODO(Денис): пройтись по confirmed: false и поставить true / удалить.
 
 - id: network
-  title: "Сети"
+  title: { en: "Networks", uk: "Мережі", ru: "Сети" }
   icon: network
   children:
     - id: net-hardware
-      title: "Сетевое оборудование"
+      title: { en: "Network hardware", uk: "Мережеве обладнання", ru: "Сетевое оборудование" }
       children:
         - { id: mikrotik,  title: "MikroTik",        note: "RouterOS", confirmed: true }
         - { id: cisco,     title: "Cisco",           note: "IOS",      confirmed: true }   # TODO(Денис): IOS-XE?
@@ -23,7 +23,7 @@
         - { id: keenetic,  title: "Keenetic",        note: null, confirmed: false }
         - { id: pfsense,   title: "pfSense / OPNsense", note: null, confirmed: false }
     - id: net-tech
-      title: "Сетевые технологии"
+      title: { en: "Network technologies", uk: "Мережеві технології", ru: "Сетевые технологии" }
       children:
         - { id: vlan,  title: "VLAN",  note: null, confirmed: false }
         - { id: lacp,  title: "LACP",  note: null, confirmed: false }
@@ -34,53 +34,71 @@
         - { id: qos,   title: "QoS",   note: null, confirmed: false }
         - { id: hs-ethernet, title: "10/25/40/100GbE", note: null, confirmed: false }
     - id: highload-lan
-      title: "Высоконагруженные ЛВС"
+      title: { en: "High-load LANs", uk: "Високонавантажені локальні мережі", ru: "Высоконагруженные ЛВС" }
       children:
-        - { id: lan-design, title: "Проектирование ЛВС", note: null, confirmed: true }
-        - { id: lan-fast,   title: "Скоростные ЛВС",     note: null, confirmed: true }
-        - { id: scs,        title: "СКС",                note: "структурированные кабельные системы", confirmed: false }
+        - id: lan-design
+          title: { en: "LAN design", uk: "Проєктування локальних мереж", ru: "Проектирование ЛВС" }
+          note: null
+          confirmed: true
+        - id: lan-fast
+          title: { en: "High-speed LANs", uk: "Швидкісні локальні мережі", ru: "Скоростные ЛВС" }
+          note: null
+          confirmed: true
+        - id: scs
+          title: { en: "Structured cabling", uk: "СКС", ru: "СКС" }
+          note: { en: null, uk: "структуровані кабельні системи", ru: "структурированные кабельные системы" }
+          confirmed: false
     # TODO(Денис): «Patch» — что имелось в виду (Q4): Proxmox? pfSense? патч-панели/СКС? Добавить в нужную группу.
 
 - id: servers
-  title: "Серверы"
+  title: { en: "Servers", uk: "Сервери", ru: "Серверы" }
   icon: server
   children:
     - id: hardware
-      title: "Серверы и железо"
+      title: { en: "Servers & hardware", uk: "Сервери та залізо", ru: "Серверы и железо" }
       children:
-        - { id: hw-build,   title: "Сборка и диагностика", note: null, confirmed: true }
+        - id: hw-build
+          title: { en: "Build & diagnostics", uk: "Збирання та діагностика", ru: "Сборка и диагностика" }
+          note: null
+          confirmed: true
         - { id: raid,       title: "RAID",                 note: null, confirmed: true }
         - { id: hpe-ilo,    title: "HPE ProLiant / iLO",   note: null, confirmed: false }
         - { id: dell-idrac, title: "Dell iDRAC",           note: null, confirmed: false }
         - { id: supermicro, title: "Supermicro IPMI",      note: null, confirmed: false }
     - id: virtualization
-      title: "Кластеры и виртуализация"
+      title: { en: "Clusters & virtualization", uk: "Кластери та віртуалізація", ru: "Кластеры и виртуализация" }
       children:
-        - { id: clusters, title: "Кластерные системы", note: "сложные кластерные системы", confirmed: true }
+        - id: clusters
+          title: { en: "Cluster systems", uk: "Кластерні системи", ru: "Кластерные системы" }
+          note: { en: "complex cluster systems", uk: "складні кластерні системи", ru: "сложные кластерные системы" }
+          confirmed: true
         - { id: proxmox,  title: "Proxmox VE",  note: null, confirmed: false }
         - { id: esxi,     title: "VMware ESXi", note: null, confirmed: false }
         - { id: kvm,      title: "KVM",         note: null, confirmed: false }
         - { id: hyperv,   title: "Hyper-V",     note: null, confirmed: false }
 
 - id: storage
-  title: "Хранение"
+  title: { en: "Storage", uk: "Зберігання", ru: "Хранение" }
   icon: storage
   children:
     - id: storage-systems
-      title: "Хранение данных"
+      title: { en: "Data storage", uk: "Зберігання даних", ru: "Хранение данных" }
       children:
-        - { id: san,       title: "Серверы хранения / СХД", note: null, confirmed: true }
+        - id: san
+          title: { en: "Storage servers & arrays", uk: "Сервери зберігання / СЗД", ru: "Серверы хранения / СХД" }
+          note: null
+          confirmed: true
         - { id: zfs,       title: "ZFS",       note: null, confirmed: false }
         - { id: truenas,   title: "TrueNAS",   note: null, confirmed: false }
         - { id: ceph,      title: "Ceph",      note: null, confirmed: false }
         - { id: iscsi-nfs, title: "iSCSI / NFS", note: null, confirmed: false }
 
 - id: devops
-  title: "DevOps"
+  title: DevOps
   icon: devops
   children:
     - id: containers
-      title: "Контейнеры и оркестрация"
+      title: { en: "Containers & orchestration", uk: "Контейнери та оркестрація", ru: "Контейнеры и оркестрация" }
       children:
         - { id: docker,         title: "Docker",         note: null, confirmed: true }
         - { id: docker-compose, title: "Docker Compose", note: null, confirmed: true }
@@ -88,14 +106,14 @@
         - { id: k3s,            title: "k3s",            note: null, confirmed: false }
         - { id: helm,           title: "Helm",           note: null, confirmed: false }
     - id: web-lb
-      title: "Веб и балансировка"
+      title: { en: "Web & load balancing", uk: "Веб і балансування", ru: "Веб и балансировка" }
       children:
         - { id: nginx,   title: "Nginx",      note: null, confirmed: true }
         - { id: f5,      title: "F5 BIG-IP",  note: null, confirmed: true }
         - { id: haproxy, title: "HAProxy",    note: null, confirmed: false }
         - { id: traefik, title: "Traefik",    note: null, confirmed: false }
     - id: automation
-      title: "Автоматизация и мониторинг"
+      title: { en: "Automation & monitoring", uk: "Автоматизація та моніторинг", ru: "Автоматизация и мониторинг" }
       children:
         - { id: ansible,        title: "Ansible",        note: null, confirmed: false }
         - { id: terraform,      title: "Terraform",      note: null, confirmed: false }
@@ -105,33 +123,36 @@
         - { id: zabbix,         title: "Zabbix",         note: null, confirmed: false }
 
 - id: os
-  title: "ОС"
+  title: { en: "OS", uk: "ОС", ru: "ОС" }
   icon: os
   children:
     - id: linux
-      title: "Linux"
+      title: Linux
       children:
-        - { id: linux-admin,  title: "Linux",           note: null, confirmed: true }
+        - { id: linux-admin,   title: "Linux",           note: null, confirmed: true }
         - { id: debian-ubuntu, title: "Debian / Ubuntu", note: null, confirmed: false }
-        - { id: rhel,         title: "RHEL-семейство",  note: null, confirmed: false }
+        - id: rhel
+          title: { en: "RHEL family", uk: "Родина RHEL", ru: "RHEL-семейство" }
+          note: null
+          confirmed: false
     - id: windows
-      title: "Windows"
+      title: Windows
       children:
         - { id: windows-server, title: "Windows / Windows Server", note: null, confirmed: true }
         - { id: ad,       title: "Active Directory", note: null, confirmed: false }
         - { id: dns-dhcp, title: "DNS / DHCP",       note: null, confirmed: false }
         - { id: gpo,      title: "GPO",              note: null, confirmed: false }
     - id: macos
-      title: "macOS"
+      title: macOS
       children:
         - { id: macos-admin, title: "macOS", note: null, confirmed: true }
 
 - id: dev
-  title: "Разработка"
+  title: { en: "Development", uk: "Розробка", ru: "Разработка" }
   icon: code
   children:
     - id: languages
-      title: "Языки"
+      title: { en: "Languages", uk: "Мови", ru: "Языки" }
       children:
         - { id: python,     title: "Python",     note: null, confirmed: true }
         - { id: rust,       title: "Rust",       note: null, confirmed: true }

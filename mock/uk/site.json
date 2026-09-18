@@ -1,0 +1,264 @@
+{
+  "i18n": {
+    "locale": "uk",
+    "default": "en",
+    "locales": [
+      {
+        "code": "en",
+        "label": "EN",
+        "href": "/"
+      },
+      {
+        "code": "uk",
+        "label": "UA",
+        "href": "/uk/"
+      },
+      {
+        "code": "ru",
+        "label": "RU",
+        "href": "/ru/"
+      }
+    ]
+  },
+  "nav": [
+    {
+      "number": "01",
+      "anchor": "services",
+      "label": "Послуги"
+    },
+    {
+      "number": "02",
+      "anchor": "skills",
+      "label": "Навички"
+    },
+    {
+      "number": "03",
+      "anchor": "projects",
+      "label": "Проєкти"
+    },
+    {
+      "number": "04",
+      "anchor": "contacts",
+      "label": "Контакти"
+    }
+  ],
+  "hero": {
+    "headline": {
+      "muted": "Мережі, сервери, DevOps —",
+      "strong": "інфраструктура, яка просто працює"
+    },
+    "lead": "Інженер інфраструктури з України. Проєктую та налаштовую мережі, сервери й кластери, автоматизую рутину.",
+    "experience_label": "років в інфраструктурі",
+    "captions": {
+      "left": "Мережі · Сервери · DevOps",
+      "center": "Проєктую, збираю, налаштовую та супроводжую.",
+      "right": "[Гортайте вниз]"
+    },
+    "link_caption": "link up · 10Gbps · full-duplex",
+    "cta": {
+      "telegram": "Написати в Telegram",
+      "email": "Пошта",
+      "discuss": "Обговорити проєкт"
+    }
+  },
+  "services": [
+    {
+      "id": "networks",
+      "number": "01",
+      "title": "Мережі та мережеве обладнання",
+      "subtitle": "MikroTik · Cisco",
+      "text": "Налаштування маршрутизаторів і комутаторів, побудова та перебудова мереж для офісів і об'єктів."
+    },
+    {
+      "id": "servers",
+      "number": "02",
+      "title": "Сервери, СЗД і кластери",
+      "subtitle": "Збирання · діагностика · RAID",
+      "text": "Підбір, збирання та налаштування серверів і систем зберігання даних, складні кластерні системи."
+    },
+    {
+      "id": "devops",
+      "number": "03",
+      "title": "DevOps і контейнери",
+      "subtitle": "Docker · Kubernetes · Nginx · F5 BIG-IP",
+      "text": "Контейнеризація, оркестрація, балансування навантаження та налаштування вебсерверів."
+    },
+    {
+      "id": "highload-lan",
+      "number": "04",
+      "title": "Високонавантажені локальні мережі",
+      "subtitle": "Проєктування · швидкісні мережі",
+      "text": "Проєктування локальних мереж під високе навантаження та великі швидкості передачі даних."
+    },
+    {
+      "id": "tooling",
+      "number": "05",
+      "title": "Розробка інструментів",
+      "subtitle": "Python · Rust · TypeScript · Shell",
+      "text": "Власні утиліти та автоматизація під задачі інфраструктури."
+    }
+  ],
+  "stats": {
+    "experience": "років досвіду",
+    "public_projects": "публічні проєкти"
+  },
+  "projects": {
+    "heading": "Проєкти",
+    "note": "Більшість проєктів приватні, тому посилання на репозиторії доступні не для всіх.",
+    "private_heading": "Комерційні та приватні проєкти",
+    "private_note": "Під NDA — код не публікується, можу розповісти на дзвінку.",
+    "show_all_label": "Усі репозиторії",
+    "error_note": "GitHub зараз недоступний — показано останню збережену версію.",
+    "labels": {
+      "archived": "архів",
+      "updated": "Оновлено",
+      "website": "Сайт",
+      "source": "Код"
+    }
+  },
+  "curtain": {
+    "heading": "Потрібна мережа, сервер чи кластер, який просто працює?",
+    "text": "Розкажіть про задачу — відповім і запропоную рішення.",
+    "cta": "Обговорити проєкт"
+  },
+  "contacts": {
+    "heading": "Контакти",
+    "text": "Найшвидше — в Telegram. Для задачі з деталями — форма нижче.",
+    "form": {
+      "enabled": true,
+      "attachments": false,
+      "reply_within_hours": null,
+      "labels": {
+        "name": "Ім'я",
+        "contact_method": "Як зв'язатися",
+        "direction": "Напрям",
+        "description": "Опис задачі",
+        "description_hint": "20–4000 символів",
+        "budget": "Бюджет",
+        "timeline": "Терміни",
+        "optional": "необов'язково",
+        "consent": "Даю згоду на обробку даних відповідно до {privacy_link}",
+        "privacy_link_text": "політики конфіденційності",
+        "submit": "Надіслати заявку",
+        "sending": "Надсилаємо…"
+      },
+      "placeholders": {
+        "email": "you@company.com",
+        "telegram": "@username",
+        "phone": "+380 …"
+      },
+      "messages": {
+        "success_title": "Заявку {id} прийнято",
+        "success_reply": "Відповім протягом {hours} год.",
+        "continue_telegram": "Продовжити в Telegram",
+        "server_error": "Не вдалося надіслати заявку. Напишіть на пошту: {email}",
+        "rate_limited": "Забагато заявок. Спробуйте пізніше або напишіть на пошту: {email}"
+      },
+      "errors": {
+        "required": "Обов'язкове поле",
+        "invalid_email": "Перевірте адресу пошти",
+        "invalid_telegram": "Перевірте нікнейм у Telegram",
+        "invalid_phone": "Перевірте номер телефону",
+        "description_length": "Від 20 до 4000 символів",
+        "consent_required": "Без згоди заявку не надіслати"
+      },
+      "directions": [
+        {
+          "id": "networks",
+          "label": "Мережі та обладнання"
+        },
+        {
+          "id": "servers",
+          "label": "Сервери, СЗД, кластери"
+        },
+        {
+          "id": "devops",
+          "label": "DevOps"
+        },
+        {
+          "id": "highload-lan",
+          "label": "Високонавантажена локальна мережа"
+        },
+        {
+          "id": "development",
+          "label": "Розробка"
+        },
+        {
+          "id": "other",
+          "label": "Інше"
+        }
+      ],
+      "contact_methods": [
+        {
+          "id": "email",
+          "label": "Email"
+        },
+        {
+          "id": "telegram",
+          "label": "Telegram"
+        },
+        {
+          "id": "phone",
+          "label": "Телефон"
+        }
+      ],
+      "budgets": [
+        "до $500",
+        "$500–1k",
+        "$1–3k",
+        "$3–10k",
+        "понад $10k",
+        "поки не знаю"
+      ],
+      "timelines": [
+        "терміново",
+        "1–2 тижні",
+        "місяць",
+        "не горить"
+      ]
+    }
+  },
+  "ui": {
+    "headings": {
+      "services": "Що я роблю",
+      "skills": "Навички",
+      "stats": "У цифрах"
+    },
+    "skip_to_content": "Перейти до змісту",
+    "theme_toggle": "Змінити тему",
+    "language": "Мова",
+    "skills_search": "Пошук навичок",
+    "skills_no_results": "Нічого не знайдено"
+  },
+  "not_found": {
+    "title": "Пакет втрачено",
+    "text": "Сторінка, яку ви шукали, не дійшла до адресата.",
+    "game_hint": "Знайдіть пакет",
+    "back": "На головну"
+  },
+  "footer": {
+    "copyright": "© {year} Krokosha",
+    "game_entry": "Не натискати",
+    "play_stub": "Скоро тут дещо з'явиться."
+  },
+  "flags": {
+    "skills": {
+      "show_unconfirmed": false
+    },
+    "ads": {
+      "pixels": false,
+      "consent_banner": false
+    },
+    "easter_eggs": {
+      "enabled": true,
+      "croc_footer": true,
+      "cat_walker": true,
+      "konami": true,
+      "sudo_terminal": true,
+      "avatar_reboot": true,
+      "console_message": true,
+      "lost_packet_404": true,
+      "achievements": true
+    }
+  }
+}

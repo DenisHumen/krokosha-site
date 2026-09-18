@@ -1,0 +1,500 @@
+[
+  {
+    "id": "network",
+    "title": "Мережі",
+    "icon": "network",
+    "children": [
+      {
+        "id": "net-hardware",
+        "title": "Мережеве обладнання",
+        "children": [
+          {
+            "id": "mikrotik",
+            "title": "MikroTik",
+            "note": "RouterOS",
+            "confirmed": true
+          },
+          {
+            "id": "cisco",
+            "title": "Cisco",
+            "note": "IOS",
+            "confirmed": true
+          },
+          {
+            "id": "juniper",
+            "title": "Juniper",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "huawei",
+            "title": "Huawei",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "hpe-aruba",
+            "title": "HPE / Aruba",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "ubiquiti",
+            "title": "Ubiquiti",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "fortinet",
+            "title": "Fortinet",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "omada",
+            "title": "TP-Link Omada",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "keenetic",
+            "title": "Keenetic",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "pfsense",
+            "title": "pfSense / OPNsense",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "net-tech",
+        "title": "Мережеві технології",
+        "children": [
+          {
+            "id": "vlan",
+            "title": "VLAN",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "lacp",
+            "title": "LACP",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "stp",
+            "title": "STP",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "ospf",
+            "title": "OSPF",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "bgp",
+            "title": "BGP",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "vpn",
+            "title": "VPN",
+            "note": "WireGuard, IPsec, OpenVPN",
+            "confirmed": false
+          },
+          {
+            "id": "qos",
+            "title": "QoS",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "hs-ethernet",
+            "title": "10/25/40/100GbE",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "highload-lan",
+        "title": "Високонавантажені локальні мережі",
+        "children": [
+          {
+            "id": "lan-design",
+            "title": "Проєктування локальних мереж",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "lan-fast",
+            "title": "Швидкісні локальні мережі",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "scs",
+            "title": "СКС",
+            "note": "структуровані кабельні системи",
+            "confirmed": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "servers",
+    "title": "Сервери",
+    "icon": "server",
+    "children": [
+      {
+        "id": "hardware",
+        "title": "Сервери та залізо",
+        "children": [
+          {
+            "id": "hw-build",
+            "title": "Збирання та діагностика",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "raid",
+            "title": "RAID",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "hpe-ilo",
+            "title": "HPE ProLiant / iLO",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "dell-idrac",
+            "title": "Dell iDRAC",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "supermicro",
+            "title": "Supermicro IPMI",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "virtualization",
+        "title": "Кластери та віртуалізація",
+        "children": [
+          {
+            "id": "clusters",
+            "title": "Кластерні системи",
+            "note": "складні кластерні системи",
+            "confirmed": true
+          },
+          {
+            "id": "proxmox",
+            "title": "Proxmox VE",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "esxi",
+            "title": "VMware ESXi",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "kvm",
+            "title": "KVM",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "hyperv",
+            "title": "Hyper-V",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "storage",
+    "title": "Зберігання",
+    "icon": "storage",
+    "children": [
+      {
+        "id": "storage-systems",
+        "title": "Зберігання даних",
+        "children": [
+          {
+            "id": "san",
+            "title": "Сервери зберігання / СЗД",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "zfs",
+            "title": "ZFS",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "truenas",
+            "title": "TrueNAS",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "ceph",
+            "title": "Ceph",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "iscsi-nfs",
+            "title": "iSCSI / NFS",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "devops",
+    "title": "DevOps",
+    "icon": "devops",
+    "children": [
+      {
+        "id": "containers",
+        "title": "Контейнери та оркестрація",
+        "children": [
+          {
+            "id": "docker",
+            "title": "Docker",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "docker-compose",
+            "title": "Docker Compose",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "kubernetes",
+            "title": "Kubernetes",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "k3s",
+            "title": "k3s",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "helm",
+            "title": "Helm",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "web-lb",
+        "title": "Веб і балансування",
+        "children": [
+          {
+            "id": "nginx",
+            "title": "Nginx",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "f5",
+            "title": "F5 BIG-IP",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "haproxy",
+            "title": "HAProxy",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "traefik",
+            "title": "Traefik",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "automation",
+        "title": "Автоматизація та моніторинг",
+        "children": [
+          {
+            "id": "ansible",
+            "title": "Ansible",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "terraform",
+            "title": "Terraform",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "github-actions",
+            "title": "GitHub Actions",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "prometheus",
+            "title": "Prometheus",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "grafana",
+            "title": "Grafana",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "zabbix",
+            "title": "Zabbix",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "os",
+    "title": "ОС",
+    "icon": "os",
+    "children": [
+      {
+        "id": "linux",
+        "title": "Linux",
+        "children": [
+          {
+            "id": "linux-admin",
+            "title": "Linux",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "debian-ubuntu",
+            "title": "Debian / Ubuntu",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "rhel",
+            "title": "Родина RHEL",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "windows",
+        "title": "Windows",
+        "children": [
+          {
+            "id": "windows-server",
+            "title": "Windows / Windows Server",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "ad",
+            "title": "Active Directory",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "dns-dhcp",
+            "title": "DNS / DHCP",
+            "note": null,
+            "confirmed": false
+          },
+          {
+            "id": "gpo",
+            "title": "GPO",
+            "note": null,
+            "confirmed": false
+          }
+        ]
+      },
+      {
+        "id": "macos",
+        "title": "macOS",
+        "children": [
+          {
+            "id": "macos-admin",
+            "title": "macOS",
+            "note": null,
+            "confirmed": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dev",
+    "title": "Розробка",
+    "icon": "code",
+    "children": [
+      {
+        "id": "languages",
+        "title": "Мови",
+        "children": [
+          {
+            "id": "python",
+            "title": "Python",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "rust",
+            "title": "Rust",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "typescript",
+            "title": "TypeScript",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "shell",
+            "title": "Shell",
+            "note": null,
+            "confirmed": true
+          }
+        ]
+      }
+    ]
+  }
+]
