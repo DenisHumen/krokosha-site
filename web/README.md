@@ -9,11 +9,11 @@ web/
 ├── src/
 │   ├── components/   тонкие обёртки над design/components: подставляют данные в data-slot
 │   ├── layouts/      базовый layout: <head>, SEO-мета, JSON-LD, подключение tokens.css
-│   ├── pages/        index, 404, privacy, thanks, play (заглушка) + языковые версии (Q1)
+│   ├── pages/        index, 404, privacy, thanks, play (заглушка): en в корне (/), uk в /uk/, ru в /ru/ (Astro i18n, prefixDefaultLocale: false)
 │   ├── lib/          загрузка content/*.yaml и generated/*.json, SEO-хелперы
 │   ├── scripts/      клиентские скрипты: загрузка анимаций после LCP, ленивые пасхалки
 │   ├── styles/       глобальные стили поверх design/tokens.css
-│   └── i18n/         словари интерфейса (после ответа на Q1)
+│   └── i18n/         разрешение словарей { en, uk, ru }, правила множественного числа (Intl.PluralRules), hreflang
 ├── public/
 │   ├── img/          аватар (AVIF/WebP, генерируется sync), OG-картинка
 │   ├── fonts/        шрифты для preload

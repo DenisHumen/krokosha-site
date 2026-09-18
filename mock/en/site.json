@@ -1,0 +1,264 @@
+{
+  "i18n": {
+    "locale": "en",
+    "default": "en",
+    "locales": [
+      {
+        "code": "en",
+        "label": "EN",
+        "href": "/"
+      },
+      {
+        "code": "uk",
+        "label": "UA",
+        "href": "/uk/"
+      },
+      {
+        "code": "ru",
+        "label": "RU",
+        "href": "/ru/"
+      }
+    ]
+  },
+  "nav": [
+    {
+      "number": "01",
+      "anchor": "services",
+      "label": "Services"
+    },
+    {
+      "number": "02",
+      "anchor": "skills",
+      "label": "Skills"
+    },
+    {
+      "number": "03",
+      "anchor": "projects",
+      "label": "Projects"
+    },
+    {
+      "number": "04",
+      "anchor": "contacts",
+      "label": "Contact"
+    }
+  ],
+  "hero": {
+    "headline": {
+      "muted": "Networks, servers, DevOps —",
+      "strong": "infrastructure that just works"
+    },
+    "lead": "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, and automate the routine.",
+    "experience_label": "years in infrastructure",
+    "captions": {
+      "left": "Networks · Servers · DevOps",
+      "center": "I design, build, configure and maintain.",
+      "right": "[Scroll to explore]"
+    },
+    "link_caption": "link up · 10Gbps · full-duplex",
+    "cta": {
+      "telegram": "Message on Telegram",
+      "email": "Email",
+      "discuss": "Discuss a project"
+    }
+  },
+  "services": [
+    {
+      "id": "networks",
+      "number": "01",
+      "title": "Networks & network hardware",
+      "subtitle": "MikroTik · Cisco",
+      "text": "Router and switch configuration, building and rebuilding networks for offices and sites."
+    },
+    {
+      "id": "servers",
+      "number": "02",
+      "title": "Servers, storage & clusters",
+      "subtitle": "Build · diagnostics · RAID",
+      "text": "Selecting, building and configuring servers and storage systems, complex cluster systems."
+    },
+    {
+      "id": "devops",
+      "number": "03",
+      "title": "DevOps & containers",
+      "subtitle": "Docker · Kubernetes · Nginx · F5 BIG-IP",
+      "text": "Containerization, orchestration, load balancing and web server configuration."
+    },
+    {
+      "id": "highload-lan",
+      "number": "04",
+      "title": "High-load LANs",
+      "subtitle": "Design · high-speed networks",
+      "text": "Designing local networks for heavy load and high data rates."
+    },
+    {
+      "id": "tooling",
+      "number": "05",
+      "title": "Tooling & development",
+      "subtitle": "Python · Rust · TypeScript · Shell",
+      "text": "In-house utilities and automation for infrastructure tasks."
+    }
+  ],
+  "stats": {
+    "experience": "years of experience",
+    "public_projects": "public projects"
+  },
+  "projects": {
+    "heading": "Projects",
+    "note": "Most of my projects are private, so repository links aren't available for all of them.",
+    "private_heading": "Commercial & private projects",
+    "private_note": "Under NDA — the code isn't public, happy to walk you through it on a call.",
+    "show_all_label": "All repositories",
+    "error_note": "GitHub is unavailable right now — showing the last saved version.",
+    "labels": {
+      "archived": "archived",
+      "updated": "Updated",
+      "website": "Website",
+      "source": "Code"
+    }
+  },
+  "curtain": {
+    "heading": "Need a network, server or cluster that just works?",
+    "text": "Tell me about the task — I'll reply and propose a solution.",
+    "cta": "Discuss a project"
+  },
+  "contacts": {
+    "heading": "Contact",
+    "text": "Telegram is the fastest. For a task with details, use the form below.",
+    "form": {
+      "enabled": true,
+      "attachments": false,
+      "reply_within_hours": null,
+      "labels": {
+        "name": "Name",
+        "contact_method": "How to reach you",
+        "direction": "Area",
+        "description": "Task description",
+        "description_hint": "20–4000 characters",
+        "budget": "Budget",
+        "timeline": "Timeline",
+        "optional": "optional",
+        "consent": "I consent to data processing under the {privacy_link}",
+        "privacy_link_text": "privacy policy",
+        "submit": "Send request",
+        "sending": "Sending…"
+      },
+      "placeholders": {
+        "email": "you@company.com",
+        "telegram": "@username",
+        "phone": "+380 …"
+      },
+      "messages": {
+        "success_title": "Request {id} received",
+        "success_reply": "I'll reply within {hours} h.",
+        "continue_telegram": "Continue in Telegram",
+        "server_error": "Couldn't send the request. Please email me: {email}",
+        "rate_limited": "Too many requests. Please try again later or email me: {email}"
+      },
+      "errors": {
+        "required": "Required field",
+        "invalid_email": "Check the email address",
+        "invalid_telegram": "Check the Telegram username",
+        "invalid_phone": "Check the phone number",
+        "description_length": "20 to 4000 characters",
+        "consent_required": "Consent is required to send the request"
+      },
+      "directions": [
+        {
+          "id": "networks",
+          "label": "Networks & hardware"
+        },
+        {
+          "id": "servers",
+          "label": "Servers, storage, clusters"
+        },
+        {
+          "id": "devops",
+          "label": "DevOps"
+        },
+        {
+          "id": "highload-lan",
+          "label": "High-load LAN"
+        },
+        {
+          "id": "development",
+          "label": "Development"
+        },
+        {
+          "id": "other",
+          "label": "Other"
+        }
+      ],
+      "contact_methods": [
+        {
+          "id": "email",
+          "label": "Email"
+        },
+        {
+          "id": "telegram",
+          "label": "Telegram"
+        },
+        {
+          "id": "phone",
+          "label": "Phone"
+        }
+      ],
+      "budgets": [
+        "up to $500",
+        "$500–1k",
+        "$1–3k",
+        "$3–10k",
+        "over $10k",
+        "not sure yet"
+      ],
+      "timelines": [
+        "urgent",
+        "1–2 weeks",
+        "a month",
+        "no rush"
+      ]
+    }
+  },
+  "ui": {
+    "headings": {
+      "services": "What I do",
+      "skills": "Skills",
+      "stats": "In numbers"
+    },
+    "skip_to_content": "Skip to content",
+    "theme_toggle": "Toggle theme",
+    "language": "Language",
+    "skills_search": "Search skills",
+    "skills_no_results": "Nothing found"
+  },
+  "not_found": {
+    "title": "Packet lost",
+    "text": "The page you were looking for never reached its destination.",
+    "game_hint": "Find the packet",
+    "back": "Back to home"
+  },
+  "footer": {
+    "copyright": "© {year} Krokosha",
+    "game_entry": "Do not press",
+    "play_stub": "Something is coming here soon."
+  },
+  "flags": {
+    "skills": {
+      "show_unconfirmed": false
+    },
+    "ads": {
+      "pixels": false,
+      "consent_banner": false
+    },
+    "easter_eggs": {
+      "enabled": true,
+      "croc_footer": true,
+      "cat_walker": true,
+      "konami": true,
+      "sudo_terminal": true,
+      "avatar_reboot": true,
+      "console_message": true,
+      "lost_packet_404": true,
+      "achievements": true
+    }
+  }
+}

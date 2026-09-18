@@ -1,8 +1,13 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.1** (2026-09-18). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]**.
+**Версия 1.2** (2026-09-18). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
+
+| Версия | Что изменилось |
+|---|---|
+| 1.1 | `tier` / `archived` / `stale` у проектов, `site.json`, `data-field`, новые секции и треки |
+| 1.2 | **Три языка** (§6): `mock/` разложен по локалям `mock/{en,uk,ru}/`. В `site.json` добавлены `i18n`, `ui`, `not_found`, `projects.labels`, подписи/ошибки/сообщения формы. Реальные Telegram и email |
 
 ---
 
@@ -20,7 +25,7 @@
 
 ## 2. Схемы данных
 
-Все файлы — UTF-8 JSON. Строки могут быть длинными (другие языки, Q1), дизайн не должен ломаться на 1.5× длине.
+Все файлы — UTF-8 JSON. **[v1.2]** Лежат по локалям: `mock/en/`, `mock/uk/`, `mock/ru/` — в каждой папке одни и те же 4 файла одной и той же формы, строки уже переведены (§6). Украинский и русский заметно длиннее английского — дизайн не должен ломаться на 1.5× длине.
 
 ### 2.1. `profile.json`
 
@@ -33,7 +38,9 @@
   "avatar": { "src": "/img/avatar-256.avif", "srcset": "/img/avatar-128.avif 128w, /img/avatar-256.avif 256w, /img/avatar-512.avif 512w", "alt": "Denis (Krokosha)" },
   "location": "Ukraine",
   "socials": [
-    { "id": "telegram", "label": "Telegram", "url": "https://t.me/TODO", "primary": true }
+    { "id": "telegram", "label": "Telegram", "url": "https://t.me/DenisHumen", "primary": true },
+    { "id": "email", "label": "Email", "url": "mailto:denis@krokosha.xyz", "primary": true },
+    { "id": "github", "label": "GitHub", "url": "https://github.com/DenisHumen" }
   ]
 }
 ```
@@ -120,14 +127,17 @@
 
 | Ключ | Что это |
 |---|---|
+| **[v1.2]** `i18n` | `{ locale, default, locales: [{ code, label, href }] }` — переключатель языка: `EN` → `/`, `UA` → `/uk/`, `RU` → `/ru/` |
 | `nav[]` | `{ number, label, anchor }` — пункты верхней навигации |
 | `hero` | `headline.muted` (серая строка) + `headline.strong` (чёрная), `lead`, `experience_label`, `captions.{left,center,right}`, `link_caption`, `cta.{telegram,email,discuss}` |
 | `services[]` | `{ id, number, title, subtitle, text }` — секция с липкими номерами. `id` = якорь (`/#networks`) |
 | `stats` | подписи к цифрам |
-| `projects` | `heading`, `note`, `private_heading`, `private_note`, `show_all_label`, `error_note` |
+| `projects` | `heading`, `note`, `private_heading`, `private_note`, `show_all_label`, `error_note`, **[v1.2]** `labels.{archived, updated, website, source}` |
 | `curtain` | `heading`, `text`, `cta` — тёмный занавес |
-| `contacts` | `heading`, `text`, `form.{enabled, attachments, reply_within_hours, directions[], contact_methods[], budgets[], timelines[]}`. `reply_within_hours: null` → фразу «Отвечу в течение N часов» не показывать |
-| `footer` | `game_entry`, `play_stub` |
+| `contacts` | `heading`, `text`, `form.{enabled, attachments, reply_within_hours, directions[], contact_methods[], budgets[], timelines[]}`, **[v1.2]** `form.labels.*`, `form.placeholders.*`, `form.messages.*` (успех, ошибка сервера, rate-limit), `form.errors.*` (валидация). `reply_within_hours: null` → фразу `messages.success_reply` не показывать |
+| **[v1.2]** `ui` | `headings.{services, skills, stats}`, `skip_to_content`, `theme_toggle`, `language`, `skills_search`, `skills_no_results` |
+| **[v1.2]** `not_found` | 404: `title`, `text`, `game_hint`, `back` |
+| `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub` |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
 
 Значения с пометкой «черновик» в YAML — рабочие тексты, их будут править. Вёрстка не должна зависеть от их точной длины.
@@ -180,6 +190,7 @@
 | **[v1.1]** `form-submit` | отправка формы |
 | `egg-<id>` | найдена пасхалка: `egg-konami`, `egg-sudo`, `egg-croc`… |
 | `game-entry` | вход в мини-игру в футере |
+| **[v1.2]** `lang-<code>` | переключение языка: `lang-en`, `lang-uk`, `lang-ru` |
 
 ---
 
@@ -209,4 +220,21 @@
 
 Внутри уровня — по баллам, при равенстве — по `updatedAt`.
 
-Снимок на 2026-09-18 — 22 публичных репозитория (23 минус профильный), из них 5 архивных: см. `mock/projects.json`.
+Снимок на 2026-09-18 — 22 публичных репозитория (23 минус профильный), из них 5 архивных: см. `mock/<locale>/projects.json`.
+
+---
+
+## 6. [v1.2] Языки
+
+| Код | Кнопка | Адрес | `<html lang>` / `hreflang` |
+|---|---|---|---|
+| `en` | EN | `/` — **основной** | `en` (+ `x-default`) |
+| `uk` | UA | `/uk/` | `uk` — код языка «украинский» (UA — код страны) |
+| `ru` | RU | `/ru/` | `ru` |
+
+- **Источник** (`content/*.yaml`): текстовое поле — строка (одинаково на всех языках: `MikroTik`, `GitHub`) или словарь `{ en, uk, ru }`. У словаря должны быть заполнены все три ключа; `null` допустим, если подписи в каком-то языке нет.
+- **Мок** (`mock/<locale>/*.json`): словари уже разрешены в строки нужного языка — схема та же, что в §2.
+- **Множественное число** разрешает сборка (правила CLDR, формы в `site.yaml → plurals`). В моке уже подставлено для 8 лет и 22 проектов: `8 years` / `8 років` / `8 лет`, `22 public projects` / `22 публічні проєкти` / `22 публичных проекта`.
+- **Плейсхолдеры** в фигурных скобках остаются в строках мока и подставляются при сборке или в браузере: `{id}` (номер заявки `#K-0042`), `{hours}`, `{email}`, `{privacy_link}` (ссылка на `/privacy`), `{year}`. В превью дизайн подставляет примеры сам.
+- Якоря секций (`#networks`, `#servers`, `#devops`…) и `id` элементов **одинаковы на всех языках**.
+- Репозитории GitHub не переводятся: описание остаётся на языке оригинала.

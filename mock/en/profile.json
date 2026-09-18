@@ -13,13 +13,13 @@
     {
       "id": "telegram",
       "label": "Telegram",
-      "url": "https://t.me/TODO",
+      "url": "https://t.me/DenisHumen",
       "primary": true
     },
     {
       "id": "email",
-      "label": "Почта",
-      "url": "mailto:TODO@krokosha.xyz",
+      "label": "Email",
+      "url": "mailto:denis@krokosha.xyz",
       "primary": true
     },
     {

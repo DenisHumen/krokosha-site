@@ -1,144 +1,285 @@
 # Основные данные и тексты сайта. Правится без изменения кода.
 # TODO(Денис) — заполнить или подтвердить. «# черновик» — текст написан по брифу, ждёт правки.
-# Языки ещё не выбраны (Q1): тексты пока на русском.
+#
+# Языки: en (основной, адрес /), uk (/uk/), ru (/ru/).
+# Любое текстовое поле — либо строка (одинаково на всех языках: MikroTik, GitHub…),
+# либо словарь { en: …, uk: …, ru: … }. CI будет проверять, что у словаря заполнены все три языка.
+# Плейсхолдеры в фигурных скобках ({years}, {id}, {email}…) подставляет сборка.
 
 profile:
-  name: Denis
+  name: { en: "Denis", uk: "Денис", ru: "Денис" }
   nickname: Krokosha
-  role: "Network & Infrastructure Engineer · DevOps"
-  location: Ukraine
+  role:
+    en: "Network & Infrastructure Engineer · DevOps"
+    uk: "Мережевий та інфраструктурний інженер · DevOps"
+    ru: "Сетевой и инфраструктурный инженер · DevOps"
+  location: { en: "Ukraine", uk: "Україна", ru: "Украина" }
   # Q2: дата начала карьеры, формат YYYY-MM. Стаж = полные годы от этой даты, считается при каждой сборке.
   # Сейчас должно получаться 8 → подходит любая дата с 2017-10 по 2018-09.
   career_start: TODO(Денис)
   avatar_source: https://github.com/DenisHumen.png   # скачивается при sync, раздаётся локально в AVIF/WebP
-  avatar_alt: "Denis (Krokosha)"
+  avatar_alt: { en: "Denis (Krokosha)", uk: "Денис (Krokosha)", ru: "Денис (Krokosha)" }
 
 github:
   user: DenisHumen
 
 timezone: Europe/Kyiv
 
-# Q1: какие языки и какой основной
 i18n:
-  default: TODO(Денис)
-  enabled: []
+  default: en
+  locales:
+    - { code: en, label: "EN", path: "/" }
+    - { code: uk, label: "UA", path: "/uk/" }
+    - { code: ru, label: "RU", path: "/ru/" }
+
+# Формы множественного числа (правила CLDR): en — [one, other]; uk, ru — [one, few, many].
+# Сборка выбирает форму по числу: 1 рік / 2 роки / 8 років.
+plurals:
+  years:
+    en: [year, years]
+    uk: [рік, роки, років]
+    ru: [год, года, лет]
+  public_projects:
+    en: [public project, public projects]
+    uk: [публічний проєкт, публічні проєкти, публічних проєктів]
+    ru: [публичный проект, публичных проекта, публичных проектов]
 
 socials:
   - id: telegram
     label: Telegram
-    # Q3: в описаниях репозиториев указан t.me/DenisHumen, на старом сайте — t.me/DenisGumen. Какой верный?
-    url: TODO(Денис)
+    url: https://t.me/DenisHumen
     primary: true
   - id: email
-    label: Почта
-    url: TODO(Денис)          # Q3/Q7: например mailto:hello@krokosha.xyz
+    label: { en: "Email", uk: "Пошта", ru: "Почта" }
+    url: mailto:denis@krokosha.xyz
     primary: true
   - id: github
     label: GitHub
     url: https://github.com/DenisHumen
-  # Q3: LinkedIn / Upwork / X / другие — добавить сюда
+  # Другие соцсети (LinkedIn / Upwork / X…) — добавить сюда
 
 nav:
-  - { number: "01", label: "Услуги",   anchor: services }
-  - { number: "02", label: "Навыки",   anchor: skills }
-  - { number: "03", label: "Проекты",  anchor: projects }
-  - { number: "04", label: "Контакты", anchor: contacts }
+  - { number: "01", anchor: services, label: { en: "Services", uk: "Послуги", ru: "Услуги" } }
+  - { number: "02", anchor: skills,   label: { en: "Skills",   uk: "Навички", ru: "Навыки" } }
+  - { number: "03", anchor: projects, label: { en: "Projects", uk: "Проєкти", ru: "Проекты" } }
+  - { number: "04", anchor: contacts, label: { en: "Contact",  uk: "Контакти", ru: "Контакты" } }
 
 hero:                                   # черновик
   headline:
-    muted: "Сети, серверы, DevOps —"
-    strong: "инфраструктура, которая просто работает"
-  lead: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую рутину."
-  experience_label: "лет в инфраструктуре"   # выводится как «{experience_years}+ лет в инфраструктуре»; склонение делает web
+    muted:
+      en: "Networks, servers, DevOps —"
+      uk: "Мережі, сервери, DevOps —"
+      ru: "Сети, серверы, DevOps —"
+    strong:
+      en: "infrastructure that just works"
+      uk: "інфраструктура, яка просто працює"
+      ru: "инфраструктура, которая просто работает"
+  lead:
+    en: "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, and automate the routine."
+    uk: "Інженер інфраструктури з України. Проєктую та налаштовую мережі, сервери й кластери, автоматизую рутину."
+    ru: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую рутину."
+  # Выводится рядом с числом: «8+ years in infrastructure». {years} — слово из plurals.years в нужной форме.
+  experience_label:
+    en: "{years} in infrastructure"
+    uk: "{years} в інфраструктурі"
+    ru: "{years} в инфраструктуре"
   captions:
-    left: "Сети · Серверы · DevOps"
-    center: "Проектирую, собираю, настраиваю и сопровождаю."
-    right: "[Листайте вниз]"
+    left:
+      en: "Networks · Servers · DevOps"
+      uk: "Мережі · Сервери · DevOps"
+      ru: "Сети · Серверы · DevOps"
+    center:
+      en: "I design, build, configure and maintain."
+      uk: "Проєктую, збираю, налаштовую та супроводжую."
+      ru: "Проектирую, собираю, настраиваю и сопровождаю."
+    right: { en: "[Scroll to explore]", uk: "[Гортайте вниз]", ru: "[Листайте вниз]" }
   link_caption: "link up · 10Gbps · full-duplex"   # подпись в момент касания рук (A8)
   cta:
-    telegram: "Написать в Telegram"
-    email: "Почта"
-    discuss: "Обсудить проект"
+    telegram: { en: "Message on Telegram", uk: "Написати в Telegram", ru: "Написать в Telegram" }
+    email:    { en: "Email", uk: "Пошта", ru: "Почта" }
+    discuss:  { en: "Discuss a project", uk: "Обговорити проєкт", ru: "Обсудить проект" }
 
-# Секция «Что я делаю». anchor — якоря для рекламных объявлений (B7): /#networks, /#servers, /#devops
+# Секция «Что я делаю». id — якоря для рекламных объявлений (B7): /#networks, /#servers, /#devops
 services:                               # черновик; в текстах только подтверждённые навыки
   - id: networks
     number: "01"
-    title: "Сети и сетевое оборудование"
+    title: { en: "Networks & network hardware", uk: "Мережі та мережеве обладнання", ru: "Сети и сетевое оборудование" }
     subtitle: "MikroTik · Cisco"
-    text: "Настройка маршрутизаторов и коммутаторов, построение и перестройка сетей для офисов и объектов."
+    text:
+      en: "Router and switch configuration, building and rebuilding networks for offices and sites."
+      uk: "Налаштування маршрутизаторів і комутаторів, побудова та перебудова мереж для офісів і об'єктів."
+      ru: "Настройка маршрутизаторов и коммутаторов, построение и перестройка сетей для офисов и объектов."
   - id: servers
     number: "02"
-    title: "Серверы, СХД и кластеры"
-    subtitle: "Сборка · диагностика · RAID"
-    text: "Подбор, сборка и настройка серверов и систем хранения данных, сложные кластерные системы."
+    title: { en: "Servers, storage & clusters", uk: "Сервери, СЗД і кластери", ru: "Серверы, СХД и кластеры" }
+    subtitle: { en: "Build · diagnostics · RAID", uk: "Збирання · діагностика · RAID", ru: "Сборка · диагностика · RAID" }
+    text:
+      en: "Selecting, building and configuring servers and storage systems, complex cluster systems."
+      uk: "Підбір, збирання та налаштування серверів і систем зберігання даних, складні кластерні системи."
+      ru: "Подбор, сборка и настройка серверов и систем хранения данных, сложные кластерные системы."
   - id: devops
     number: "03"
-    title: "DevOps и контейнеры"
+    title: { en: "DevOps & containers", uk: "DevOps і контейнери", ru: "DevOps и контейнеры" }
     subtitle: "Docker · Kubernetes · Nginx · F5 BIG-IP"
-    text: "Контейнеризация, оркестрация, балансировка нагрузки и настройка веб-серверов."
+    text:
+      en: "Containerization, orchestration, load balancing and web server configuration."
+      uk: "Контейнеризація, оркестрація, балансування навантаження та налаштування вебсерверів."
+      ru: "Контейнеризация, оркестрация, балансировка нагрузки и настройка веб-серверов."
   - id: highload-lan
     number: "04"
-    title: "Высоконагруженные ЛВС"
-    subtitle: "Проектирование · скоростные сети"
-    text: "Проектирование локальных сетей под высокую нагрузку и большие скорости передачи данных."
+    title: { en: "High-load LANs", uk: "Високонавантажені локальні мережі", ru: "Высоконагруженные ЛВС" }
+    subtitle: { en: "Design · high-speed networks", uk: "Проєктування · швидкісні мережі", ru: "Проектирование · скоростные сети" }
+    text:
+      en: "Designing local networks for heavy load and high data rates."
+      uk: "Проєктування локальних мереж під високе навантаження та великі швидкості передачі даних."
+      ru: "Проектирование локальных сетей под высокую нагрузку и большие скорости передачи данных."
   - id: tooling
     number: "05"
-    title: "Разработка инструментов"
+    title: { en: "Tooling & development", uk: "Розробка інструментів", ru: "Разработка инструментов" }
     subtitle: "Python · Rust · TypeScript · Shell"
-    text: "Собственные утилиты и автоматизация под задачи инфраструктуры."
+    text:
+      en: "In-house utilities and automation for infrastructure tasks."
+      uk: "Власні утиліти та автоматизація під задачі інфраструктури."
+      ru: "Собственные утилиты и автоматизация под задачи инфраструктуры."
 
 stats:                                  # только цифры из данных, без выдуманных метрик
-  experience: "лет опыта"
-  public_projects: "публичных проектов"
+  experience: { en: "{years} of experience", uk: "{years} досвіду", ru: "{years} опыта" }
+  public_projects: "{public_projects}"  # слово из plurals.public_projects
 
 projects:
-  heading: "Проекты"
-  note: "Большинство проектов частные, поэтому ссылки на репозитории доступны не для всех."
-  private_heading: "Коммерческие и приватные проекты"
-  private_note: "Под NDA — код не публикуется, могу рассказать на созвоне."
-  show_all_label: "Все репозитории"     # раскрытие компактного списка
-  error_note: "GitHub сейчас недоступен — показана последняя сохранённая версия."
+  heading: { en: "Projects", uk: "Проєкти", ru: "Проекты" }
+  note:
+    en: "Most of my projects are private, so repository links aren't available for all of them."
+    uk: "Більшість проєктів приватні, тому посилання на репозиторії доступні не для всіх."
+    ru: "Большинство проектов частные, поэтому ссылки на репозитории доступны не для всех."
+  private_heading: { en: "Commercial & private projects", uk: "Комерційні та приватні проєкти", ru: "Коммерческие и приватные проекты" }
+  private_note:
+    en: "Under NDA — the code isn't public, happy to walk you through it on a call."
+    uk: "Під NDA — код не публікується, можу розповісти на дзвінку."
+    ru: "Под NDA — код не публикуется, могу рассказать на созвоне."
+  show_all_label: { en: "All repositories", uk: "Усі репозиторії", ru: "Все репозитории" }
+  error_note:
+    en: "GitHub is unavailable right now — showing the last saved version."
+    uk: "GitHub зараз недоступний — показано останню збережену версію."
+    ru: "GitHub сейчас недоступен — показана последняя сохранённая версия."
+  labels:
+    archived: { en: "archived", uk: "архів", ru: "архив" }
+    updated:  { en: "Updated", uk: "Оновлено", ru: "Обновлено" }
+    website:  { en: "Website", uk: "Сайт", ru: "Сайт" }
+    source:   { en: "Code", uk: "Код", ru: "Код" }
 
 curtain:                                # тёмная панель-занавес (A9), черновик
-  heading: "Нужна сеть, сервер или кластер, который просто работает?"
-  text: "Расскажите о задаче — отвечу и предложу решение."
-  cta: "Обсудить проект"
+  heading:
+    en: "Need a network, server or cluster that just works?"
+    uk: "Потрібна мережа, сервер чи кластер, який просто працює?"
+    ru: "Нужна сеть, сервер или кластер, который просто работает?"
+  text:
+    en: "Tell me about the task — I'll reply and propose a solution."
+    uk: "Розкажіть про задачу — відповім і запропоную рішення."
+    ru: "Расскажите о задаче — отвечу и предложу решение."
+  cta: { en: "Discuss a project", uk: "Обговорити проєкт", ru: "Обсудить проект" }
 
 contacts:
-  heading: "Контакты"
-  text: "Быстрее всего — в Telegram. Для задачи с деталями — форма ниже."   # черновик
+  heading: { en: "Contact", uk: "Контакти", ru: "Контакты" }
+  text:                                 # черновик
+    en: "Telegram is the fastest. For a task with details, use the form below."
+    uk: "Найшвидше — в Telegram. Для задачі з деталями — форма нижче."
+    ru: "Быстрее всего — в Telegram. Для задачи с деталями — форма ниже."
   form:
     enabled: true
     attachments: false                  # B10.1: вложения выключены по умолчанию
-    reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»
+    reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»; пока не задано — фраза не показывается
+    labels:
+      name:           { en: "Name", uk: "Ім'я", ru: "Имя" }
+      contact_method: { en: "How to reach you", uk: "Як зв'язатися", ru: "Как связаться" }
+      direction:      { en: "Area", uk: "Напрям", ru: "Направление" }
+      description:    { en: "Task description", uk: "Опис задачі", ru: "Описание задачи" }
+      description_hint: { en: "20–4000 characters", uk: "20–4000 символів", ru: "20–4000 символов" }
+      budget:         { en: "Budget", uk: "Бюджет", ru: "Бюджет" }
+      timeline:       { en: "Timeline", uk: "Терміни", ru: "Сроки" }
+      optional:       { en: "optional", uk: "необов'язково", ru: "необязательно" }
+      consent:        # {privacy_link} — ссылка на /privacy с текстом privacy_link_text
+        en: "I consent to data processing under the {privacy_link}"
+        uk: "Даю згоду на обробку даних відповідно до {privacy_link}"
+        ru: "Даю согласие на обработку данных согласно {privacy_link}"
+      privacy_link_text: { en: "privacy policy", uk: "політики конфіденційності", ru: "политике конфиденциальности" }
+      submit:         { en: "Send request", uk: "Надіслати заявку", ru: "Отправить заявку" }
+      sending:        { en: "Sending…", uk: "Надсилаємо…", ru: "Отправляем…" }
+    placeholders:
+      email: "you@company.com"
+      telegram: "@username"
+      phone: "+380 …"
+    messages:
+      success_title:   { en: "Request {id} received", uk: "Заявку {id} прийнято", ru: "Заявка {id} принята" }
+      success_reply:   { en: "I'll reply within {hours} h.", uk: "Відповім протягом {hours} год.", ru: "Отвечу в течение {hours} ч." }
+      continue_telegram: { en: "Continue in Telegram", uk: "Продовжити в Telegram", ru: "Продолжить в Telegram" }
+      server_error:
+        en: "Couldn't send the request. Please email me: {email}"
+        uk: "Не вдалося надіслати заявку. Напишіть на пошту: {email}"
+        ru: "Не получилось отправить заявку. Напишите на почту: {email}"
+      rate_limited:
+        en: "Too many requests. Please try again later or email me: {email}"
+        uk: "Забагато заявок. Спробуйте пізніше або напишіть на пошту: {email}"
+        ru: "Слишком много заявок. Попробуйте позже или напишите на почту: {email}"
+    errors:
+      required:           { en: "Required field", uk: "Обов'язкове поле", ru: "Обязательное поле" }
+      invalid_email:      { en: "Check the email address", uk: "Перевірте адресу пошти", ru: "Проверьте адрес почты" }
+      invalid_telegram:   { en: "Check the Telegram username", uk: "Перевірте нікнейм у Telegram", ru: "Проверьте ник в Telegram" }
+      invalid_phone:      { en: "Check the phone number", uk: "Перевірте номер телефону", ru: "Проверьте номер телефона" }
+      description_length: { en: "20 to 4000 characters", uk: "Від 20 до 4000 символів", ru: "От 20 до 4000 символов" }
+      consent_required:   { en: "Consent is required to send the request", uk: "Без згоди заявку не надіслати", ru: "Без согласия заявку не отправить" }
     directions:
-      - { id: networks,     label: "Сети и оборудование" }
-      - { id: servers,      label: "Серверы, СХД, кластеры" }
+      - { id: networks,     label: { en: "Networks & hardware", uk: "Мережі та обладнання", ru: "Сети и оборудование" } }
+      - { id: servers,      label: { en: "Servers, storage, clusters", uk: "Сервери, СЗД, кластери", ru: "Серверы, СХД, кластеры" } }
       - { id: devops,       label: "DevOps" }
-      - { id: highload-lan, label: "Высоконагруженная ЛВС" }
-      - { id: development,  label: "Разработка" }
-      - { id: other,        label: "Другое" }
+      - { id: highload-lan, label: { en: "High-load LAN", uk: "Високонавантажена локальна мережа", ru: "Высоконагруженная ЛВС" } }
+      - { id: development,  label: { en: "Development", uk: "Розробка", ru: "Разработка" } }
+      - { id: other,        label: { en: "Other", uk: "Інше", ru: "Другое" } }
     contact_methods:
       - { id: email,    label: "Email" }
       - { id: telegram, label: "Telegram" }
-      - { id: phone,    label: "Телефон" }
+      - { id: phone,    label: { en: "Phone", uk: "Телефон", ru: "Телефон" } }
     budgets:                            # TODO(Денис): подтвердить диапазоны
-      - "до $500"
+      - { en: "up to $500",   uk: "до $500",      ru: "до $500" }
       - "$500–1k"
       - "$1–3k"
       - "$3–10k"
-      - "больше $10k"
-      - "пока не знаю"
+      - { en: "over $10k",    uk: "понад $10k",   ru: "больше $10k" }
+      - { en: "not sure yet", uk: "поки не знаю", ru: "пока не знаю" }
     timelines:                          # TODO(Денис): подтвердить варианты
-      - "срочно"
-      - "1–2 недели"
-      - "месяц"
-      - "не горит"
+      - { en: "urgent",     uk: "терміново", ru: "срочно" }
+      - { en: "1–2 weeks",  uk: "1–2 тижні", ru: "1–2 недели" }
+      - { en: "a month",    uk: "місяць",    ru: "месяц" }
+      - { en: "no rush",    uk: "не горить", ru: "не горит" }
+
+# Общие строки интерфейса
+ui:
+  headings:
+    services: { en: "What I do", uk: "Що я роблю", ru: "Что я делаю" }
+    skills:   { en: "Skills", uk: "Навички", ru: "Навыки" }
+    stats:    { en: "In numbers", uk: "У цифрах", ru: "В цифрах" }
+  skip_to_content: { en: "Skip to content", uk: "Перейти до змісту", ru: "Перейти к содержанию" }
+  theme_toggle:    { en: "Toggle theme", uk: "Змінити тему", ru: "Сменить тему" }
+  language:        { en: "Language", uk: "Мова", ru: "Язык" }
+  skills_search:   { en: "Search skills", uk: "Пошук навичок", ru: "Поиск по навыкам" }
+  skills_no_results: { en: "Nothing found", uk: "Нічого не знайдено", ru: "Ничего не найдено" }
+
+not_found:                              # 404, черновик
+  title: { en: "Packet lost", uk: "Пакет втрачено", ru: "Пакет потерян" }
+  text:
+    en: "The page you were looking for never reached its destination."
+    uk: "Сторінка, яку ви шукали, не дійшла до адресата."
+    ru: "Страница, которую вы искали, не дошла до адресата."
+  game_hint: { en: "Find the packet", uk: "Знайдіть пакет", ru: "Найдите пакет" }
+  back: { en: "Back to home", uk: "На головну", ru: "На главную" }
 
 footer:
-  game_entry: "Не нажимать"             # черновик; ведёт на /play (заглушка «скоро»)
-  play_stub: "Здесь скоро кое-что появится."
+  copyright: "© {year} Krokosha"
+  game_entry: { en: "Do not press", uk: "Не натискати", ru: "Не нажимать" }       # черновик; ведёт на /play
+  play_stub:
+    en: "Something is coming here soon."
+    uk: "Скоро тут дещо з'явиться."
+    ru: "Здесь скоро кое-что появится."
 
 flags:
   skills:
