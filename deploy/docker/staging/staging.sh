@@ -23,9 +23,11 @@ DOMAIN=${KROKOSHA_STAGING_DOMAIN:-krokosha.localhost}
 HTTP_PORT=${KROKOSHA_STAGING_HTTP_PORT:-80}
 HTTPS_PORT=${KROKOSHA_STAGING_HTTPS_PORT:-443}
 
-# Git Bash on Windows rewrites arguments that look like POSIX paths; Docker needs them as they are.
-export MSYS_NO_PATHCONV=1
-export MSYS2_ARG_CONV_EXCL='*'
+# Git Bash on Windows rewrites arguments that look like POSIX paths (/src, /sys/fs/cgroup…);
+# Docker needs them as they are. Only for docker: git must keep getting converted paths.
+docker() {
+  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' command docker "$@"
+}
 
 host_path() { # path of the repository as the Docker daemon sees it
   if command -v cygpath >/dev/null 2>&1; then cygpath -w "$REPO"; else printf '%s' "$REPO"; fi
