@@ -1,6 +1,8 @@
 # deploy/ — установка и эксплуатация на VPS
 
-**Статус (фаза 1):** устанавливается сайт — nginx, сертификат, сборка релизов по таймеру, фаервол, fail2ban. API, админка и почта добавятся в этот же установщик следующими шагами.
+**Статус:** устанавливаются сайт (nginx, сертификат, сборка релизов по таймеру), MySQL и Redis в Docker, API, фаервол, fail2ban. Админка, заявки, бот и почта добавятся в этот же установщик следующими шагами ([docs/roadmap.md](../docs/roadmap.md)).
+
+> На VPS пока ничего не выкладывается — проверяем на локальном стенде (ниже).
 
 ## Установка на чистый сервер
 
@@ -18,10 +20,27 @@ sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@exampl
 | Код | `/opt/krokosha/repo` (клон репозитория), бинарники — `/opt/krokosha/bin` |
 | Go и Node.js | `/opt/krokosha/toolchain` — официальные архивы, версии и SHA-256 закреплены в [`toolchain.env`](toolchain.env). В систему ничего не ставится, сторонние apt-репозитории не подключаются |
 | Сайт | `/var/www/krokosha/releases/<дата-время>`, `current` → живой релиз (хранятся 3 последних) |
-| Кэш и данные | `/var/lib/krokosha` |
-| Настройки и секреты | `/etc/krokosha/env` — `600 root`, описание в [`env/.env.example`](env/.env.example) |
+| **Данные** | `/srv/krokosha` (`--data-dir`): `mysql/`, `redis/`, `attachments/`, `backups/`, `config/`, позже `mail/`. **Переезд = скопировать эту директорию** ([architecture.md §6](../docs/architecture.md)) |
+| Настройки и секреты | `/etc/krokosha` — ссылка на `/srv/krokosha/config`. `env` — `600 root`, описание в [`env/.env.example`](env/.env.example); пароль root MySQL лежит отдельно (`mysql-root.env`), API его не видит |
+| MySQL и Redis | Docker Compose ([`compose/compose.yaml`](compose/compose.yaml)): слушают только `127.0.0.1`, жёсткие лимиты памяти, MySQL настроен на малую память ([`compose/mysql/krokosha.cnf`](compose/mysql/krokosha.cnf)) |
+| API | `krokosha-api.service`: `127.0.0.1:8080`, за nginx (`/api/`), миграции базы применяет при старте |
+| Кэши | `/var/lib/krokosha` — npm, Go, ответы GitHub; можно удалить без потерь |
 | Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог, 30 дней) |
 | Пользователь | `krokosha` — системный, без шелла и пароля; от него идут sync и сборка |
+
+## Локальный стенд
+
+Контейнер Docker, который выглядит как VPS (Ubuntu 24.04, systemd); внутри отрабатывает настоящий `install.sh`, включая Docker с MySQL и Redis.
+
+```bash
+deploy/docker/staging/staging.sh up       # установить текущую ветку (закоммиченное состояние) → https://krokosha.localhost
+deploy/docker/staging/staging.sh update   # подтянуть новые коммиты ветки и применить (update.sh)
+deploy/docker/staging/staging.sh test     # полный цикл, как в CI: установка, повтор, update, откат, удаление (~2,5 мин)
+deploy/docker/staging/staging.sh shell    # root-консоль внутри
+deploy/docker/staging/staging.sh down     # убрать стенд
+```
+
+Нужен Docker (на Windows — Docker Desktop, запускать из Git Bash или WSL). Сертификат самоподписанный: браузер предупредит один раз. WireGuard в ядре WSL2 отсутствует, поэтому эта часть проверки выполняется только в CI.
 
 ## Обслуживание
 
@@ -29,7 +48,7 @@ sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@exampl
 sudo /opt/krokosha/repo/deploy/update.sh              # подтянуть main и применить: код, конфиги, сборка, релиз
 sudo systemctl start krokosha-sync.service            # пересобрать сейчас (само — каждые 6 часов)
 sudo /opt/krokosha/repo/deploy/rollback.sh            # вернуть предыдущий релиз (--list — показать все)
-sudo /opt/krokosha/repo/deploy/uninstall.sh           # удалить сайт с сервера (пакеты и сертификаты остаются)
+sudo /opt/krokosha/repo/deploy/uninstall.sh           # удалить сайт с сервера; данные в /srv/krokosha остаются (--purge удаляет и их)
 ```
 
 Сервер сам забирает код из GitHub; ключей от сервера в GitHub нет (бриф B9).
@@ -76,10 +95,12 @@ deploy/
 ├── rollback.sh         откат на предыдущий релиз, таймер пересборки ставится на паузу
 ├── uninstall.sh        удаление с подтверждением
 ├── toolchain.env       закреплённые версии Go и Node.js с контрольными суммами
+├── compose/            MySQL и Redis: compose.yaml, конфиг MySQL для малой памяти
+├── docker/staging/     локальный стенд: контейнер-«VPS» и staging.sh
 ├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза
 ├── lib/                common.sh — общие функции: журнал, шаблоны, /etc/krokosha/env
 ├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
-├── systemd/            krokosha-sync.service + .timer; позже — krokosha-api, krokosha-certwatch
+├── systemd/            krokosha-api.service, krokosha-sync.service + .timer; позже — krokosha-certwatch
 ├── logrotate/          ротация access-лога: 30 дней
 ├── fail2ban/           jail для sshd; позже — админка и почта
 ├── env/                .env.example — описание /etc/krokosha/env
@@ -88,6 +109,6 @@ deploy/
 └── mailserver/         (позже) docker-mailserver: compose, конфиг, DKIM
 ```
 
-Ещё не сделано из брифа B8: `backup.sh` (появится вместе с базой данных), `krokosha-certwatch` (штатное продление уже работает через `certbot.timer`), почта, API и админка.
+Ещё не сделано из брифа B8: `backup.sh`, `krokosha-certwatch` (штатное продление уже работает через `certbot.timer`), почта, первичный администратор и токен бота — см. [roadmap](../docs/roadmap.md).
 
 Правила: `set -euo pipefail`, shellcheck в CI, никаких `curl | bash`, секреты только в `/etc/krokosha/env`.
