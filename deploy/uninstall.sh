@@ -55,15 +55,17 @@ main() {
   step "Removing the nginx site"
   rm -f /etc/nginx/sites-enabled/krokosha.conf /etc/nginx/sites-available/krokosha.conf \
     /etc/nginx/conf.d/krokosha-http.conf /etc/nginx/snippets/krokosha-*.conf \
-    /etc/logrotate.d/krokosha /etc/fail2ban/jail.d/krokosha.conf \
+    /etc/logrotate.d/krokosha /etc/fail2ban/jail.d/krokosha.conf /etc/fail2ban/filter.d/krokosha-admin.conf \
     /etc/letsencrypt/renewal-hooks/deploy/krokosha-reload-nginx
   if have nginx && nginx -t 2>/dev/null; then
     systemctl reload nginx 2>/dev/null || true
   fi
-  systemctl reload fail2ban 2>/dev/null || true
+  # A restart, not a reload: the jail of the admin area is gone together with its log file.
+  systemctl restart fail2ban 2>/dev/null || true
 
   step "Removing files"
   rm -rf "$KROKOSHA_ROOT" "$KROKOSHA_WWW" "$KROKOSHA_STATE" /var/log/krokosha
+  [[ $(readlink /usr/local/bin/krokosha-cli 2>/dev/null) != "$KROKOSHA_ROOT"/* ]] || rm -f /usr/local/bin/krokosha-cli
   if [[ $purge == yes ]]; then
     rm -rf "$KROKOSHA_ETC"
     if [[ -n $data_dir && $data_dir == /* && $data_dir != / && -d $data_dir ]]; then

@@ -30,7 +30,8 @@ server {
         try_files $uri =404;
     }
 
-    # The API: analytics events, the contact form, later the admin area.
+    # The API: analytics events, the contact form. The admin area is NOT proxied here: it needs HTTPS
+    # (its session cookie is Secure, and a password must never travel in clear text).
     location /api/ {
         limit_req zone=krokosha_api burst=40 nodelay;
         limit_req_status 429;

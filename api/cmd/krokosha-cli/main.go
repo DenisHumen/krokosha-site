@@ -2,6 +2,7 @@
 // install and update scripts) and on a developer machine.
 //
 //	krokosha-cli sync      pull public repositories and the avatar from GitHub
+//	krokosha-cli admin     manage the accounts of the admin area
 package main
 
 import (
@@ -25,6 +26,8 @@ const usage = `krokosha-cli — maintenance tool of krokosha-site
 Usage:
   krokosha-cli sync [flags]    pull public repositories and the avatar from GitHub
                                into content/generated/ (input of the site build)
+  krokosha-cli admin <cmd>     accounts of the admin area: list, create, passwd, disable,
+                               enable, totp-reset
 
 Run "krokosha-cli <command> -h" for the flags of a command.
 
@@ -50,6 +53,8 @@ func run() int {
 	switch command, args := os.Args[1], os.Args[2:]; command {
 	case "sync":
 		err = runSync(ctx, args)
+	case "admin":
+		err = runAdmin(ctx, args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

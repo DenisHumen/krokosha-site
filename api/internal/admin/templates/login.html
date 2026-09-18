@@ -1,0 +1,23 @@
+{{define "content"}}
+  <section class="card login">
+    <h1 class="card-title">Вход</h1>
+    <div class="card-body">
+      {{if .Data.Pending}}
+        <form method="post" action="{{path "/login/code"}}" autocomplete="off">
+          <input type="hidden" name="pending" value="{{.Data.Pending}}" />
+          <label for="code">Код из приложения-аутентификатора</label>
+          <input id="code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required autofocus />
+          <button class="button" type="submit">Подтвердить</button>
+        </form>
+      {{else}}
+        <form method="post" action="{{path "/login"}}">
+          <label for="login">Логин</label>
+          <input id="login" name="login" value="{{.Data.Login}}" autocomplete="username" autocapitalize="none" spellcheck="false" required {{if not .Data.Login}}autofocus{{end}} />
+          <label for="password">Пароль</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required {{if .Data.Login}}autofocus{{end}} />
+          <button class="button" type="submit">Войти</button>
+        </form>
+      {{end}}
+    </div>
+  </section>
+{{end}}

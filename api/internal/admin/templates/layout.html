@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="dark" />
+    <title>{{.Title}} · Krokosha</title>
+    <link rel="stylesheet" href="{{path "/static/admin.css"}}" />
+  </head>
+  <body>
+    {{if .Session}}
+      <header class="topbar">
+        <a class="brand" href="{{path "/"}}">KROKOSHA</a>
+        <nav aria-label="Разделы">
+          <a href="{{path "/"}}" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Обзор</a>
+          <a href="{{path "/account"}}" {{if eq .Nav "account"}}aria-current="page"{{end}}>Аккаунт</a>
+        </nav>
+        <form class="signout" method="post" action="{{path "/logout"}}">
+          <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+          <span class="muted">{{.Session.User.Login}}</span>
+          <button class="button button-ghost" type="submit">Выйти</button>
+        </form>
+      </header>
+    {{end}}
+
+    <main class="page">
+      {{if .Flash}}<p class="notice notice-ok" role="status">{{.Flash}}</p>{{end}}
+      {{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
+      {{template "content" .}}
+    </main>
+
+    {{if .Session}}<footer class="footnote muted">версия {{.Version}}</footer>{{end}}
+  </body>
+</html>

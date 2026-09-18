@@ -53,8 +53,7 @@ start() { # NAME [docker run options…]
     --volume "$name-containerd:/var/lib/containerd" \
     "$@" "$IMAGE" >/dev/null
   # Wait until systemd is up.
-  local i
-  for i in $(seq 1 60); do
+  for _ in $(seq 1 60); do
     if docker exec "$name" systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded'; then
       return 0
     fi
@@ -80,11 +79,16 @@ case ${1:-} in
     branch=$(current_branch)
     build
     start "$NAME" --publish "$HTTP_PORT:80" --publish "$HTTPS_PORT:443"
+    # A throw-away administrator with a random password, new for every `up`.
+    docker exec "$NAME" bash -c "umask 077 && od -An -N9 -tx1 /dev/urandom | tr -dc 0-9a-f >/root/admin-password && echo >>/root/admin-password"
     docker exec --env GITHUB_TOKEN="${GITHUB_TOKEN:-}" "$NAME" /src/deploy/install.sh \
       --domain "$DOMAIN" --email dev@example.com --repo /src --branch "$branch" \
-      --tls selfsigned --skip-dns-check --yes
+      --tls selfsigned --skip-dns-check --yes \
+      --admin-path /_staging --admin-login dev --admin-password-file /root/admin-password
+    base="https://$DOMAIN$([[ $HTTPS_PORT == 443 ]] || printf ':%s' "$HTTPS_PORT")"
     echo
-    echo "Staging is up: https://$DOMAIN$([[ $HTTPS_PORT == 443 ]] || printf ':%s' "$HTTPS_PORT")/"
+    echo "Staging is up: $base/"
+    echo "Admin area:    $base/_staging/   login: dev   password: $(docker exec "$NAME" cat /root/admin-password)"
     ;;
   update)
     branch=$(current_branch)

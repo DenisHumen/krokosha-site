@@ -36,12 +36,35 @@ server {
         try_files $uri =404;
     }
 
-    # The API: analytics events, the contact form, later the admin area.
+    # The API: analytics events, the contact form.
     location /api/ {
         limit_req zone=krokosha_api burst=40 nodelay;
         limit_req_status 429;
         client_max_body_size 64k;
         include snippets/krokosha-proxy.conf;
+    }
+
+    # The admin area (brief B6): behind a secret path (ADMIN_PATH in /etc/krokosha/env) and over
+    # HTTPS only — the plain-HTTP server never proxies it. Signing in is limited much harder than
+    # the rest: every password check costs the server 64 MB and a good part of a second.
+    location ^~ @@ADMIN_PATH@@/ {
+        limit_req zone=krokosha_admin burst=40 nodelay;
+        include snippets/krokosha-admin.conf;
+    }
+
+    location = @@ADMIN_PATH@@/login {
+        limit_req zone=krokosha_login burst=10 nodelay;
+        include snippets/krokosha-admin.conf;
+    }
+
+    location = @@ADMIN_PATH@@/login/code {
+        limit_req zone=krokosha_login burst=10 nodelay;
+        include snippets/krokosha-admin.conf;
+    }
+
+    location = @@ADMIN_PATH@@ {
+        access_log /var/log/krokosha/nginx-admin.json.log krokosha_json;
+        return 301 @@ADMIN_PATH@@/;
     }
 
     # Nothing hidden is ever served (the ACME challenge lives on port 80).

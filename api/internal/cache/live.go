@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -113,4 +114,56 @@ func (c *Cache) CountActive(ctx context.Context, set string, window time.Duratio
 		}
 	}
 	return count
+}
+
+// Set stores a short-lived value: a login that waits for its one-time code, a dialogue state of
+// the bot. Like everything in this package it is best effort — callers must cope with Get
+// returning nothing.
+func (c *Cache) Set(ctx context.Context, key, data string, ttl time.Duration) {
+	if c.redis != nil {
+		if err := c.redis.Set(ctx, "v:"+key, data, ttl).Err(); err == nil {
+			c.markHealthy()
+			return
+		} else if ctx.Err() == nil {
+			c.markDegraded(err)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.values[key] = &value{data: data, expires: c.now().Add(ttl)}
+}
+
+// Get returns the value stored under key, if it is still alive.
+func (c *Cache) Get(ctx context.Context, key string) (string, bool) {
+	if c.redis != nil {
+		data, err := c.redis.Get(ctx, "v:"+key).Result()
+		switch {
+		case err == nil:
+			c.markHealthy()
+			return data, true
+		case errors.Is(err, redis.Nil):
+			c.markHealthy()
+			// Fall through: the value may have been written to memory during an outage.
+		case ctx.Err() == nil:
+			c.markDegraded(err)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.values[key]; ok && c.now().Before(v.expires) {
+		return v.data, true
+	}
+	return "", false
+}
+
+// Del removes a value.
+func (c *Cache) Del(ctx context.Context, key string) {
+	if c.redis != nil {
+		if err := c.redis.Del(ctx, "v:"+key).Err(); err != nil && ctx.Err() == nil {
+			c.markDegraded(err)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.values, key)
 }
