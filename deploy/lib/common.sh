@@ -34,7 +34,11 @@ require_root() {
 # and git refuses to run from a directory it cannot read.
 as_site_user() (
   cd /
-  exec runuser -u "$KROKOSHA_USER" -- env -i     HOME="$KROKOSHA_STATE"     PATH="$KROKOSHA_ROOT/toolchain/node/bin:$KROKOSHA_ROOT/toolchain/go/bin:/usr/local/bin:/usr/bin:/bin"     LANG=C.UTF-8     "$@"
+  exec runuser -u "$KROKOSHA_USER" -- env -i \
+    HOME="$KROKOSHA_STATE" \
+    PATH="$KROKOSHA_ROOT/toolchain/node/bin:$KROKOSHA_ROOT/toolchain/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    LANG=C.UTF-8 \
+    "$@"
 )
 
 # install_if_changed SRC DST [MODE] [OWNER:GROUP] — copies only when the content differs.
