@@ -1,0 +1,57 @@
+# Plain HTTP. Used in two cases: before the first certificate exists (the site is reachable while
+# Let's Encrypt validates the domain) and with `install.sh --tls none` (tests, a TLS proxy in front).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@SERVER_NAMES@@;
+
+    root @@WWW@@/current;
+    index index.html;
+    charset utf-8;
+    server_tokens off;
+    absolute_redirect off;
+
+    access_log /var/log/krokosha/nginx-access.json.log krokosha_json;
+    error_log  /var/log/krokosha/nginx-error.log warn;
+
+    include snippets/krokosha-compression.conf;
+    include snippets/krokosha-headers.conf;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root @@WWW@@/acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location ^~ /_astro/ {
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location ~ /\. {
+        return 404;
+    }
+
+    location ^~ /uk/ {
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        error_page 404 /uk/404/index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    location ^~ /ru/ {
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        error_page 404 /ru/404/index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    location / {
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        error_page 404 /404/index.html;
+        try_files $uri $uri/ =404;
+    }
+}

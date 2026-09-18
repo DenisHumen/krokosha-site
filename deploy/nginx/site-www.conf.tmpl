@@ -1,0 +1,14 @@
+# www.@@DOMAIN@@ → @@DOMAIN@@: one canonical host name for search engines.
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.@@DOMAIN@@;
+    server_tokens off;
+
+    ssl_certificate     @@TLS_CERT@@;
+    ssl_certificate_key @@TLS_KEY@@;
+    include snippets/krokosha-tls.conf;
+
+    return 301 https://@@DOMAIN@@$request_uri;
+}

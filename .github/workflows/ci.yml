@@ -93,6 +93,35 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/...
 
+  deploy:
+    name: deploy (shellcheck, install on a clean VM)
+    runs-on: ubuntu-24.04 # same OS as the VPS; a real VM with systemd, thrown away after the job
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: |
+          shellcheck --version | sed -n 2p
+          shellcheck -x deploy/*.sh deploy/lib/*.sh deploy/bin/*.sh deploy/ci/*.sh
+
+      # The brief's acceptance criterion: a clean server is set up with one command.
+      # Installs for a fake domain with a self-signed certificate, then checks the site, headers,
+      # firewall (with a WireGuard interface that must survive), a second run, update, rollback
+      # and uninstall.
+      - name: Install, update, roll back and uninstall on this VM
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          sudo mkdir -p /srv/krokosha-src
+          sudo cp -a . /srv/krokosha-src/
+          sudo chown -R root:root /srv/krokosha-src
+          sudo chmod -R a+rX /srv/krokosha-src
+          sudo git -C /srv/krokosha-src switch --quiet --create ci-test
+          sudo --preserve-env=GITHUB_TOKEN /srv/krokosha-src/deploy/ci/test-install.sh /srv/krokosha-src
+
   e2e:
     name: web e2e (Playwright, axe, Lighthouse)
     runs-on: ubuntu-24.04

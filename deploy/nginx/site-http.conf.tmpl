@@ -1,0 +1,18 @@
+# Port 80: Let's Encrypt HTTP-01 challenges, everything else goes to HTTPS.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@SERVER_NAMES@@;
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root @@WWW@@/acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://@@DOMAIN@@$request_uri;
+    }
+}
