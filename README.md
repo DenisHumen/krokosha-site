@@ -2,7 +2,7 @@
 
 Source of [krokosha.xyz](https://krokosha.xyz), the personal site of **Krokosha**, a network & infrastructure engineer (networks, servers, DevOps, tooling).
 
-> **Status:** phase 1. The Astro skeleton (three languages, full SEO, temporary markup) builds from `content/`; design work runs in parallel in `design/`. Next: Go API with GitHub sync, installer.
+> **Status:** phase 1. The Astro site (three languages, full SEO, temporary markup) builds from `content/` and from GitHub data pulled by the Go sync (`krokosha-cli sync`); design work runs in parallel in `design/`. Next: installer, then the API (analytics, admin, leads).
 
 ## Stack
 

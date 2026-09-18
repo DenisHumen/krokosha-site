@@ -59,6 +59,40 @@ jobs:
       - name: Check the built site
         run: node scripts/check-dist.mjs
 
+  api:
+    name: api (lint, tests, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The minimum supported Go version (api/go.mod): what compiles here compiles on the server.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+          working-directory: api
+
+      - name: Tests (with the race detector)
+        run: go test -race -count=1 ./...
+
+      # One static binary for the VPS: no libc dependency, reproducible.
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/...
+
   e2e:
     name: web e2e (Playwright, axe, Lighthouse)
     runs-on: ubuntu-24.04

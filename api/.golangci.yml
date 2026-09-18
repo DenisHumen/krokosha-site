@@ -1,0 +1,37 @@
+# golangci-lint v2. The default set (errcheck, govet, ineffassign, staticcheck, unused) plus a few
+# linters that catch real bugs in network and file code.
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - unconvert
+    - unparam
+  settings:
+    gosec:
+      excludes:
+        - G304 # file paths come from flags and the repository layout, not from users
+        # Generated site data is public by nature and is read by other users on the server
+        # (build user, nginx): 0755 directories and 0644 files are intended.
+        - G301
+        - G302
+        - G306
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - (io.Closer).Close
+        - os.Remove
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx, errcheck]
+
+formatters:
+  enable:
+    - gofmt

@@ -112,7 +112,7 @@
 | `stars` | int | Показывать только если > 0 |
 | **[v1.1]** `tier` | `"featured"` \| `"standard"` \| `"compact"` | Уровень подачи, см. §5. Показываются **все** публичные репозитории, но по-разному |
 | **[v1.1]** `archived` | bool | Архивный — метка «архив», всегда `compact` |
-| **[v1.1]** `stale` | bool | `true` — сборка из кэша, GitHub был недоступен. Показать `site.projects.error_note` |
+| **[v1.1]** `stale` | bool | `true` — данные из кэша: GitHub недоступен больше суток. Показать `site.projects.error_note` |
 
 Массив `public` уже отсортирован: pinned → featured → standard → compact. Порядок не менять.
 

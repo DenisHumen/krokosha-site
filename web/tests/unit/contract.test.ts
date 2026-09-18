@@ -71,6 +71,19 @@ describe('site mode shows only confirmed data', () => {
     expect(JSON.stringify(data.projects.private)).not.toContain('TODO');
   });
 
+  it('applies translated description overrides from projects.yaml', () => {
+    const edited = structuredClone(content);
+    const target = edited.github.public[0]!;
+    edited.projectsConfig.overrides = {
+      [target.name.toUpperCase()]: { description: { en: 'Manual', uk: 'Вручну', ru: 'Вручную' } },
+    };
+    expect(buildPageData(edited, 'uk', siteOptions).projects.public[0]?.description).toBe('Вручну');
+    expect(buildPageData(edited, 'en', siteOptions).projects.public[0]?.description).toBe('Manual');
+    expect(buildPageData(edited, 'en', siteOptions).projects.public[1]?.description).toBe(
+      content.github.public[1]?.description,
+    );
+  });
+
   it('never leaks TODO markers or unresolved build placeholders into page texts', () => {
     for (const lang of LOCALES) {
       const page = buildPageData(content, lang, siteOptions);
