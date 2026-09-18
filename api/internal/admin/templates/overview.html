@@ -1,11 +1,187 @@
 {{define "content"}}
+  {{$o := .Data.Overview}}
   <div class="page-head">
-    <h1>Обзор</h1>
+    <h1>{{.Data.Period.Title}}</h1>
+    {{template "period" .Data.Period}}
   </div>
-  <section class="card">
-    <h2 class="card-title">Статистика</h2>
-    <div class="card-body">
-      <p class="muted">Экраны статистики появятся следующим шагом: таймлайн посещений, «сейчас на сайте», живая лента, секции, конверсии, источники.</p>
+
+  {{/* Three stacks, as in the reference: the timeline over two of them, the numbers on the right. */}}
+  <div class="dashboard" data-live="{{path "/live"}}">
+    <div class="dash-main">
+      <section class="card">
+        <h2 class="card-title">Таймлайн</h2>
+        <div class="card-body">
+          {{.Data.Timeline}}
+          <p class="legend">
+            <span class="legend-item"><span class="swatch swatch-accent"></span>Визиты{{if $o.Hourly}} по часам{{else}} по дням{{end}}</span>
+            <span class="legend-item"><span class="swatch swatch-pink"></span>По рекламе (UTM, click id)</span>
+            <span class="legend-item muted">Боты и запросы без JavaScript — на экране «Трафик сервера»</span>
+          </p>
+        </div>
+      </section>
+
+      <div class="dash-split">
+        <div class="stack">
+          <section class="card">
+            <h2 class="card-title">Сейчас на сайте</h2>
+            <div class="card-body">
+              <p class="figure figure-large" id="active-count" aria-live="polite">{{.Data.Active}}</p>
+              <p class="muted">посетителей за последние 5 минут</p>
+              <p class="muted live-state" id="live-state" hidden></p>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2 class="card-title">Активность</h2>
+            <div class="card-body">
+              <ol class="feed" id="feed">
+                {{range .Data.Feed}}
+                  <li><time>{{.Time}}</time><span class="feed-path">{{.Path}}</span><span class="feed-text">{{.Text}}</span></li>
+                {{else}}
+                  <li class="muted" id="feed-empty">Пока тихо. Новые события появятся здесь сами.</li>
+                {{end}}
+              </ol>
+            </div>
+          </section>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <h2 class="card-title">Секции: время</h2>
+            <div class="card-body">
+              <ul class="rows">
+                {{range $o.Sections}}
+                  <li class="row">
+                    <span class="row-share">{{pct .TimePercent}}</span>
+                    <span class="row-name">{{section .Name}}</span>
+                    {{bar .TimePercent "accent"}}
+                    <span class="row-value">{{duration .TimeMs}}</span>
+                  </li>
+                {{else}}
+                  <li class="muted">Нет данных за период.</li>
+                {{end}}
+              </ul>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2 class="card-title">Секции: кто дошёл</h2>
+            <div class="card-body">
+              <ul class="rows">
+                {{range $o.Sections}}
+                  <li class="row">
+                    <span class="row-share">{{pct .Reach}}</span>
+                    <span class="row-name">{{section .Name}}</span>
+                    {{bar .Reach "cyan"}}
+                    <span class="row-value">{{.Views}}</span>
+                  </li>
+                {{else}}
+                  <li class="muted">Нет данных за период.</li>
+                {{end}}
+              </ul>
+              <h3 class="card-subtitle">Глубина прокрутки</h3>
+              <ul class="rows">
+                {{range $o.Scroll}}
+                  <li class="row">
+                    <span class="row-share">{{pct .Percent}}</span>
+                    <span class="row-name">до {{.Name}}</span>
+                    {{bar .Percent "pink"}}
+                    <span class="row-value">{{.Count}}</span>
+                  </li>
+                {{end}}
+              </ul>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
-  </section>
+    <div class="dash-side stack">
+      <section class="card">
+        <h2 class="card-title">Посещения</h2>
+        <div class="card-body">
+          <div class="figures">
+            <div><p class="figure-label">Посетители</p><p class="figure">{{$o.Totals.Visitors}}</p></div>
+            <div><p class="figure-label">Визиты</p><p class="figure">{{$o.Totals.Visits}}</p></div>
+            <div><p class="figure-label">Просмотры</p><p class="figure">{{$o.Totals.Pageviews}}</p></div>
+          </div>
+          <dl class="facts">
+            <div><dt>Страница на экране в среднем</dt><dd>{{duration $o.Totals.AvgViewMs}}</dd></div>
+            <div><dt>Клики по кнопкам и ссылкам</dt><dd>{{$o.Totals.Actions}}</dd></div>
+            <div><dt>Визиты по рекламе</dt><dd>{{$o.Totals.AdVisits}}</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Конверсии</h2>
+        <div class="card-body scores">
+          {{range $index, $score := $o.Conversions}}
+            <div class="score">
+              <div class="score-ring">{{ring $score.Percent (tone $index)}}<span class="score-value">{{pct $score.Percent}}</span></div>
+              <div><p class="score-name">{{contact $score.Name}}</p><p class="muted">{{plural $score.Visitors "посетитель" "посетителя" "посетителей"}}</p></div>
+            </div>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Источники</h2>
+        <div class="card-body">
+          {{template "shares" $o.Sources}}
+          {{if $o.Referrers}}<h3 class="card-subtitle">Сайты</h3>{{template "shares" $o.Referrers}}{{end}}
+          {{if $o.Campaigns}}<h3 class="card-subtitle">Кампании (UTM)</h3>{{template "shares" $o.Campaigns}}{{end}}
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="grid grid-below">
+    <section class="card">
+      <h2 class="card-title">Страницы и языки</h2>
+      <div class="card-body">
+        {{template "shares" $o.Pages}}
+        <h3 class="card-subtitle">Язык страницы</h3>
+        {{template "shares" $o.Languages}}
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Клики</h2>
+      <div class="card-body">
+        {{template "shares" $o.Clicks}}
+        {{if $o.Outbound}}<h3 class="card-subtitle">Внешние переходы</h3>{{template "shares" $o.Outbound}}{{end}}
+        {{if $o.Eggs}}<h3 class="card-subtitle">Пасхалки</h3>{{template "shares" $o.Eggs}}{{end}}
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Устройства</h2>
+      <div class="card-body">
+        {{template "shares" $o.Devices}}
+        <h3 class="card-subtitle">Браузеры</h3>
+        {{template "shares" $o.Browsers}}
+        <h3 class="card-subtitle">Системы</h3>
+        {{template "shares" $o.Systems}}
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">География</h2>
+      <div class="card-body">
+        {{template "shares" $o.Countries}}
+        <p class="muted">Страна определяется по усечённому адресу, когда на сервере установлена база GeoIP.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Экспорт</h2>
+      <div class="card-body">
+        <p>Данные за выбранный период в CSV (UTF-8, время — UTC).</p>
+        <p class="actions">
+          <a class="button button-ghost" href="{{href "/export/pageviews.csv" .Data.Period.Query}}" download>Просмотры</a>
+          <a class="button button-ghost" href="{{href "/export/events.csv" .Data.Period.Query}}" download>События</a>
+        </p>
+        <p class="muted">В файлах нет ни полных адресов, ни User-Agent: их нет и в базе.</p>
+      </div>
+    </section>
+  </div>
 {{end}}

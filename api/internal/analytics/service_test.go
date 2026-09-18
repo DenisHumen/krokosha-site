@@ -245,6 +245,20 @@ func TestVisitorsWhoAskNotToBeTrackedAreNotRecorded(t *testing.T) {
 	f.wait(`SELECT COUNT(*) FROM analytics_pageviews`, 0)
 }
 
+func TestTheOwnerIsNotAVisitor(t *testing.T) {
+	f := newFixture(t)
+	f.service.opts.IgnoreCookie = "__Host-ks"
+
+	// Signed in to the admin area (even with a session that has expired since): not counted.
+	if code := f.post(request{body: batch("00112233aabbcc10", `{"t":"pageview","o":0}`), headers: map[string]string{"Cookie": "__Host-ks=whatever"}}); code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204", code)
+	}
+	// Any other cookie is none of our business.
+	f.post(request{body: batch("00112233aabbcc11", `{"t":"pageview","o":0}`), headers: map[string]string{"Cookie": "theme=dark"}})
+	f.wait(`SELECT COUNT(*) FROM analytics_pageviews`, 1)
+	f.wait(`SELECT COUNT(*) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc11')`, 1)
+}
+
 func TestRequestsThatAreRefused(t *testing.T) {
 	f := newFixture(t)
 	body := batch("00112233aabbccdd", `{"t":"pageview","o":0}`)

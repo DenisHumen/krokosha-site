@@ -34,7 +34,10 @@ type Options struct {
 	SiteHost string
 	// Location is the owner's time zone: «today» in reports is their day, not the server's.
 	Location *time.Location
-	Now      func() time.Time
+	// IgnoreCookie names the session cookie of the admin area: whoever carries it is the owner
+	// looking at their own site, not a visitor.
+	IgnoreCookie string
+	Now          func() time.Time
 }
 
 // Service accepts event batches and stores them.
@@ -115,6 +118,12 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("DNT") == "1" || r.Header.Get("Sec-GPC") == "1" {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	if s.opts.IgnoreCookie != "" {
+		if _, err := r.Cookie(s.opts.IgnoreCookie); err == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	// Browsers say where a request comes from; other sites have no business posting here.
 	if origin := r.Header.Get("Origin"); origin != "" {

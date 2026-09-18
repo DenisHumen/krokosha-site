@@ -1,0 +1,45 @@
+{{define "content"}}
+  <div class="page-head">
+    <h1>Визиты · {{.Data.Period.Title}}</h1>
+    {{template "period" .Data.Period}}
+  </div>
+
+  <section class="card">
+    <h2 class="card-title">{{plural .Data.Total "визит" "визита" "визитов"}}</h2>
+    <div class="card-body">
+      <div class="table-scroll">
+      <table class="table table-wide">
+        <thead>
+          <tr><th>Начало</th><th>Посетитель</th><th>Вход</th><th>Источник</th><th>Страниц</th><th>На экране</th><th>Прокрутка</th><th>Действия</th><th>Устройство</th></tr>
+        </thead>
+        <tbody>
+          {{range .Data.Visits}}
+            <tr>
+              <td class="mono"><a href="{{href (print "/visits/" .ID) $.Data.Period.Query}}">{{time .Started}}</a></td>
+              <td class="mono">{{.Visitor}}</td>
+              <td class="mono">{{.Entry}}</td>
+              <td>{{source .Source}}{{if .Referrer}} <span class="muted">· {{.Referrer}}</span>{{end}}{{if .Campaign}} <span class="muted">· {{.Campaign}}</span>{{end}}</td>
+              <td>{{.Pages}}</td>
+              <td>{{duration .ViewMs}}</td>
+              <td>{{.MaxScroll}}%</td>
+              <td>{{.Actions}}{{if .Converted}} <span class="tag tag-ok">контакт</span>{{end}}</td>
+              <td>{{device .Device}} <span class="muted">· {{.Browser}} · {{.OS}}</span></td>
+            </tr>
+          {{else}}
+            <tr><td colspan="9" class="muted">За этот период визитов нет.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+      </div>
+
+      {{if gt .Data.Pages 1}}
+        <p class="pager">
+          {{if .Data.Prev}}<a class="button button-ghost" href="{{href "/visits" (print .Data.Period.Query "&page=" .Data.Prev)}}">← Новее</a>{{end}}
+          <span class="muted">страница {{.Data.Page}} из {{.Data.Pages}}</span>
+          {{if .Data.Next}}<a class="button button-ghost" href="{{href "/visits" (print .Data.Period.Query "&page=" .Data.Next)}}">Старше →</a>{{end}}
+        </p>
+      {{end}}
+      <p class="muted">Посетитель — псевдоним на один день: на следующий день тот же человек получит другой, и связать их нельзя.</p>
+    </div>
+  </section>
+{{end}}

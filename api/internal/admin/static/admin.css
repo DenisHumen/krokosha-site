@@ -299,6 +299,490 @@ td .button,
   margin-top: 0.875rem;
 }
 
+/* Period switcher (top right of the reference dashboard) */
+
+.period {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.period-step,
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.period-arrow,
+.segmented a {
+  padding: 0.3rem 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.period-arrow:hover,
+.segmented a:hover {
+  color: var(--fg);
+}
+
+.period-arrow.is-off {
+  opacity: 0.35;
+}
+
+.segmented a[aria-current='true'] {
+  background: var(--card-head);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.range input[type='date'] {
+  width: auto;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.range .button {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8125rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Dashboard: three stacks as in the reference — the timeline over two of them, numbers on the right.
+   Stacks (not grid rows) because cards differ in height and rows would leave holes. */
+
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.dash-main,
+.stack {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.dash-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.grid-below {
+  margin-top: 1rem;
+}
+
+@media (max-width: 70rem) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 56rem) {
+  .dash-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card-subtitle {
+  margin: 1rem 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Large numbers */
+
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.75rem;
+  margin-bottom: 0.875rem;
+}
+
+.figure-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.figure {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.figure-large {
+  font-size: 2.75rem;
+}
+
+.facts {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  text-align: right;
+}
+
+/* Charts: shapes come from the server, colours from here */
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.chart-slot {
+  fill: transparent;
+}
+
+.chart g:hover .chart-slot {
+  fill: rgb(255 255 255 / 4%);
+}
+
+.chart-bar {
+  fill: var(--accent);
+}
+
+.chart-bar-ads {
+  fill: var(--pink);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.4rem;
+  border-radius: 2px;
+}
+
+.swatch-accent {
+  background: var(--accent);
+}
+
+.swatch-pink {
+  background: var(--pink);
+}
+
+/* Breakdown rows: share · name · bar · value */
+
+.rows {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) minmax(3rem, 32%) minmax(2.5rem, auto);
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.row-share {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-value {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.bar-track {
+  fill: var(--line);
+}
+
+.bar-accent {
+  fill: var(--accent);
+}
+
+.bar-cyan {
+  fill: var(--cyan);
+}
+
+.bar-pink {
+  fill: var(--pink);
+}
+
+/* Scores: rings */
+
+.scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.score {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.score p {
+  margin: 0;
+}
+
+.score-name {
+  font-weight: 600;
+}
+
+.score-ring {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+}
+
+.ring {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ring-track,
+.ring-value {
+  fill: none;
+  stroke-width: 3;
+}
+
+.ring-track {
+  stroke: var(--line);
+}
+
+.ring-value {
+  stroke-linecap: round;
+}
+
+.ring-accent {
+  stroke: var(--accent);
+}
+
+.ring-cyan {
+  stroke: var(--cyan);
+}
+
+.ring-pink {
+  stroke: var(--pink);
+}
+
+.score-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Activity feed */
+
+.feed {
+  display: grid;
+  gap: 0.2rem;
+  max-height: 27rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.feed-static {
+  max-height: none;
+}
+
+.feed li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(3rem, 8rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.feed time,
+.feed-path {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.feed time {
+  color: var(--fg);
+}
+
+.feed-path {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-text {
+  color: var(--muted);
+}
+
+.feed-page .feed-text {
+  color: var(--fg);
+}
+
+.feed-page {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.feed-page:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.feed li.is-new {
+  animation: feed-in 1.2s ease-out;
+}
+
+@keyframes feed-in {
+  from {
+    background: var(--accent-soft);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed li.is-new {
+    animation: none;
+  }
+}
+
+.live-state {
+  margin-top: 0.5rem;
+  color: var(--warn);
+}
+
+/* Small things */
+
+.tag {
+  display: inline-block;
+  padding: 0 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+}
+
+.tag-ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+}
+
+.table a {
+  color: var(--fg);
+}
+
+/* A wide table scrolls inside its card instead of being cut off. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-wide {
+  min-width: 62rem;
+}
+
+.table-wide td {
+  white-space: nowrap;
+}
+
 /* Login */
 
 .login {
@@ -324,18 +808,19 @@ td .button,
   overflow-wrap: anywhere;
 }
 
+/* Narrow screens: a short table becomes a list; a wide one keeps its columns and scrolls. */
 @media (max-width: 40rem) {
-  .table thead {
+  .table:not(.table-wide) thead {
     display: none;
   }
 
-  .table td {
+  .table:not(.table-wide) td {
     display: block;
     padding: 0.15rem 0;
     border: 0;
   }
 
-  .table tr {
+  .table:not(.table-wide) tr {
     display: block;
     padding: 0.6rem 0;
     border-top: 1px solid var(--line);
