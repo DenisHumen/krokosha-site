@@ -1,0 +1,11 @@
+# Requests for any other host name (the bare IP address, someone else's domain pointed here):
+# no content, no certificate. Keeps the site from being indexed under foreign names.
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    server_tokens off;
+    access_log off;
+    return 444;
+}

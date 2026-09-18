@@ -1,0 +1,11 @@
+[Unit]
+Description=krokosha site: refresh GitHub data and rebuild every 6 hours
+
+[Timer]
+# Also what makes the years of experience grow on the anniversary (brief B4): no yearly cron.
+OnCalendar=*-*-* 00,06,12,18:10:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,42 @@
+[Unit]
+Description=krokosha site: GitHub sync, rebuild and release
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=krokosha
+Group=krokosha
+EnvironmentFile=/etc/krokosha/env
+Environment=HOME=/var/lib/krokosha
+ExecStart=/opt/krokosha/repo/deploy/bin/build-release.sh
+TimeoutStartSec=20min
+
+# The build must never starve the rest of a small VPS.
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1G
+MemoryMax=1400M
+
+# The build runs third-party code (npm packages): give it as little of the system as possible.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/krokosha/repo /var/lib/krokosha /var/www/krokosha
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0022

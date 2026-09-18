@@ -1,0 +1,10 @@
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    server_tokens off;
+    access_log off;
+    # Refuse the TLS handshake instead of presenting this site's certificate.
+    ssl_reject_handshake on;
+}

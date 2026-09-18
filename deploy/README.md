@@ -1,21 +1,93 @@
 # deploy/ — установка и эксплуатация на VPS
 
-Статус: скрипты появятся в фазе 1.
+**Статус (фаза 1):** устанавливается сайт — nginx, сертификат, сборка релизов по таймеру, фаервол, fail2ban. API, админка и почта добавятся в этот же установщик следующими шагами.
+
+## Установка на чистый сервер
+
+Ubuntu 24.04 (или Debian 12), домен уже указывает на сервер:
+
+```bash
+git clone https://github.com/DenisHumen/krokosha-site.git
+sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@example.com
+```
+
+Скрипт спросит согласие с условиями Let's Encrypt (или `--agree-tos`). Повторный запуск ничего не ломает: он приводит сервер к тому же состоянию. Все параметры — `install.sh --help`.
+
+| Что | Где |
+|---|---|
+| Код | `/opt/krokosha/repo` (клон репозитория), бинарники — `/opt/krokosha/bin` |
+| Go и Node.js | `/opt/krokosha/toolchain` — официальные архивы, версии и SHA-256 закреплены в [`toolchain.env`](toolchain.env). В систему ничего не ставится, сторонние apt-репозитории не подключаются |
+| Сайт | `/var/www/krokosha/releases/<дата-время>`, `current` → живой релиз (хранятся 3 последних) |
+| Кэш и данные | `/var/lib/krokosha` |
+| Настройки и секреты | `/etc/krokosha/env` — `600 root`, описание в [`env/.env.example`](env/.env.example) |
+| Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог, 30 дней) |
+| Пользователь | `krokosha` — системный, без шелла и пароля; от него идут sync и сборка |
+
+## Обслуживание
+
+```bash
+sudo /opt/krokosha/repo/deploy/update.sh              # подтянуть main и применить: код, конфиги, сборка, релиз
+sudo systemctl start krokosha-sync.service            # пересобрать сейчас (само — каждые 6 часов)
+sudo /opt/krokosha/repo/deploy/rollback.sh            # вернуть предыдущий релиз (--list — показать все)
+sudo /opt/krokosha/repo/deploy/uninstall.sh           # удалить сайт с сервера (пакеты и сертификаты остаются)
+```
+
+Сервер сам забирает код из GitHub; ключей от сервера в GitHub нет (бриф B9).
+
+## Как устроен релиз
+
+`krokosha-sync.timer` (00:10, 06:10, 12:10, 18:10) → [`bin/build-release.sh`](bin/build-release.sh):
+
+1. `krokosha-cli sync` — данные GitHub. Ошибка не фатальна: сборка идёт из кэша.
+2. `npm ci --omit=dev` — только если изменился `package-lock.json`.
+3. `astro build` → `check-dist.mjs`. Не прошла проверка — релиз не публикуется, живой сайт не трогается.
+4. Копия в `releases/<дата-время>`, атомарная смена симлинка `current`, удаление релизов старше трёх.
+
+npm и сборка запускаются с **чистым окружением**: секреты из `/etc/krokosha/env` (токен GitHub, позже — почта и бот) стороннему коду не видны. Сам юнит изолирован средствами systemd (`ProtectSystem=strict`, без привилегий, лимит памяти), чтобы сборка не мешала остальному на небольшом VPS.
+
+## Nginx
+
+- HTTP → HTTPS, `www` → основной домен, запросы с чужим именем хоста (голый IP, чужой домен) остаются без ответа.
+- Страницы — `Cache-Control: no-cache` (новый релиз виден сразу), файлы `/_astro/` с хэшем в имени — год, `immutable`.
+- «Страница не найдена» — на языке адреса: `/uk/…` → украинская, `/ru/…` → русская.
+- Заголовки безопасности — [`nginx/snippets/krokosha-headers.conf`](nginx/snippets/krokosha-headers.conf). CSP с хэшами скриптов и стилей приходит из сборки (`<meta>`), заголовок добавляет `frame-ancestors`. HSTS — только с настоящим сертификатом.
+- gzip и, если в системе есть модуль, brotli.
+- Access-лог в JSON — источник для экрана «Трафик сервера» в админке.
+
+## Фаервол и то, что уже живёт на сервере
+
+Установщик трогает только своё (docs/architecture.md §5):
+
+- Правило для SSH добавляется первым и проверяется **до** включения UFW; порт берётся из `sshd -T`.
+- Открываются 80 и 443; дополнительные порты — `--allow 51820/udp` (можно несколько, запоминаются).
+- **WireGuard определяется автоматически:** для каждого интерфейса остаётся открытым его порт и разрешается маршрутизация клиентов (`ufw route allow in on wg0`) — по умолчанию UFW пересылаемый трафик отбрасывает. `net.ipv4.ip_forward` не меняется, NAT-правила не трогаются.
+- `--skip-firewall` — не настраивать UFW вовсе.
+
+## Проверка в CI
+
+Job `deploy`: shellcheck всех скриптов и [`ci/test-install.sh`](ci/test-install.sh) — настоящая установка на чистой Ubuntu 24.04 (одноразовая VM GitHub) с самоподписанным сертификатом и тестовым WireGuard-интерфейсом: сайт на трёх языках, редиректы, заголовки, кэш, сжатие, фаервол, повторный запуск, `update.sh`, откат, удаление.
+
+## Структура
 
 ```
 deploy/
-├── install.sh          идемпотентная установка «с нуля»: sudo ./install.sh --domain … --email … [--admin-path …] [--no-mail]
-├── update.sh           git pull → сборка → атомарная смена релиза → миграции
-├── backup.sh           БД + почта + конфиги, с ротацией
-├── rollback.sh         откат на предыдущий релиз
+├── install.sh          идемпотентная установка; update.sh вызывает её же с сохранёнными настройками
+├── update.sh           git pull → install.sh --from-env
+├── rollback.sh         откат на предыдущий релиз, таймер пересборки ставится на паузу
 ├── uninstall.sh        удаление с подтверждением
-├── lib/                общие bash-функции (логирование, проверки, шаблонизация)
-├── nginx/              конфиги сайта, API, админки; rate-limit; JSON access-лог
-├── systemd/            krokosha-api.service, krokosha-sync.{service,timer}, krokosha-certwatch.{service,timer}
-├── certbot/            deploy-hook: reload nginx + перезагрузка сертификата в почтовом контейнере
-├── mailserver/         docker-mailserver: compose, конфиг, DKIM
-├── fail2ban/           джейлы: sshd, nginx-admin, postfix/dovecot
-└── env/                .env.example — описание всех переменных /etc/krokosha/env (без значений)
+├── toolchain.env       закреплённые версии Go и Node.js с контрольными суммами
+├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза
+├── lib/                common.sh — общие функции: журнал, шаблоны, /etc/krokosha/env
+├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
+├── systemd/            krokosha-sync.service + .timer; позже — krokosha-api, krokosha-certwatch
+├── logrotate/          ротация access-лога: 30 дней
+├── fail2ban/           jail для sshd; позже — админка и почта
+├── env/                .env.example — описание /etc/krokosha/env
+├── ci/                 test-install.sh — интеграционный тест установщика
+├── certbot/            (позже) хук: перезагрузка сертификата в почтовом контейнере
+└── mailserver/         (позже) docker-mailserver: compose, конфиг, DKIM
 ```
 
-Правила: `set -euo pipefail`, shellcheck в CI, никаких `curl | bash` со сторонних источников, секреты только в `/etc/krokosha/env` (600, root:krokosha).
+Ещё не сделано из брифа B8: `backup.sh` (появится вместе с базой данных), `krokosha-certwatch` (штатное продление уже работает через `certbot.timer`), почта, API и админка.
+
+Правила: `set -euo pipefail`, shellcheck в CI, никаких `curl | bash`, секреты только в `/etc/krokosha/env`.
