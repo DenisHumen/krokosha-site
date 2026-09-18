@@ -108,6 +108,7 @@ content/*.yaml ─────────────────────�
 | 2026-09-18 | **Ранжирование отделено от сети:** `pinned` / `exclude` / `overrides` применяются к кэшу при каждом запуске, даже когда GitHub недоступен. Переведённое описание из `overrides` подставляет сборка сайта (в `github.json` языков нет) | Backend |
 | 2026-09-18 | **Цвета языков** — таблица из GitHub Linguist (MIT), встроена в бинарник; обновляется `go generate`. REST API цвет не отдаёт | Backend |
 | 2026-09-18 | **Go:** минимум зависимостей (сейчас одна — YAML), стандартная библиотека для HTTP/CLI/логов. CI: golangci-lint, тесты с детектором гонок, статическая сборка `CGO_ENABLED=0` | Backend |
+| 2026-09-18 | **Вендоры (частично Q4/навыки):** сети — Cisco (Catalyst, Nexus, ISR/ASR), Arista, Juniper, Extreme Networks, Fortinet, MikroTik, Ubiquiti; серверы — Dell (Dell EMC), HPE, Supermicro, Fujitsu. То, что уже было на сайте, остаётся | Денис |
 
 ## 7. Открытые вопросы
 

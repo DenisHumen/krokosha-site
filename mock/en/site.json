@@ -66,14 +66,14 @@
       "id": "networks",
       "number": "01",
       "title": "Networks & network hardware",
-      "subtitle": "MikroTik · Cisco",
+      "subtitle": "Cisco · Arista · Juniper · Extreme · Fortinet · MikroTik · Ubiquiti",
       "text": "Router and switch configuration, building and rebuilding networks for offices and sites."
     },
     {
       "id": "servers",
       "number": "02",
       "title": "Servers, storage & clusters",
-      "subtitle": "Build · diagnostics · RAID",
+      "subtitle": "Dell · HPE · Supermicro · Fujitsu",
       "text": "Selecting, building and configuring servers and storage systems, complex cluster systems."
     },
     {

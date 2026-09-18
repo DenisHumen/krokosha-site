@@ -71,9 +71,20 @@ describe('homeJsonLd', () => {
   });
 
   it('claims only confirmed skills', () => {
+    // Taken from the content itself: the list of confirmed skills changes as Denis reviews it.
+    const all = content.skills.flatMap((category) =>
+      category.children.flatMap((group) => group.children),
+    );
+    const title = (skill: (typeof all)[number]) =>
+      typeof skill.title === 'string' ? skill.title : skill.title.uk;
+    const confirmed = all.filter((skill) => skill.confirmed).map(title);
+    const unconfirmed = all.filter((skill) => !skill.confirmed).map(title);
+    expect(confirmed.length).toBeGreaterThan(0);
+    expect(unconfirmed.length).toBeGreaterThan(0);
+
     const person = node('Person')!;
-    expect(person.knowsAbout).toContain('MikroTik');
-    expect(person.knowsAbout).not.toContain('Juniper');
+    expect(person.knowsAbout).toEqual(confirmed);
+    for (const skill of unconfirmed) expect(person.knowsAbout).not.toContain(skill);
   });
 
   it('lists every public repository', () => {
