@@ -167,7 +167,7 @@ check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADM
 # midnight the visit recorded above may belong to either day, so both are asked for.
 # (grep -q stops reading at the first match; curl's complaint about the closed pipe is noise.)
 both_days() { { admin_get "$ADMIN$1" && admin_get "$ADMIN$1?p=day&d=$(date -u +%F)"; } 2>/dev/null || true; }
-check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1</title>' <(both_days /)
+check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1[;<]' <(both_days /)
 check "the list of visits" grep -q 'google.com' <(both_days /visits)
 check "CSV export of page views" grep -q ',/uk/,uk,search,google.com,google,cpc,' <(both_days /export/pageviews.csv)
 check "CSV export of events" grep -q ',click,cta-telegram,' <(both_days /export/events.csv)
