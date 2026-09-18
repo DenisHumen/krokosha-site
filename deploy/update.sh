@@ -12,7 +12,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 # main() makes bash read the whole file before the pull below may replace it.
 main() {
-  require_root "$@"
+  require_root
   [[ -d $KROKOSHA_REPO/.git && -f $KROKOSHA_ENV ]] || die "the site is not installed here: run deploy/install.sh first"
 
   local branch before after

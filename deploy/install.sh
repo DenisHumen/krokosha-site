@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-require_root "$@"
+require_root
 
 # ---------------------------------------------------------------------------------------------
 # Settings: command line → saved settings → questions

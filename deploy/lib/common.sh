@@ -26,7 +26,7 @@ die()  { printf '\n%sERROR: %s%s\n' "$_c_red" "$*" "$_c_off" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 require_root() {
-  [[ ${EUID:-$(id -u)} -eq 0 ]] || die "run as root: sudo $0 $*"
+  [[ ${EUID:-$(id -u)} -eq 0 ]] || die "run as root: sudo $0"
 }
 
 # as_site_user CMD… — run a command as the unprivileged site user with a clean environment.

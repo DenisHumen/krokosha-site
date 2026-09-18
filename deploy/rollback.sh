@@ -13,7 +13,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=deploy/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
-require_root "$@"
+require_root
 
 releases_dir="$KROKOSHA_WWW/releases"
 current=$(basename "$(readlink -f "$KROKOSHA_WWW/current")")
