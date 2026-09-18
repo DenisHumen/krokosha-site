@@ -41,12 +41,16 @@ start() { # NAME [docker run options…]
   local name=$1
   shift
   docker rm --force --volumes "$name" >/dev/null 2>&1 || true
+  # Docker runs inside too (MySQL, Redis, mail). Its image stores need a real filesystem —
+  # overlay on top of overlay does not mount — so they get volumes, fresh for every start.
+  docker volume rm "$name-docker" "$name-containerd" >/dev/null 2>&1 || true
   docker run --detach --name "$name" --hostname staging \
     --privileged --cgroupns=host \
     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp:exec \
     --volume "$(host_path):/src:ro" \
     --volume "$name-docker:/var/lib/docker" \
+    --volume "$name-containerd:/var/lib/containerd" \
     "$@" "$IMAGE" >/dev/null
   # Wait until systemd is up.
   local i
@@ -97,7 +101,7 @@ case ${1:-} in
     status=0
     docker exec --env GITHUB_TOKEN="${GITHUB_TOKEN:-}" "$NAME-test" /srv/krokosha-src/deploy/ci/test-install.sh /srv/krokosha-src || status=$?
     docker rm --force --volumes "$NAME-test" >/dev/null
-    docker volume rm "$NAME-test-docker" >/dev/null 2>&1 || true
+    docker volume rm "$NAME-test-docker" "$NAME-test-containerd" >/dev/null 2>&1 || true
     exit "$status"
     ;;
   shell)
@@ -109,7 +113,7 @@ case ${1:-} in
     ;;
   down)
     docker rm --force --volumes "$NAME" >/dev/null 2>&1 || true
-    docker volume rm "$NAME-docker" >/dev/null 2>&1 || true
+    docker volume rm "$NAME-docker" "$NAME-containerd" >/dev/null 2>&1 || true
     echo "removed $NAME"
     ;;
   *)
