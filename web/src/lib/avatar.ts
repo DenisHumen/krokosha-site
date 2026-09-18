@@ -8,12 +8,15 @@ import type { ImageMetadata } from 'astro';
 import { getImage } from 'astro:assets';
 import fallback from '../assets/avatar-fallback.png';
 
-const manual = import.meta.glob<ImageMetadata>('../../../content/avatar.{png,jpg,jpeg,webp,avif}', {
-  eager: true,
-  import: 'default',
-});
+const manual = import.meta.glob<ImageMetadata>(
+  '../../../content/avatar.{png,jpg,jpeg,webp,avif,gif}',
+  {
+    eager: true,
+    import: 'default',
+  },
+);
 const synced = import.meta.glob<ImageMetadata>(
-  '../../../content/generated/avatar.{png,jpg,jpeg,webp,avif}',
+  '../../../content/generated/avatar.{png,jpg,jpeg,webp,avif,gif}',
   { eager: true, import: 'default' },
 );
 

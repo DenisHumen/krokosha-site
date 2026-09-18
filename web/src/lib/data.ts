@@ -139,8 +139,22 @@ export function buildProjects(content: Content, lang: Locale, options: BuildOpti
           description: isTodo(project.description) ? 'TODO' : project.description,
         }))
       : all.filter((project) => !isTodo(project.title) && !isTodo(project.description));
+  // A manual description from content/projects.yaml → overrides replaces the GitHub one. It is applied
+  // here and not by the GitHub sync because it can be translated, while github.json has no languages.
+  const descriptions = new Map(
+    Object.entries(content.projectsConfig.overrides).flatMap(([name, override]) =>
+      override.description === undefined
+        ? []
+        : [[name.toLowerCase(), loc(override.description, lang)] as const],
+    ),
+  );
+  const publicProjects = content.github.public.map((project) => {
+    const description = descriptions.get(project.name.toLowerCase());
+    return description === undefined ? project : { ...project, description };
+  });
+
   return {
-    public: content.github.public,
+    public: publicProjects,
     private: privateProjects,
     syncedAt: content.github.syncedAt,
     stale: content.github.stale,
