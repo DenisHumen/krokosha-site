@@ -14,6 +14,7 @@ npm run dev       # локальная разработка, http://localhost:43
 npm run build     # сборка в dist/
 npm run preview   # посмотреть собранное
 npm run verify    # всё, что проверяет CI: формат, линт, типы, тесты, mock/, сборка, проверка dist/
+npm run test:e2e  # Playwright по собранному сайту (нужен npm run build); локально использует установленный Chrome
 npm run mock      # пересобрать ../mock/ после правок content/*.yaml или контракта
 ```
 
@@ -37,7 +38,8 @@ web/
 ├── public/           favicon, OG-картинка, assets/theme.js (тема до первой отрисовки)
 ├── scripts/          gen-mock.ts — mock/ из content/; check-dist.mjs — проверка собранного сайта;
 │                     make-placeholders.mjs — временные фавикон / OG / аватар-заглушка
-└── tests/            unit/ — Vitest; e2e/ — Playwright (следующий шаг)
+└── tests/            unit/ — Vitest; e2e/ — Playwright + axe: десктоп и телефон 360 px, обе темы, три языка;
+                      любой тест падает при ошибке в консоли или нарушении CSP (fixtures.ts)
 ```
 
 Правила:
