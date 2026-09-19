@@ -196,6 +196,8 @@ contacts:
     labels:
       name:           { en: "Name", uk: "Ім'я", ru: "Имя" }
       contact_method: { en: "How to reach you", uk: "Як зв'язатися", ru: "Как связаться" }
+      contact_value:  { en: "Email, @username or phone number", uk: "Пошта, @нікнейм або номер телефону", ru: "Почта, @ник или номер телефона" }
+      choose:         { en: "Choose…", uk: "Оберіть…", ru: "Выберите…" }
       direction:      { en: "Area", uk: "Напрям", ru: "Направление" }
       description:    { en: "Task description", uk: "Опис задачі", ru: "Описание задачи" }
       description_hint: { en: "20–4000 characters", uk: "20–4000 символів", ru: "20–4000 символов" }
@@ -215,6 +217,16 @@ contacts:
       phone: "+380 …"
     messages:
       success_title:   { en: "Request {id} received", uk: "Заявку {id} прийнято", ru: "Заявка {id} принята" }
+      # Без номера: когда страница «спасибо» открыта напрямую
+      success_generic: { en: "Request received", uk: "Заявку прийнято", ru: "Заявка принята" }
+      success_text:
+        en: "Thank you! I have your request and will get back to you."
+        uk: "Дякую! Заявку отримав, незабаром відповім."
+        ru: "Спасибо! Заявку получил, скоро отвечу."
+      invalid:
+        en: "Some fields need attention. Please check the form and send it again."
+        uk: "Деякі поля заповнено неправильно. Перевірте форму й надішліть ще раз."
+        ru: "Некоторые поля заполнены неверно. Проверьте форму и отправьте ещё раз."
       success_reply:   { en: "I'll reply within {hours} h.", uk: "Відповім протягом {hours} год.", ru: "Отвечу в течение {hours} ч." }
       continue_telegram: { en: "Continue in Telegram", uk: "Продовжити в Telegram", ru: "Продолжить в Telegram" }
       server_error:

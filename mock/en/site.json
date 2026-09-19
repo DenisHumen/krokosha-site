@@ -131,6 +131,8 @@
       "labels": {
         "name": "Name",
         "contact_method": "How to reach you",
+        "contact_value": "Email, @username or phone number",
+        "choose": "Choose…",
         "direction": "Area",
         "description": "Task description",
         "description_hint": "20–4000 characters",
@@ -149,6 +151,9 @@
       },
       "messages": {
         "success_title": "Request {id} received",
+        "success_generic": "Request received",
+        "success_text": "Thank you! I have your request and will get back to you.",
+        "invalid": "Some fields need attention. Please check the form and send it again.",
         "success_reply": "I'll reply within {hours} h.",
         "continue_telegram": "Continue in Telegram",
         "server_error": "Couldn't send the request. Please email me: {email}",

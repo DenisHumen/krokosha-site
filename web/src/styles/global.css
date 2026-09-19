@@ -11,6 +11,7 @@
   --fg: #111111;
   --muted: #5c5c58;
   --line: #cfcfcb;
+  --danger: #a3261a;
   --inverse-bg: #111111;
   --inverse-fg: #f3f3f1;
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -25,12 +26,14 @@
     --fg: #f0f0ee;
     --muted: #a3a39e;
     --line: #333331;
+    --danger: #ff8a7a;
     --inverse-bg: #f0f0ee;
     --inverse-fg: #111111;
   }
 }
 
 :root[data-theme='dark'] {
+  --danger: #ff8a7a;
   color-scheme: dark;
   --bg: #0f0f0f;
   --surface: #181818;
@@ -42,6 +45,7 @@
 }
 
 :root[data-theme='light'] {
+  --danger: #a3261a;
   color-scheme: light;
 }
 
@@ -505,4 +509,149 @@ summary {
 
 .prose li {
   margin-bottom: 0.35em;
+}
+
+/* Contact form (temporary look; the contract of data-* attributes is what the design keeps) */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.contact-form {
+  max-width: 40rem;
+  margin-top: 2.5rem;
+}
+
+/* For robots only: people never see it, and never reach it with the keyboard. */
+.form-trap {
+  position: absolute;
+  left: -200vw;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+}
+
+.field label,
+.field legend {
+  padding: 0;
+  font-size: 0.9375rem;
+}
+
+.field input[type='text'],
+.field input[type='email'],
+.field input[type='tel'],
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.field textarea {
+  min-height: 9rem;
+  resize: vertical;
+}
+
+.field [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1.25rem;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.choice {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.choice input {
+  accent-color: var(--fg);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.field-error:empty {
+  display: none;
+}
+
+.form-actions {
+  margin: 0;
+}
+
+/* Shown by the script — or by the address alone: the API sends a visitor without JavaScript
+   back to «#form-error-…», and :target does the rest. */
+.form-message {
+  display: none;
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--fg);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.form-message:target,
+.form-message.is-shown {
+  display: block;
+}
+
+.form-message-error {
+  border-left-color: var(--danger);
+}
+
+.form-message h3 {
+  margin: 0 0 0.5rem;
+}
+
+.form-message p:last-child {
+  margin-bottom: 0;
+}
+
+/* «Thank you» page: the API switches its parts by replacing the %%…_CLASS%% marks. */
+.thanks-numbered,
+.thanks-telegram,
+.thanks-generic.is-hidden {
+  display: none;
+}
+
+.thanks-numbered.is-shown {
+  display: inline;
+}
+
+.thanks-telegram.is-shown {
+  display: block;
 }

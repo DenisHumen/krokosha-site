@@ -1,0 +1,230 @@
+---
+// «Discuss a project» (brief B10.1). Works without JavaScript: a plain POST to the API, which
+// answers with the «thank you» page. With JavaScript (/assets/form.js): validation in place,
+// proof-of-work against spam, sending without a reload.
+//
+// Temporary markup: Claude Design restyles it and keeps the data-* contract (docs/contract.md §3).
+import { localePath } from '../i18n/locales.ts';
+import { fill } from '../i18n/localize.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { data } = Astro.props;
+const { lang } = data;
+const { form } = data.site.contacts;
+const email =
+  data.profile.socials.find((social) => social.id === 'email')?.url.replace('mailto:', '') ?? '';
+
+/** A text of the form; a missing one stops the build rather than leaving a hole on the page. */
+function text(group: 'labels' | 'messages' | 'errors' | 'placeholders', key: string): string {
+  const value = form[group][key];
+  if (value === undefined)
+    throw new Error(`content/site.yaml: contacts.form.${group}.${key} is missing`);
+  return value;
+}
+
+const [consentBefore = '', consentAfter = ''] = text('labels', 'consent').split('{privacy_link}');
+const replyPromise =
+  form.reply_within_hours === null
+    ? ''
+    : fill(text('messages', 'success_reply'), { hours: String(form.reply_within_hours) });
+
+// What the script needs, in one attribute: texts of field errors and the placeholders per method.
+const scriptTexts = JSON.stringify({
+  errors: form.errors,
+  placeholders: form.placeholders,
+  sending: text('labels', 'sending'),
+  success: text('messages', 'success_title'),
+});
+---
+
+{form.enabled && (
+  <div class="contact-form" data-slot="site.contacts.form">
+    <form method="post" action="/api/leads" data-form data-texts={scriptTexts}>
+      <input type="hidden" name="lang" value={lang} />
+      <input type="hidden" name="altcha" value="" />
+      {/* Not for people: whoever fills it in is a robot. Off-screen rather than display:none, which robots check for. */}
+      <p class="form-trap" aria-hidden="true">
+        <label>
+          Website <input type="text" name="website" tabindex="-1" autocomplete="off" />
+        </label>
+      </p>
+
+      <p class="field">
+        <label for="form-name" data-field="labels.name">
+          {text('labels', 'name')}
+        </label>
+        <input
+          id="form-name"
+          name="name"
+          type="text"
+          required
+          maxlength="100"
+          autocomplete="name"
+        />
+        <span class="field-error" data-error-for="name" role="alert" />
+      </p>
+
+      <fieldset class="field">
+        <legend data-field="labels.contact_method">{text('labels', 'contact_method')}</legend>
+        <span class="choices">
+          {form.contact_methods.map((method, index) => (
+            <label class="choice">
+              <input
+                type="radio"
+                name="contact_method"
+                value={method.id}
+                checked={index === 0}
+                required
+              />
+              <span>{method.label}</span>
+            </label>
+          ))}
+        </span>
+        <label class="visually-hidden" for="form-contact" data-field="labels.contact_value">
+          {text('labels', 'contact_value')}
+        </label>
+        <input
+          id="form-contact"
+          name="contact_value"
+          type="text"
+          required
+          maxlength="200"
+          placeholder={text('placeholders', form.contact_methods[0]?.id ?? 'email')}
+        />
+        <span class="field-error" data-error-for="contact_value" role="alert" />
+      </fieldset>
+
+      <p class="field">
+        <label for="form-direction" data-field="labels.direction">
+          {text('labels', 'direction')}
+        </label>
+        <select id="form-direction" name="direction" required>
+          <option value="">{text('labels', 'choose')}</option>
+          {form.directions.map((direction) => (
+            <option value={direction.id}>{direction.label}</option>
+          ))}
+        </select>
+        <span class="field-error" data-error-for="direction" role="alert" />
+      </p>
+
+      <p class="field">
+        <label for="form-description" data-field="labels.description">
+          {text('labels', 'description')}{' '}
+          <span class="muted">— {text('labels', 'description_hint')}</span>
+        </label>
+        <textarea
+          id="form-description"
+          name="description"
+          required
+          minlength="20"
+          maxlength="4000"
+          rows="6"
+        ></textarea>
+        <span class="field-error" data-error-for="description" role="alert" />
+      </p>
+
+      <div class="field-row">
+        <p class="field">
+          <label for="form-budget" data-field="labels.budget">
+            {text('labels', 'budget')} <span class="muted">— {text('labels', 'optional')}</span>
+          </label>
+          <select id="form-budget" name="budget">
+            <option value="">{text('labels', 'choose')}</option>
+            {form.budgets.map((budget, index) => (
+              <option value={String(index)}>{budget}</option>
+            ))}
+          </select>
+        </p>
+        <p class="field">
+          <label for="form-timeline" data-field="labels.timeline">
+            {text('labels', 'timeline')} <span class="muted">— {text('labels', 'optional')}</span>
+          </label>
+          <select id="form-timeline" name="timeline">
+            <option value="">{text('labels', 'choose')}</option>
+            {form.timelines.map((timeline, index) => (
+              <option value={String(index)}>{timeline}</option>
+            ))}
+          </select>
+        </p>
+      </div>
+
+      <p class="field field-consent">
+        <label class="choice">
+          <input type="checkbox" name="consent" value="on" required />
+          <span data-field="labels.consent">
+            {consentBefore}
+            <a href={localePath(lang, 'privacy')}>{text('labels', 'privacy_link_text')}</a>
+            {consentAfter}
+          </span>
+        </label>
+        <span class="field-error" data-error-for="consent" role="alert" />
+      </p>
+
+      <p class="form-actions">
+        <button
+          class="button button-primary"
+          type="submit"
+          data-track="form-submit"
+          data-field="labels.submit"
+        >
+          {text('labels', 'submit')}
+        </button>
+      </p>
+    </form>
+
+    {/* Shown by the script after sending, and — by the address alone, with :target — when the API
+          sends a visitor without JavaScript back to the form. */}
+    <p
+      class="form-message form-message-error"
+      id="form-error-invalid"
+      role="alert"
+      data-slot="form.messages.invalid"
+    >
+      {text('messages', 'invalid')}
+    </p>
+    <p
+      class="form-message form-message-error"
+      id="form-error-rate"
+      role="alert"
+      data-slot="form.messages.rate_limited"
+    >
+      {fill(text('messages', 'rate_limited'), { email })}
+    </p>
+    <p
+      class="form-message form-message-error"
+      id="form-error-server"
+      role="alert"
+      data-slot="form.messages.server_error"
+    >
+      {fill(text('messages', 'server_error'), { email })}
+    </p>
+
+    <div
+      class="form-message form-message-success"
+      id="form-success"
+      role="status"
+      tabindex="-1"
+      data-slot="form.success"
+    >
+      <h3 data-field="title">{text('messages', 'success_generic')}</h3>
+      <p data-field="text">
+        {text('messages', 'success_text')} {replyPromise}
+      </p>
+      <p data-field="telegram" hidden>
+        <a
+          class="button button-primary"
+          href="https://t.me/"
+          rel="noopener"
+          data-track="form-continue-telegram"
+        >
+          {text('messages', 'continue_telegram')}
+        </a>
+      </p>
+    </div>
+    <script is:inline defer src="/assets/form.js"></script>
+  </div>
+)}

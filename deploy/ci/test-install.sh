@@ -134,6 +134,42 @@ check "with its click event" test "$(sql "SELECT COUNT(*) FROM analytics_events 
 check "paid search traffic is recognised" test "$(sql "SELECT CONCAT(referrer_kind, ' ', is_ad, ' ', max_scroll) FROM analytics_pageviews")" = "search 1 50"
 check "the address is stored truncated" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT ip_prefix FROM analytics_pageviews\"' 2>/dev/null | grep -qE '/(24|48)$'"
 
+echo "Contact form"
+# A visitor without JavaScript: a plain form post, answered with a page of the site itself.
+lead() { # → «STATUS LOCATION» of a plain POST to /api/leads
+  "${CURL[@]}" --output /dev/null --write-out '%{http_code} %{redirect_url}' --user-agent "$BROWSER" \
+    --request POST "https://$DOMAIN/api/leads" \
+    --data-urlencode 'name=Иван Петров' --data-urlencode 'contact_method=email' --data-urlencode 'contact_value=ivan@company.test' \
+    --data-urlencode 'direction=networks' --data-urlencode 'description=Нужно перестроить сеть офиса на 40 мест: MikroTik и два VLAN.' \
+    --data-urlencode 'budget=2' --data-urlencode 'consent=on' --data-urlencode 'lang=ru'
+}
+check "the form is on the page and posts to the API" grep -q '<form method="post" action="/api/leads"' <(body "https://$DOMAIN/ru/")
+check "the puzzle against spam is handed out" grep -q '"algorithm":"SHA-256"' <(body "https://$DOMAIN/api/leads/challenge")
+answer=$(lead)
+check "a plain form post is accepted and redirected" grep -qE "^303 https://$DOMAIN/api/leads/thanks\?t=[A-Za-z0-9_-]{22}$" <<<"$answer"
+thanks=$(body "${answer#303 }")
+check "the thank-you page is the site's own, in the visitor's language" grep -q '<html lang="ru"' <<<"$thanks"
+check "…with the number of the request filled in" grep -q 'Заявка #K-0001 принята' <<<"$thanks"
+check "…and no marks left over" bash -c "! grep -q '%%' <<<\"\$1\"" _ "$thanks"
+check "a made-up link shows nobody's request" test "$(header "https://$DOMAIN/api/leads/thanks?t=AAAAAAAAAAAAAAAAAAAAAA" location)" = /thanks/
+check "the request is stored" test "$(sql "SELECT CONCAT(status, ' ', lang, ' ', contact_value) FROM leads WHERE id = 1")" = "new ru ivan@company.test"
+check "with the truncated address only" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT ip_prefix FROM leads\"' 2>/dev/null | grep -qE '/(24|48)$'"
+check "notifications are queued in the same transaction" test "$(sql "SELECT COUNT(*) FROM outbox WHERE lead_id = 1 AND status = 'pending'")" = 3
+lead_json() { # lead_json NAME METHOD CONTACT DESCRIPTION [curl options…] → the JSON answer
+  local name=$1 method=$2 contact=$3 description=$4
+  shift 4
+  "${CURL[@]}" --user-agent "$BROWSER" --header 'Accept: application/json' --request POST "https://$DOMAIN/api/leads" \
+    --data-urlencode "name=$name" --data-urlencode "contact_method=$method" --data-urlencode "contact_value=$contact" \
+    --data-urlencode 'direction=devops' --data-urlencode "description=$description" --data-urlencode 'consent=on' --data-urlencode 'lang=en' "$@"
+}
+check "a script gets JSON" grep -q '"id":"K-0002"' <(lead_json Second telegram @second_client 'CI/CD for a small project, two environments.')
+check "mistakes are explained, not stored" grep -q '"contact_value":"invalid_email"' <(lead_json Third email not-an-email 'CI/CD for a small project, two environments.')
+check "a robot that fills the hidden field gets the usual answer" grep -q '"id":"K-0003"' <(lead_json Bot email bot@spam.test 'Buy cheap traffic for your website today' --data-urlencode 'website=http://spam.test')
+check "…but is filed as spam, without notifications" test "$(sql "SELECT CONCAT(l.status, ' ', (SELECT COUNT(*) FROM outbox o WHERE o.lead_id = l.id)) FROM leads l WHERE l.id = 3")" = "spam 0"
+check "the fourth request within an hour is sent back to the form's explanation" grep -q '^303 .*/ru/#form-error-rate$' <(lead)
+check "…and a script is told 429" grep -q '"error":"rate_limited"' <(lead_json Fifth email fifth@company.test 'One more request within the same hour.')
+check "forms posted from other sites are refused" grep -q 'cross-origin' <(lead_json Evil email evil@company.test 'Posted by a page of another site.' --header 'Origin: https://evil.example')
+
 echo "Admin area"
 ADMIN="https://$DOMAIN$ADMIN_PATH"
 JAR=$(mktemp)
@@ -250,7 +286,7 @@ fi
 
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
-secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH)=' /etc/krokosha/env | sha256sum)
+secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)
 "$SOURCE/deploy/install.sh" --from-env --yes
 echo "::endgroup::"
 echo "Idempotency"
@@ -259,7 +295,7 @@ check "settings survived" grep -q "^FIREWALL_ALLOW=8443/tcp" /etc/krokosha/env
 check "API still answers" grep -q '"status":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
 check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/krokosha/env
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
-check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
+check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1

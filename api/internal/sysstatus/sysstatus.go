@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
 // Options say where things live on the server (deploy/install.sh).
@@ -37,6 +38,8 @@ type Options struct {
 	Now        func() time.Time
 	// LogPolled says when nginx's access log was last read (nginxlog.Reader.LastPoll).
 	LogPolled func() time.Time
+	// Outbox counts the notifications that wait or were given up on.
+	Outbox func(ctx context.Context) (outbox.Stats, error)
 }
 
 // Service collects the status.
@@ -140,6 +143,7 @@ type Status struct {
 	Database         Database
 	Redis            string // ok | degraded | off
 	LogReadAt        time.Time
+	Outbox           outbox.Stats
 	Version          string
 	Uptime           time.Duration
 }
@@ -167,6 +171,11 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	out.Redis = s.redis(ctx)
 	if s.opts.LogPolled != nil {
 		out.LogReadAt = s.opts.LogPolled()
+	}
+	if s.opts.Outbox != nil {
+		if stats, err := s.opts.Outbox(ctx); err == nil {
+			out.Outbox = stats
+		}
 	}
 	out.Problems = problems(out, now)
 	return out
@@ -224,6 +233,12 @@ func problems(status *Status, now time.Time) []Problem {
 		if host.CPUs > 0 && host.Load[1] > float64(host.CPUs)*1.5 {
 			add("warn", "Высокая нагрузка: %.2f при %d ядрах (за 5 минут).", host.Load[1], host.CPUs)
 		}
+	}
+	if status.Outbox.Failed > 0 {
+		add("error", "Не доставлено уведомлений за 30 дней: %d. Последняя ошибка: %s", status.Outbox.Failed, status.Outbox.LastError)
+	}
+	if !status.Outbox.OldestPending.IsZero() && now.Sub(status.Outbox.OldestPending) > 15*time.Minute {
+		add("warn", "Уведомления ждут отправки дольше 15 минут (%d в очереди): %s", status.Outbox.Pending, status.Outbox.LastError)
 	}
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")

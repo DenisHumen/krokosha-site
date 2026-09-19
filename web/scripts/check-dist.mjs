@@ -129,8 +129,64 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
   checkInternalLinks(file, html);
 }
 
+// The contact form (brief B10.1): it must work as a plain HTML form, because for a visitor
+// without JavaScript that is all there is.
+for (const [lang, prefix] of Object.entries(LOCALES)) {
+  const file = `${prefix}index.html`;
+  const html = read(file);
+  const form = html && /<form\b[^>]*data-form[^>]*>[\s\S]*?<\/form>/.exec(html)?.[0];
+  if (!html || !html.includes('data-slot="site.contacts.form"')) continue; // the form is switched off in content/site.yaml
+  if (!form) {
+    fail(file, 'the contact form is announced but has no <form data-form>');
+    continue;
+  }
+  if (!/<form[^>]*method="post"[^>]*action="\/api\/leads"/.test(form))
+    fail(file, 'the contact form must POST to /api/leads');
+  if (!new RegExp(`<input[^>]*name="lang"[^>]*value="${lang}"`).test(form))
+    fail(file, `the contact form must say that the page is in "${lang}"`);
+  for (const field of [
+    'name',
+    'contact_method',
+    'contact_value',
+    'direction',
+    'description',
+    'consent',
+    'altcha',
+    'website',
+  ]) {
+    if (!new RegExp(`name="${field}"`).test(form))
+      fail(file, `the contact form has no field "${field}"`);
+  }
+  if (
+    !/<input[^>]*name="consent"[^>]*required/.test(form) &&
+    !/<input[^>]*required[^>]*name="consent"/.test(form)
+  )
+    fail(file, 'consent must be required even without JavaScript');
+  for (const id of ['form-error-invalid', 'form-error-rate', 'form-error-server', 'form-success']) {
+    if (!html.includes(`id="${id}"`))
+      fail(file, `the block #${id} is missing: the API redirects to it`);
+  }
+  if (!/<script[^>]+src="\/assets\/form\.js"/.test(html)) fail(file, 'form.js is not included');
+}
+if (existsSync(join(dist, 'assets/form.js')) === false) fail('assets/form.js', 'file is missing');
+
 // Service pages
 for (const [lang, prefix] of Object.entries(LOCALES)) {
+  // The API fills these marks in when it answers a form sent without JavaScript
+  // (api/internal/leads/http.go); as built, the page must hide them.
+  const thanks = checkPage(`${prefix}thanks/index.html`, lang, { indexable: false });
+  if (thanks) {
+    checkInternalLinks(`${prefix}thanks/index.html`, thanks);
+    for (const mark of [
+      '%%LEAD_NUMBER%%',
+      '%%TELEGRAM_URL%%',
+      '%%GENERIC_CLASS%%',
+      '%%NUMBERED_CLASS%%',
+      '%%TELEGRAM_CLASS%%',
+    ]) {
+      if (!thanks.includes(mark)) fail(`${prefix}thanks/index.html`, `the mark ${mark} is missing`);
+    }
+  }
   for (const page of ['404', 'play']) {
     const html = checkPage(`${prefix}${page}/index.html`, lang, { indexable: false });
     if (html) checkInternalLinks(`${prefix}${page}/index.html`, html);
