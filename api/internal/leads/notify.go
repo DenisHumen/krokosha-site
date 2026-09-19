@@ -68,6 +68,11 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		message, err = m.autoReply(lead, files)
 	case TaskReply:
 		return m.sendReply(ctx, lead, payload.MessageID)
+	case TaskClientMessage:
+		message, err = m.clientWrote(ctx, lead, payload.MessageID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return outbox.Permanent(errors.New("the client's message is gone"))
+		}
 	default:
 		return outbox.Permanent(fmt.Errorf("the mailer does not know the task %q", task.Kind))
 	}
@@ -213,6 +218,34 @@ func (m *Mailer) autoReply(lead *Lead, files []Attachment) (mail.Message, error)
 		// RFC 3834: tells other robots not to answer this one — no loops of automatic replies.
 		Headers: map[string]string{"Auto-Submitted": "auto-replied", "X-Auto-Response-Suppress": "All", "X-Krokosha-Lead": v.Number},
 	}, nil
+}
+
+// clientWrote tells the owner that the client wrote again — in Telegram or by mail. The letter
+// joins the thread of the request's notification in the owner's mailbox.
+func (m *Mailer) clientWrote(ctx context.Context, lead *Lead, messageID int64) (mail.Message, error) {
+	body, channel, err := m.Store.IncomingMessage(ctx, lead.ID, messageID)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	v := m.view(lead, "ru")
+	v.Body, v.Author = body, map[string]string{ChannelTelegram: "в Telegram", ChannelEmail: "письмом"}[channel]
+	text, html, err := render(clientWroteText, clientWroteHTML, v)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	notification := m.messageID(lead.ID, "notify")
+	message := mail.Message{
+		From: m.From, To: m.NotifyTo,
+		Subject:   fmt.Sprintf("Re: Заявка #%s · %s · %s", v.Number, v.Direction, lead.Name),
+		Text:      text,
+		HTML:      html,
+		MessageID: m.messageID(lead.ID, fmt.Sprintf("client-%d", messageID)), InReplyTo: notification, References: []string{notification},
+		Headers: map[string]string{"X-Krokosha-Lead": v.Number},
+	}
+	if lead.ContactMethod == MethodEmail {
+		message.ReplyTo = &netmail.Address{Name: lead.Name, Address: lead.ContactValue}
+	}
+	return message, nil
 }
 
 // messageID is the same for every attempt to deliver the same letter: a mail server that got it
@@ -420,6 +453,21 @@ var autoReplyHTML = htmltemplate.Must(htmltemplate.New("autoreply.html").Parse(m
 {{if .TelegramURL}}<p style="margin:20px 0 0;"><a href="{{.TelegramURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.telegram}}</a></p>{{end}}
 {{end}}
 {{define "foot"}}<a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a><br>{{.T.auto}}{{end}}`))
+
+var clientWroteText = texttemplate.Must(texttemplate.New("client.txt").Parse(`{{.Lead.Name}} пишет по заявке #{{.Number}} ({{.Author}}):
+
+{{.Body}}
+
+Открыть в админке: {{.AdminURL}}
+`))
+
+var clientWroteHTML = htmltemplate.Must(htmltemplate.New("client.html").Parse(mailFrame + `
+{{define "body"}}
+<p style="margin:0 0 12px;"><b>{{.Lead.Name}}</b> пишет по заявке <b>#{{.Number}}</b> <span style="color:#6b6f7e;">({{.Author}})</span>:</p>
+<p style="margin:0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+<p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">Открыть в админке</a></p>
+{{end}}
+{{define "foot"}}Заявка вернулась в работу, если ждала ответа клиента. История переписки — в админке.{{end}}`))
 
 var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
 

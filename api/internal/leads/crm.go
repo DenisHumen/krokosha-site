@@ -423,6 +423,74 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	return messageID, nil
 }
 
+// Channels a client can write through after the form.
+const (
+	ChannelTelegram = "telegram"
+	ChannelEmail    = "email"
+)
+
+// ClientMessage stores what a client wrote after sending the form — in Telegram through the bot,
+// or by answering a letter (brief B10.5). A request that was waiting for the client goes back to
+// work, and everybody is told, through the same outbox as everything else.
+func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text string) (messageID int64, err error) {
+	text = clean(text, true)
+	if text == "" {
+		return 0, ErrEmptyText
+	}
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM leads WHERE id = ? AND anonymized_at IS NULL FOR UPDATE`, id).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', ?, ?)`,
+		id, now, channel, cut(text, 8000))
+	if err != nil {
+		return 0, err
+	}
+	if messageID, err = result.LastInsertId(); err != nil {
+		return 0, err
+	}
+	next := status
+	if status == StatusWaitingClient {
+		next = StatusInProgress // the client answered: the ball is ours again (brief B10.4)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE leads SET status = ?, updated_at = ? WHERE id = ?`, next, now, id); err != nil {
+		return 0, err
+	}
+	if err := event(ctx, tx, id, now, "client", "client_replied", status, next, ""); err != nil {
+		return 0, err
+	}
+	// What robots sent is not announced, whatever they write afterwards.
+	if status != StatusSpam {
+		for _, outboxChannel := range []string{outbox.ChannelTelegram, outbox.ChannelEmail} {
+			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskClientMessage, LeadID: id,
+				DedupeKey: fmt.Sprintf("lead:%d:client:%d:%s", id, messageID, outboxChannel), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	s.changed(id)
+	return messageID, nil
+}
+
+// IncomingMessage returns the text of a stored message of the client, for whoever announces it.
+func (s *Store) IncomingMessage(ctx context.Context, leadID, messageID int64) (body, channel string, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT body, channel FROM lead_messages WHERE id = ? AND lead_id = ? AND direction = 'in'`, messageID, leadID).Scan(&body, &channel)
+	return body, channel, err
+}
+
 // Message returns the text of a stored answer, for the sender that delivers it.
 func (s *Store) Message(ctx context.Context, leadID, messageID int64) (body, author string, err error) {
 	var who sql.NullString

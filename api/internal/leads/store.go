@@ -29,6 +29,8 @@ const (
 	TaskNotify    = "lead.notify"    // tell the owner (email) or everyone allowed (Telegram)
 	TaskAutoReply = "lead.autoreply" // confirm to the client by email
 	TaskReply     = "lead.reply"     // an answer written in the admin area or in the bot
+	// TaskClientMessage: the client wrote again — in Telegram or by mail; everybody is told.
+	TaskClientMessage = "lead.client_message"
 )
 
 // Lead is a stored request.
