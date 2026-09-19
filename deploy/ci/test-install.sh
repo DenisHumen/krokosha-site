@@ -242,6 +242,27 @@ check "the «rebuild now» button is accepted" test "$(admin_post /status/rebuil
 site_was_rebuilt() { [[ $(readlink -f /var/www/krokosha/current) != "$before_rebuild" && ! -e /var/lib/krokosha/requests/rebuild ]]; }
 check "…and a new release is published within two minutes" wait_for 120 site_was_rebuilt
 check "the button is in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.rebuild'")" = 1
+
+echo "Requests in the admin area"
+check "the list shows the requests sent above" grep -q '#K-0001' <(admin_get "$ADMIN/leads")
+check "spam is kept apart" bash -c "! grep -q '#K-0003' <<<\"\$1\"" _ "$(admin_get "$ADMIN/leads")"
+check "…but can be looked at" grep -q '#K-0003' <(admin_get "$ADMIN/leads?status=spam")
+check "the board" grep -q 'data-board' <(admin_get "$ADMIN/leads?view=board")
+check "the card shows what the visitor wrote" grep -q 'MikroTik и два VLAN' <(admin_get "$ADMIN/leads/1")
+check "ready-made answers are offered in the client's language" grep -q 'Нужны детали' <(admin_get "$ADMIN/leads/1")
+check "taking a request" test "$(admin_post /leads/1/status --data-urlencode "csrf=$(csrf)" --data-urlencode 'status=in_progress')" = 303
+check "…is recorded with the name of who took it" test "$(sql "SELECT CONCAT(status, ' ', assignee) FROM leads WHERE id = 1")" = "in_progress ci-admin"
+check "a forbidden change of status is refused" test "$(admin_post /leads/1/status --data-urlencode "csrf=$(csrf)" --data-urlencode 'status=spam')" = 409
+check "an answer to the client" test "$(admin_post /leads/1/reply --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Спасибо, изучу и отвечу до конца дня.')" = 303
+check "…waits in the outbox until the mail server is set up" test "$(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOIN outbox o ON o.lead_id = l.id AND o.kind = 'lead.reply' WHERE l.id = 1")" = "waiting_client pending"
+check "a note for colleagues" test "$(admin_post /leads/1/note --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Клиент из теста установки.')" = 303
+check "the status screen shows the queue of notifications" grep -q 'в очереди: ' <(admin_get "$ADMIN/status")
+check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates")
+check "requests as CSV" grep -q '^K-0002,' <(admin_get "$ADMIN/leads/export.csv")
+check "deleting a client's data needs the number typed in" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0001')" = 400
+check "…and then removes everything about the request" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0002')" = 303
+check "…the conversation and the queued notifications included" test "$(sql 'SELECT (SELECT COUNT(*) FROM leads WHERE id = 2) + (SELECT COUNT(*) FROM lead_messages WHERE lead_id = 2) + (SELECT COUNT(*) FROM outbox WHERE lead_id = 2)')" = 0
+check "…leaving one line in the journal" test "$(sql "SELECT CONCAT(actor, ' ', subject) FROM audit_log WHERE action = 'lead.delete'")" = "ci-admin K-0002"
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303

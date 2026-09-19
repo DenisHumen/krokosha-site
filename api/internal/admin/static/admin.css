@@ -188,7 +188,9 @@ label:first-of-type {
   margin-top: 0;
 }
 
-input:not([type='hidden']) {
+input:not([type='hidden']),
+textarea,
+select {
   display: block;
   width: 100%;
   padding: 0.55rem 0.7rem;
@@ -199,9 +201,16 @@ input:not([type='hidden']) {
   font: inherit;
 }
 
-input:focus {
+input:focus,
+textarea:focus,
+select:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .button {
@@ -823,6 +832,342 @@ button:disabled {
 
 .table-wide td {
   white-space: nowrap;
+}
+
+/* Requests: tabs, the board, the conversation */
+
+.badge {
+  display: inline-block;
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0e0f13;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 1rem 0;
+}
+
+.tabs a {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  color: var(--fg);
+}
+
+.tabs a[aria-current='true'] {
+  border-color: var(--line);
+  background: var(--card-head);
+  color: var(--fg);
+}
+
+.grid-funnel {
+  margin-bottom: 0.5rem;
+}
+
+.section-title {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.status {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.status-new {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.status-in_progress {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.status-waiting_client {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.status-done {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status-rejected,
+.status-spam {
+  color: var(--muted);
+}
+
+.tag-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* The task takes the width the other columns leave and is cut with an ellipsis: «max-width: 0»
+   lets a table cell shrink below its text, «width: 100%» gives it everything that is left. */
+.cell-excerpt {
+  width: 100%;
+  min-width: 14rem;
+  max-width: 0;
+  color: var(--muted);
+}
+
+.table-wide td.cell-excerpt {
+  white-space: normal;
+}
+
+/* Two lines of the task, the rest is on the card. */
+.clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* The second line of a cell: the contact under the name, the budget under the direction. */
+.cell-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.board-column {
+  min-height: 8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--card);
+}
+
+.board-column.is-target {
+  border-color: var(--accent);
+}
+
+.board-cards {
+  display: grid;
+  gap: 0.5rem;
+  min-height: 4rem;
+  padding: 0.5rem;
+}
+
+.board-card {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--bg);
+  cursor: grab;
+}
+
+.board-card.is-dragged {
+  opacity: 0.4;
+}
+
+.board-card p {
+  margin: 0 0 0.2rem;
+  font-size: 0.8125rem;
+}
+
+.board-card .board-card-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+}
+
+.board-card .board-card-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+/* The card of a request: the client on the left, the conversation on the right (brief B10.6). */
+.lead-layout {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'facts chat'
+    'more chat';
+}
+
+.lead-facts {
+  grid-area: facts;
+}
+
+.lead-chat {
+  grid-area: chat;
+}
+
+.lead-more {
+  grid-area: more;
+}
+
+.chat {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-event {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.chat-event time {
+  margin-right: 0.5rem;
+  font-family: var(--mono);
+}
+
+.chat-message {
+  max-width: 88%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--bg);
+}
+
+.chat-out {
+  justify-self: end;
+  border-color: var(--accent-soft);
+  background: #1d1a2e;
+}
+
+.chat-note {
+  justify-self: center;
+  max-width: 100%;
+  border-style: dashed;
+  background: transparent;
+}
+
+.chat-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  justify-content: space-between;
+  margin: 0 0 0.3rem;
+  font-size: 0.8125rem;
+}
+
+.chat-meta time {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.chat-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-delivery {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.chat-failed {
+  color: var(--error);
+}
+
+.actions-stack {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.actions-stack .button {
+  width: 100%;
+  margin-top: 0;
+}
+
+.reject-form {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.reject-form .button {
+  margin-top: 0.6rem;
+}
+
+.inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inline .button {
+  flex: none;
+  margin-top: 0;
+}
+
+.template-picker {
+  margin-bottom: 0.75rem;
+}
+
+.template-form {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.template-form .actions {
+  margin-top: 0.75rem;
+}
+
+.template-form .actions .button {
+  margin-top: 0;
+}
+
+.button-danger {
+  border-color: var(--error);
+  background: transparent;
+  color: var(--error);
+}
+
+details summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+@media (max-width: 70rem) {
+  .lead-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      'facts'
+      'chat'
+      'more';
+  }
 }
 
 /* Login */

@@ -58,6 +58,8 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 			return outbox.Permanent(errors.New("the client left no email address"))
 		}
 		message, err = m.autoReply(lead)
+	case TaskReply:
+		return m.sendReply(ctx, lead, payload.MessageID)
 	default:
 		return outbox.Permanent(fmt.Errorf("the mailer does not know the task %q", task.Kind))
 	}
@@ -88,6 +90,8 @@ type view struct {
 	TelegramURL string
 	ReplyHours  int
 	Host        string
+	Body        string // an answer to the client
+	Author      string
 	T           map[string]string // the texts of the client's language
 }
 
@@ -163,7 +167,7 @@ func (m *Mailer) notification(lead *Lead) (mail.Message, error) {
 		Subject:   fmt.Sprintf("Заявка #%s · %s · %s", v.Number, v.Direction, lead.Name),
 		Text:      text,
 		HTML:      html,
-		MessageID: mail.NewMessageID(fmt.Sprintf("lead-%d.notify", lead.ID), m.SiteHost),
+		MessageID: m.messageID(lead.ID, "notify"),
 		Headers:   map[string]string{"X-Krokosha-Lead": v.Number},
 	}
 	// «Reply» in the owner's mail program goes straight to the client (brief B10.2).
@@ -189,10 +193,70 @@ func (m *Mailer) autoReply(lead *Lead) (mail.Message, error) {
 		Subject:   strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["subject"]),
 		Text:      text,
 		HTML:      html,
-		MessageID: mail.NewMessageID(fmt.Sprintf("lead-%d.autoreply", lead.ID), m.SiteHost),
+		MessageID: m.messageID(lead.ID, "autoreply"),
 		// RFC 3834: tells other robots not to answer this one — no loops of automatic replies.
 		Headers: map[string]string{"Auto-Submitted": "auto-replied", "X-Auto-Response-Suppress": "All", "X-Krokosha-Lead": v.Number},
 	}, nil
+}
+
+// messageID is the same for every attempt to deliver the same letter: a mail server that got it
+// twice — the first attempt timed out after all — can tell. It also lets an answer point at the
+// confirmation the client already has, so that the conversation stays one thread.
+func (m *Mailer) messageID(leadID int64, part string) string {
+	return fmt.Sprintf("lead-%d.%s@%s", leadID, part, m.SiteHost)
+}
+
+// sendReply delivers an answer written in the admin area or in the bot (brief B10.5) and
+// records what became of it.
+func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) error {
+	if lead.ContactMethod != MethodEmail {
+		return outbox.Permanent(errors.New("the client left no email address"))
+	}
+	body, author, err := m.Store.Message(ctx, lead.ID, messageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return outbox.Permanent(errors.New("the answer is gone"))
+	}
+	if err != nil {
+		return err
+	}
+	lang := lead.Lang
+	if texts[lang] == nil {
+		lang = "en"
+	}
+	v := m.view(lead, lang)
+	v.Body, v.Author = body, m.From.Name
+	if v.Author == "" {
+		v.Author = author
+	}
+	text, html, err := render(replyText, replyHTML, v)
+	if err != nil {
+		return outbox.Permanent(err)
+	}
+	// The thread so far: the confirmation, then every answer already sent.
+	references := []string{m.messageID(lead.ID, "autoreply")}
+	if sent, err := m.Store.ThreadIDs(ctx, lead.ID); err == nil {
+		references = append(references, sent...)
+	}
+	id := m.messageID(lead.ID, fmt.Sprintf("reply-%d", messageID))
+	message := mail.Message{
+		From: m.From, To: netmail.Address{Name: lead.Name, Address: lead.ContactValue},
+		Subject:   "Re: " + strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["subject"]),
+		Text:      text,
+		HTML:      html,
+		MessageID: id, InReplyTo: references[len(references)-1], References: references,
+		Headers: map[string]string{"X-Krokosha-Lead": v.Number},
+	}
+	err = m.Deliver(ctx, message)
+	var permanent mail.PermanentError
+	switch {
+	case err == nil:
+		return m.Store.MarkDelivery(ctx, messageID, "sent", id)
+	case errors.As(err, &permanent):
+		_ = m.Store.MarkDelivery(ctx, messageID, "failed", "")
+		return outbox.Permanent(err)
+	default:
+		return err
+	}
 }
 
 func render(text *texttemplate.Template, html *htmltemplate.Template, v view) (string, string, error) {
@@ -314,3 +378,15 @@ var autoReplyHTML = htmltemplate.Must(htmltemplate.New("autoreply.html").Parse(m
 {{if .TelegramURL}}<p style="margin:20px 0 0;"><a href="{{.TelegramURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.telegram}}</a></p>{{end}}
 {{end}}
 {{define "foot"}}<a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a><br>{{.T.auto}}{{end}}`))
+
+var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
+
+--
+{{.Author}}
+{{.Host}} · #{{.Number}}
+`))
+
+var replyHTML = htmltemplate.Must(htmltemplate.New("reply.html").Parse(mailFrame + `
+{{define "body"}}<p style="margin:0;white-space:pre-wrap;">{{.Body}}</p>
+<p style="margin:20px 0 0;color:#6b6f7e;">— {{.Author}}</p>{{end}}
+{{define "foot"}}<a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a> · #{{.Number}}{{end}}`))

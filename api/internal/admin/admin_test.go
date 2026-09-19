@@ -23,6 +23,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
@@ -44,6 +45,7 @@ type site struct {
 	db      *sql.DB
 	feed    chan analytics.Live // what the «analytics service» publishes to the live feed
 	state   string              // the server's state directory: build report, rebuild requests
+	leads   *leads.Store
 }
 
 // The dashboards are tested on a fixed day, so that the numbers on the page are known.
@@ -70,7 +72,7 @@ func newSite(t *testing.T) *site {
 		t.Fatal(err)
 	}
 
-	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4), state: t.TempDir()}
+	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4), state: t.TempDir(), leads: leads.NewStore(pool, nil)}
 	if err := os.MkdirAll(filepath.Join(s.state, "requests"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +86,7 @@ func newSite(t *testing.T) *site {
 		Active:  func(context.Context, time.Duration) int { return 3 },
 		Traffic: nginxlog.NewReports(pool, time.UTC), System: system,
 		LogPolled: func() time.Time { return time.Now().Add(-7 * time.Second) },
+		Leads:     s.leads, Form: testForm,
 	})
 	if err != nil {
 		t.Fatal(err)

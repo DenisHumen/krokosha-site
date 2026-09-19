@@ -1,0 +1,117 @@
+{{define "content"}}
+  {{$d := .Data}}
+  <div class="page-head">
+    <h1>Заявки</h1>
+    <div class="period">
+      <div class="segmented" role="group" aria-label="Вид">
+        <a href="{{href "/leads" $d.ListQ}}" {{if eq $d.View "list"}}aria-current="true"{{end}}>Список</a>
+        <a href="{{href "/leads" $d.BoardQ}}" {{if eq $d.View "board"}}aria-current="true"{{end}}>Доска</a>
+      </div>
+      <form class="range" method="get" action="{{path "/leads"}}" role="search">
+        {{if $d.Status}}<input type="hidden" name="status" value="{{$d.Status}}" />{{end}}
+        {{if eq $d.View "board"}}<input type="hidden" name="view" value="board" />{{end}}
+        <label class="visually-hidden" for="leads-search">Поиск по заявкам</label>
+        <input id="leads-search" type="search" name="q" value="{{$d.Search}}" placeholder="Имя, контакт, текст, #K-0042" />
+        <button class="button button-ghost" type="submit">Найти</button>
+      </form>
+      <a class="button button-ghost" href="{{path "/templates"}}">Шаблоны</a>
+      <a class="button button-ghost" href="{{path "/leads/export.csv"}}" download>CSV</a>
+    </div>
+  </div>
+
+  <div class="grid grid-funnel">
+    <section class="card">
+      <h2 class="card-title">Воронка {{$d.Period}}</h2>
+      <div class="card-body">
+        <div class="figures">
+          <div><p class="figure-label">Заявок</p><p class="figure">{{$d.Funnel.Total}}</p></div>
+          <div><p class="figure-label">В работе</p><p class="figure">{{$d.Funnel.InProgress}}</p></div>
+          <div><p class="figure-label">Ждём клиента</p><p class="figure">{{$d.Funnel.Waiting}}</p></div>
+          <div><p class="figure-label">Завершено</p><p class="figure">{{$d.Funnel.Done}}</p></div>
+        </div>
+        <dl class="facts">
+          <div><dt>Первая реакция (медиана)</dt><dd>{{if $d.Funnel.FirstResponse}}{{elapsed $d.Funnel.FirstResponse}}{{else}}—{{end}}</dd></div>
+          <div><dt>Новых, ещё не взятых</dt><dd>{{$d.Funnel.New}}</dd></div>
+          <div><dt>Отклонено · спам</dt><dd>{{$d.Funnel.Rejected}} · {{$d.Funnel.Spam}}</dd></div>
+        </dl>
+      </div>
+    </section>
+    <section class="card">
+      <h2 class="card-title">Откуда заявки {{$d.Period}}</h2>
+      <div class="card-body">
+        <ul class="rows rows-plain">
+          {{range $d.Funnel.Sources}}
+            <li class="row"><span class="row-name">{{if .Source}}{{source .Source}}{{else}}Визит неизвестен{{end}}{{if .Campaign}} <span class="muted">· {{.Campaign}}</span>{{end}}</span><span class="row-value">{{plural .Requests "заявка" "заявки" "заявок"}}</span><span class="row-value">завершено: {{.Done}}</span></li>
+          {{else}}
+            <li class="muted">Заявок за период не было.</li>
+          {{end}}
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <nav class="tabs" aria-label="Статус">
+    {{range $d.Tabs}}
+      <a href="{{href "/leads" .Query}}" {{if .Current}}aria-current="true"{{end}}>{{.Name}} <span class="muted">{{.Count}}</span></a>
+    {{end}}
+  </nav>
+
+  {{if eq $d.View "board"}}
+    {{/* Drag a card to another column (static/admin.js); without scripts the card page has the same buttons. */}}
+    <div class="board" data-board data-csrf="{{.Session.CSRFToken}}" data-action="{{path "/leads/"}}">
+      {{range $d.Board}}
+        <section class="board-column" data-status="{{.Status}}" aria-label="{{.Name}}">
+          <h2 class="card-title">{{.Name}} <span class="muted" data-count>{{len .Cards}}</span></h2>
+          <div class="board-cards">
+            {{range .Cards}}
+              <article class="board-card" draggable="true" data-lead="{{.ID}}">
+                <p class="board-card-head"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a> <span class="muted">{{day .CreatedAt}}</span></p>
+                <p class="board-card-name">{{.Name}}</p>
+                <p class="muted">{{direction .Direction}}{{if .Budget}} · {{.Budget}}{{end}}</p>
+                {{if .Assignee}}<p class="muted">взял(а) {{.Assignee}}</p>{{end}}
+                {{if .LastFromUser}}<p><span class="tag tag-warn">клиент ждёт ответа</span></p>{{end}}
+              </article>
+            {{end}}
+          </div>
+        </section>
+      {{end}}
+    </div>
+    <p class="muted live-state" id="board-state" role="status" hidden></p>
+  {{else}}
+    <section class="card">
+      <h2 class="card-title">{{plural $d.Total "заявка" "заявки" "заявок"}}{{if $d.Waiting}} · ждут ответа: {{$d.Waiting}}{{end}}</h2>
+      <div class="card-body">
+        <div class="table-scroll">
+          <table class="table table-wide">
+            <thead>
+              <tr><th>Номер</th><th>Получена</th><th>Статус</th><th>Клиент</th><th>Направление</th><th>Задача</th><th>Источник</th><th>Кто взял</th></tr>
+            </thead>
+            <tbody>
+              {{range $d.Items}}
+                <tr>
+                  <td class="mono"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a></td>
+                  <td class="mono">{{time .CreatedAt}}</td>
+                  <td><span class="status status-{{.Status}}">{{statusName .Status}}</span>{{if .LastFromUser}} <span class="tag tag-warn">ждёт ответа</span>{{end}}</td>
+                  <td>{{.Name}}<span class="cell-sub">{{.ContactValue}}</span></td>
+                  <td>{{direction .Direction}}{{if .Budget}}<span class="cell-sub">{{.Budget}}</span>{{end}}</td>
+                  <td class="cell-excerpt"><span class="clamp">{{.Excerpt}}</span></td>
+                  <td>{{source .Source}}{{if .Campaign}}<span class="cell-sub">{{.Campaign}}</span>{{end}}</td>
+                  <td>{{if .Assignee}}{{.Assignee}}{{else}}<span class="muted">—</span>{{end}}</td>
+                </tr>
+              {{else}}
+                <tr><td colspan="8" class="muted">Заявок нет.</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{if or $d.Prev $d.Next}}
+          <p class="pager">
+            {{if $d.Prev}}<a class="button button-ghost" href="{{href "/leads" $d.Prev}}">← Новее</a>{{end}}
+            <span class="muted">страница {{$d.Page}}</span>
+            {{if $d.Next}}<a class="button button-ghost" href="{{href "/leads" $d.Next}}">Старше →</a>{{end}}
+          </p>
+        {{end}}
+      </div>
+    </section>
+  {{end}}
+{{end}}

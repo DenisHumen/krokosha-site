@@ -15,6 +15,7 @@
         <a class="brand" href="{{path "/"}}">KROKOSHA</a>
         <nav aria-label="Разделы">
           <a href="{{path "/"}}" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Обзор</a>
+          <a href="{{path "/leads"}}" {{if eq .Nav "leads"}}aria-current="page"{{end}}>Заявки{{if .NewLeads}} <span class="badge">{{.NewLeads}}</span>{{end}}</a>
           <a href="{{path "/visits"}}" {{if eq .Nav "visits"}}aria-current="page"{{end}}>Визиты</a>
           <a href="{{path "/traffic"}}" {{if eq .Nav "traffic"}}aria-current="page"{{end}}>Трафик</a>
           <a href="{{path "/status"}}" {{if eq .Nav "status"}}aria-current="page"{{end}}>Статус</a>

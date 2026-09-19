@@ -1,0 +1,52 @@
+{{define "content"}}
+  {{$csrf := .Session.CSRFToken}}
+  <div class="page-head">
+    <h1>Шаблоны ответов и отказов</h1>
+    <a class="button button-ghost" href="{{path "/leads"}}">← К заявкам</a>
+  </div>
+  <p class="muted">В тексте <span class="mono">{name}</span> заменяется именем клиента, <span class="mono">{id}</span> — номером заявки. В карточке заявки предлагаются шаблоны на языке клиента.</p>
+
+  {{range .Data}}
+    {{$kind := .Kind}}
+    <h2 class="section-title">{{.Name}}</h2>
+    <div class="grid">
+      {{range .Langs}}
+        {{$lang := .Lang}}
+        <section class="card">
+          <h3 class="card-title">{{.Name}}</h3>
+          <div class="card-body stack">
+            {{range .Items}}
+              <form class="template-form" method="post" action="{{path "/templates"}}">
+                <input type="hidden" name="csrf" value="{{$csrf}}" />
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <input type="hidden" name="kind" value="{{$kind}}" />
+                <input type="hidden" name="lang" value="{{$lang}}" />
+                <label for="title-{{.ID}}">Название</label>
+                <input id="title-{{.ID}}" name="title" value="{{.Title}}" maxlength="100" required />
+                <label for="body-{{.ID}}">Текст</label>
+                <textarea id="body-{{.ID}}" name="body" rows="6" required>{{.Body}}</textarea>
+                <span class="actions">
+                  <button class="button button-ghost" type="submit">Сохранить</button>
+                  <button class="button button-ghost button-danger" type="submit" name="delete" value="1">Удалить</button>
+                </span>
+              </form>
+            {{end}}
+            <details>
+              <summary>Новый шаблон</summary>
+              <form class="template-form" method="post" action="{{path "/templates"}}">
+                <input type="hidden" name="csrf" value="{{$csrf}}" />
+                <input type="hidden" name="kind" value="{{$kind}}" />
+                <input type="hidden" name="lang" value="{{$lang}}" />
+                <label for="new-title-{{$kind}}-{{$lang}}">Название</label>
+                <input id="new-title-{{$kind}}-{{$lang}}" name="title" maxlength="100" required />
+                <label for="new-body-{{$kind}}-{{$lang}}">Текст</label>
+                <textarea id="new-body-{{$kind}}-{{$lang}}" name="body" rows="5" required></textarea>
+                <button class="button" type="submit">Добавить</button>
+              </form>
+            </details>
+          </div>
+        </section>
+      {{end}}
+    </div>
+  {{end}}
+{{end}}

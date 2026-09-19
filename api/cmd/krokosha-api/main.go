@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/mail"
@@ -109,6 +110,15 @@ func run() error {
 	} else {
 		log.Warn("SMTP_ADDR is not set: notifications about requests wait in the outbox until mail is configured")
 	}
+	// An answer that could not be delivered after all the retries is marked so in the conversation.
+	deliveries.OnGiveUp(func(ctx context.Context, task outbox.Task, _ string) {
+		var payload leads.TaskPayload
+		if task.Kind == leads.TaskReply && json.Unmarshal(task.Payload, &payload) == nil && payload.MessageID > 0 {
+			if err := leadStore.MarkDelivery(ctx, payload.MessageID, "failed", ""); err != nil {
+				log.Error("cannot mark an answer as failed", "error", err)
+			}
+		}
+	})
 	leads.NewHandler(leads.Options{
 		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret),
 		Form: form.Current, WWWDir: env.WWWDir,
@@ -147,6 +157,9 @@ func run() error {
 		Traffic:   nginxlog.NewReports(pool, location),
 		System:    system,
 		LogPolled: accessLog.LastPoll,
+		Leads:     leadStore,
+		Form:      form.Current,
+		Kick:      deliveries.Kick,
 	})
 	if err != nil {
 		return err
