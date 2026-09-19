@@ -41,6 +41,11 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
   --admin-password-file FILE
                          take that administrator's password from the first line of FILE instead
                          of asking for it without echo — for automation; at least 12 characters
+  --telegram-token-file FILE
+                         token of the Telegram bot (from @BotFather) on the first line of FILE;
+                         without it the installer asks, and an empty answer means «later».
+                         The token is checked with Telegram (getMe) and kept in $KROKOSHA_ENV only
+  --telegram-api URL     another Bot API server (a self-hosted one; tests). Default: Telegram's own
   --repo URL             git repository to install from (default: $DEFAULT_REPO)
   --branch NAME          branch or tag (default: main)
   --from-env             take every setting from $KROKOSHA_ENV (what update.sh does)
@@ -54,6 +59,7 @@ EOF
 DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
+TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
 EXTRA_PORTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -70,6 +76,8 @@ while [[ $# -gt 0 ]]; do
     --admin-path) ADMIN_PATH=${2:?--admin-path needs a value}; shift 2 ;;
     --admin-login) ADMIN_LOGIN=${2:?--admin-login needs a value}; shift 2 ;;
     --admin-password-file) ADMIN_PASSWORD_FILE=${2:?--admin-password-file needs a value}; shift 2 ;;
+    --telegram-token-file) TELEGRAM_TOKEN_FILE=${2:?--telegram-token-file needs a value}; shift 2 ;;
+    --telegram-api) TELEGRAM_API=${2:?--telegram-api needs a value}; shift 2 ;;
     --repo) REPO_URL=${2:?--repo needs a value}; shift 2 ;;
     --branch) REPO_BRANCH=${2:?--branch needs a value}; shift 2 ;;
     --from-env) FROM_ENV=yes; shift ;;
@@ -136,6 +144,8 @@ valid_admin_path "$ADMIN_PATH" || die "--admin-path must look like /_k7f3a9: a s
 [[ -z $ADMIN_LOGIN || $ADMIN_LOGIN =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$ ]] || die "--admin-login: 3 to 64 latin letters, digits, dots, - or _"
 [[ -z $ADMIN_PASSWORD_FILE || -r $ADMIN_PASSWORD_FILE ]] || die "--admin-password-file: cannot read $ADMIN_PASSWORD_FILE"
 [[ -z $ADMIN_PASSWORD_FILE || -n $ADMIN_LOGIN ]] || die "--admin-password-file needs --admin-login"
+[[ -z $TELEGRAM_TOKEN_FILE || -r $TELEGRAM_TOKEN_FILE ]] || die "--telegram-token-file: cannot read $TELEGRAM_TOKEN_FILE"
+[[ -z $TELEGRAM_API || $TELEGRAM_API =~ ^https?://[^[:space:]]+$ ]] || die "--telegram-api must be an address like https://api.telegram.org"
 
 WWW=$KROKOSHA_WWW
 SITE_URL="https://$DOMAIN"
@@ -365,6 +375,27 @@ if [[ ! -s $MYSQL_ROOT_ENV ]]; then
 fi
 chmod 0600 "$MYSQL_ROOT_ENV"
 chown root:root "$MYSQL_ROOT_ENV"
+# The Telegram bot (brief B10.3). The token never appears on a command line or on the screen:
+# it comes from a file or is typed without echo, and lives in this file only.
+telegram_token=''
+if [[ -n $TELEGRAM_TOKEN_FILE ]]; then
+  telegram_token=$(head -n 1 "$TELEGRAM_TOKEN_FILE" | tr -d '[:space:]')
+elif [[ -z $(env_get TELEGRAM_BOT_TOKEN) && $ASSUME_YES == no && -t 0 ]]; then
+  log "Telegram bot: create one with @BotFather and paste its token here (it is not shown). Empty — set the bot up later."
+  read -r -s -p "Token: " telegram_token
+  echo >&2
+fi
+if [[ -n $telegram_token ]]; then
+  [[ $telegram_token =~ ^[0-9]{5,}:[A-Za-z0-9_-]{30,}$ ]] || die "that does not look like a token from @BotFather (123456789:AA…)"
+  env_set TELEGRAM_BOT_TOKEN "$telegram_token"
+fi
+[[ -z $TELEGRAM_API ]] || env_set TELEGRAM_API_URL "$TELEGRAM_API"
+# Telegram delivers updates to HTTPS only; without it the site asks Telegram itself.
+if [[ $TLS_MODE == none ]]; then
+  env_set TELEGRAM_MODE polling
+else
+  env_default TELEGRAM_MODE webhook
+fi
 if [[ -n ${GITHUB_TOKEN:-} ]]; then
   env_set GITHUB_TOKEN "$GITHUB_TOKEN"
 elif [[ -z $(env_get GITHUB_TOKEN) ]]; then
@@ -477,6 +508,34 @@ elif [[ $ASSUME_YES == no && -t 0 ]]; then
   fi
 else
   warn "no administrator yet, and nobody to ask for a password. Create one: sudo krokosha-cli admin create LOGIN"
+fi
+
+# ---------------------------------------------------------------------------------------------
+step "Telegram bot"
+# ---------------------------------------------------------------------------------------------
+
+bot_summary="not set up — requests wait for it in the queue. Later: sudo $0 --from-env --telegram-token-file FILE"
+if [[ -n $(env_get TELEGRAM_BOT_TOKEN) ]]; then
+  cli_errors=$(mktemp)
+  bot_name=$(cli bot check 2>"$cli_errors") || {
+    cat "$cli_errors" >&2
+    die "Telegram did not accept the token (message above). Put the right one into a file and run: sudo $0 --from-env --telegram-token-file FILE"
+  }
+  rm -f "$cli_errors"
+  ok "the token belongs to $bot_name"
+  bot_summary="$bot_name   (who has access: sudo krokosha-cli bot users)"
+  if ! cli bot users | awk -F'\t' '$2 == "owner" && $3 == "active"' | grep -q .; then
+    if [[ -n $telegram_token ]]; then
+      # The first owner gets in by a one-time invitation, like everybody after them.
+      bot_invite=$(cli bot invite --owner 2>/dev/null) || die "cannot make the owner's invitation"
+      bot_summary="$bot_name — become its owner within 24 hours: https://t.me/${bot_name#@}?start=${bot_invite#/start }"
+      ok "an invitation for the bot's owner is at the end of this output"
+    else
+      warn "the bot has no owner yet. Make an invitation: sudo krokosha-cli bot invite --owner"
+    fi
+  fi
+else
+  warn "no Telegram bot yet: $bot_summary"
 fi
 
 # The first build goes through the same unit as every later one: same user, same sandbox.
@@ -682,6 +741,7 @@ cat >&2 <<EOF
   Site:       $SITE_URL
   Admin area: $admin_url
   Accounts:   sudo krokosha-cli admin list | create LOGIN | passwd LOGIN | totp-reset LOGIN
+  Bot:        $bot_summary
   Release:    $(readlink -f "$WWW/current")
   Rebuild:    sudo systemctl start krokosha-sync.service     (runs by itself every 6 hours)
   Update:     sudo $KROKOSHA_REPO/deploy/update.sh

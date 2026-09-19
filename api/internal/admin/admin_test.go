@@ -27,6 +27,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 	"github.com/DenisHumen/krokosha-site/api/internal/testenv"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
@@ -46,6 +47,7 @@ type site struct {
 	feed    chan analytics.Live // what the «analytics service» publishes to the live feed
 	state   string              // the server's state directory: build report, rebuild requests
 	leads   *leads.Store
+	bot     telegram.Status // what the bot reports; the zero value — no token, no bot
 }
 
 // The dashboards are tested on a fixed day, so that the numbers on the page are known.
@@ -87,6 +89,8 @@ func newSite(t *testing.T) *site {
 		Traffic: nginxlog.NewReports(pool, time.UTC), System: system,
 		LogPolled: func() time.Time { return time.Now().Add(-7 * time.Second) },
 		Leads:     s.leads, Form: testForm,
+		BotAccess: telegram.NewAccess(pool, nil),
+		BotStatus: func() (telegram.Status, bool) { return s.bot, s.bot.Mode != "" },
 	})
 	if err != nil {
 		t.Fatal(err)

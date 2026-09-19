@@ -31,6 +31,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
 
@@ -146,10 +147,29 @@ func run() error {
 		Outbox:     func(ctx context.Context) (outbox.Stats, error) { return outbox.ReadStats(ctx, pool, time.Now()) },
 	})
 
+	accounts := auth.New(pool, store, log)
+
+	// The Telegram bot (brief B10.3). Who has access is kept whether or not there is a token:
+	// invitations can be prepared first. Without a token nothing talks to Telegram.
+	botAccess := telegram.NewAccess(pool, nil)
+	var botRunner *telegram.Runner
+	if env.Telegram.Token != "" {
+		bot := telegram.New(telegram.Options{
+			API: telegram.NewClient(env.Telegram.Token, env.Telegram.API), Access: botAccess, Cache: store, Log: log, SiteURL: env.SiteURL,
+			Audit: func(ctx context.Context, actor, action, subject, details string) {
+				accounts.Audit(ctx, actor, action, subject, details, "telegram")
+			},
+		})
+		botRunner = telegram.NewRunner(bot, telegram.RunnerOptions{Mode: env.Telegram.Mode, SiteURL: env.SiteURL, Secret: []byte(env.Secret), Log: log})
+		botRunner.Register(srv.Mux())
+	} else {
+		log.Warn("TELEGRAM_BOT_TOKEN is not set: there is no bot; notifications for Telegram wait in the outbox")
+	}
+
 	panel, err := admin.New(admin.Options{
 		Prefix:   env.AdminPath,
 		SiteHost: siteURL.Hostname(),
-		Auth:     auth.New(pool, store, log),
+		Auth:     accounts,
 		Log:      log,
 		Version:  version(),
 		Reports:  analytics.NewReports(pool, location, nil),
@@ -164,6 +184,13 @@ func run() error {
 		Leads:     leadStore,
 		Form:      form.Current,
 		Kick:      deliveries.Kick,
+		BotAccess: botAccess,
+		BotStatus: func() (telegram.Status, bool) {
+			if botRunner == nil {
+				return telegram.Status{}, false
+			}
+			return botRunner.Status(), true
+		},
 	})
 	if err != nil {
 		return err
@@ -180,6 +207,13 @@ func run() error {
 			KeepMonths: env.Retention.KeepMonths, Delete: env.Retention.Delete, SpamDays: env.Retention.SpamDays,
 		}.Run(ctx)
 	}()
+	if botRunner != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			botRunner.Run(ctx)
+		}()
+	}
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)

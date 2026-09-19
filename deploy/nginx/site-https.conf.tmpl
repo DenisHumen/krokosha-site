@@ -56,6 +56,21 @@ server {
         include snippets/krokosha-proxy.conf;
     }
 
+    # Telegram delivers the bot's updates here (brief B10.3): to an address that ends in a secret,
+    # with a secret header — the API checks both. The address stays out of the access log (and so
+    # out of the «server traffic» screen), and only Telegram's own networks get through
+    # (core.telegram.org/bots/webhooks), plus this machine itself.
+    location ^~ /api/telegram/ {
+        access_log off;
+        allow 149.154.160.0/20;
+        allow 91.108.4.0/22;
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        client_max_body_size 256k;
+        include snippets/krokosha-proxy.conf;
+    }
+
     # The admin area (brief B6): behind a secret path (ADMIN_PATH in /etc/krokosha/env) and over
     # HTTPS only — the plain-HTTP server never proxies it. Signing in is limited much harder than
     # the rest: every password check costs the server 64 MB and a good part of a second.

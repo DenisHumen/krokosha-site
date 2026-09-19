@@ -56,8 +56,19 @@ else
 fi
 echo "::endgroup::"
 
+# The Telegram bot: the installer checks the token with Telegram, the API talks to it all the
+# time. Here «Telegram» is a small pretend server that writes down every call.
+BOT_TOKEN='42424242:CI-token-that-must-not-show-up-in-logs'
+BOT_TOKEN_FILE=$(mktemp) BOT_CALLS=$(mktemp) INSTALL_LOG=$(mktemp)
+printf '%s\n' "$BOT_TOKEN" >"$BOT_TOKEN_FILE"
+chmod 0666 "$BOT_CALLS"
+python3 "$SOURCE/deploy/ci/mock-telegram.py" "$BOT_TOKEN" "$BOT_CALLS" 8088 &
+MOCK_TELEGRAM=$!
+trap 'kill "$MOCK_TELEGRAM" 2>/dev/null || true' EXIT
+bot_called() { grep -c "\"method\": \"$1\"" "$BOT_CALLS" || true; }
+
 echo "::group::First installation"
-install_site --allow 8443/tcp
+install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 2>&1 | tee "$INSTALL_LOG"
 echo "::endgroup::"
 
 echo "Site"
@@ -312,6 +323,44 @@ sed -i 's/^\( *attachments:\) true /\1 false/' /opt/krokosha/repo/content/site.y
 check "the content is as it was" test -z "$(runuser -u krokosha -- git -C /opt/krokosha/repo status --porcelain)"
 rm -f "$pdf" "$program" "$megabyte" "$toobig" "$downloaded"
 
+echo "Telegram bot"
+check "the installer asked Telegram whose token it is" test "$(bot_called getMe)" -ge 1
+check "the token is in the settings file only" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=$BOT_TOKEN\$' /etc/krokosha/env && ! grep -rqF '$BOT_TOKEN' '$INSTALL_LOG' /var/log/krokosha 2>/dev/null"
+check "…and never in the service's log" bash -c "! journalctl -u krokosha-api.service --no-pager | grep -qF '$BOT_TOKEN'"
+webhook_is_set() { [[ $(bot_called setWebhook) -ge 1 ]]; }
+check "the bot registered a webhook with Telegram" wait_for 30 webhook_is_set
+webhook=$(python3 - "$BOT_CALLS" <<'PY'
+import json, sys
+for line in open(sys.argv[1], encoding="utf-8"):
+    call = json.loads(line)
+    if call["method"] == "setWebhook":
+        print(call["params"]["url"], call["params"]["secret_token"])
+PY
+)
+webhook_url=${webhook% *} webhook_secret=${webhook#* }
+check "…under an address nobody can guess, with a secret of its own" grep -qE "^https://$DOMAIN/api/telegram/[0-9a-f]{32} [0-9a-f]{64}$" <<<"$webhook"
+owner_code=$(grep -o 'start=i_[a-z2-7]*' "$INSTALL_LOG" | head -n 1 | cut -d= -f2)
+check "the installation ends with an invitation for the bot's owner" grep -qE '^i_[a-z2-7]{20}$' <<<"$owner_code"
+deliver() { # deliver SECRET JSON → HTTP status of a delivery to the webhook, through nginx
+  local secret=$1 update=$2 proof=()
+  [[ -z $secret ]] || proof=(--header "X-Telegram-Bot-Api-Secret-Token: $secret")
+  "${CURL[@]}" --output /dev/null --write-out '%{http_code}' --header 'Content-Type: application/json' "${proof[@]}" --data "$update" "$webhook_url"
+}
+start_update() { printf '{"update_id":%s,"message":{"message_id":%s,"date":0,"text":"/start %s","from":{"id":%s,"first_name":"%s","language_code":"ru"},"chat":{"id":%s,"type":"private"}}}' "$1" "$1" "$2" "$3" "$4" "$3"; }
+check "a delivery without Telegram's secret is refused" test "$(deliver '' "$(start_update 1 "$owner_code" 7001 Mallory)")" = 403
+check "a guessed address is an ordinary 404" test "$(status --request POST "https://$DOMAIN/api/telegram/$(printf '0%.0s' {1..32})")" = 404
+check "nobody got in that way" test -z "$(krokosha-cli bot users)"
+check "Telegram's own delivery is accepted" test "$(deliver "$webhook_secret" "$(start_update 2 "$owner_code" 7002 Denis)")" = 200
+owner_joined() { krokosha-cli bot users | grep -qP '^\d+\towner\tactive\tDenis\t'; }
+check "the owner is in — by the one-time invitation" wait_for 20 owner_joined
+check "…and was told so" grep -q 'Доступ открыт, Denis' "$BOT_CALLS"
+check "a second person comes with the same invitation" test "$(deliver "$webhook_secret" "$(start_update 3 "$owner_code" 7003 Mallory)")" = 200
+sleep 2
+check "…and is not let in" test "$(krokosha-cli bot users | wc -l)" = 1
+check "the webhook's address stays out of the traffic log" bash -c "! grep -q '/api/telegram/' /var/log/krokosha/nginx-access.json.log"
+check "CLI: an invitation for a colleague" grep -qE '^/start i_[a-z2-7]{20}$' <(krokosha-cli bot invite 2>/dev/null)
+check "the bot's page in the admin area" grep -q '@krokosha_ci_bot' <(admin_get "$ADMIN/bot")
+
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303
@@ -367,6 +416,7 @@ check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/k
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
 check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
+check "the bot and its owner survived" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=.' /etc/krokosha/env && krokosha-cli bot users | grep -q 'owner'"
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 

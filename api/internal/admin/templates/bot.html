@@ -1,0 +1,117 @@
+{{define "content"}}
+  {{$d := .Data}}
+  {{$csrf := .Session.CSRFToken}}
+  <div class="page-head">
+    <h1>Telegram-бот</h1>
+  </div>
+
+  {{with $d.NewInvite}}
+    {{/* Shown once: the database keeps only a hash of the code. */}}
+    <section class="notice notice-ok" role="status">
+      <p><strong>Приглашение для {{if eq .Role "owner"}}владельца{{else}}участника{{end}}</strong> — на одного человека, действует до {{time .Expires}}. Скопируйте сейчас: больше оно нигде не появится.</p>
+      {{if .Link}}<p>Ссылка: <code class="copyable">{{.Link}}</code></p>{{end}}
+      <p>Или написать боту: <code class="copyable">/start {{.Code}}</code></p>
+    </section>
+  {{end}}
+
+  <div class="dashboard">
+    <div class="dash-main">
+      <section class="card">
+        <h2 class="card-title">Кто имеет доступ</h2>
+        <div class="card-body">
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr><th>Имя</th><th>Роль</th><th>С какого дня</th><th>Кто пригласил</th><th></th></tr>
+              </thead>
+              <tbody>
+                {{range $d.Members}}
+                  <tr>
+                    <td>{{.Name}}{{if .Username}} <span class="muted">· @{{.Username}}</span>{{end}}{{if .DisabledAt.Valid}} <span class="tag tag-warn">доступ отключён</span>{{end}}</td>
+                    <td>{{if .Owner}}владелец{{else}}участник{{end}}</td>
+                    <td class="mono">{{time .CreatedAt}}</td>
+                    <td>{{.InvitedBy}}</td>
+                    <td class="right">
+                      <form method="post" action="{{path "/bot/member"}}">
+                        <input type="hidden" name="csrf" value="{{$csrf}}" />
+                        <input type="hidden" name="id" value="{{.ID}}" />
+                        {{if .DisabledAt.Valid}}
+                          <button class="button button-ghost" type="submit" name="action" value="enable">Вернуть доступ</button>
+                        {{else}}
+                          <button class="button button-ghost" type="submit" name="action" value="disable">Отключить</button>
+                        {{end}}
+                      </form>
+                    </td>
+                  </tr>
+                {{else}}
+                  <tr><td colspan="5" class="muted">Пока никого. Создайте приглашение для владельца и откройте его в Telegram.</td></tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          <p class="muted">Человек привязывается по числовому идентификатору Telegram, а не по нику: ник можно сменить или отдать. Отключение действует сразу — бот перестаёт отвечать и присылать заявки.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Приглашения, которые ещё действуют</h2>
+        <div class="card-body">
+          <table class="table">
+            <tbody>
+              {{range $d.Invites}}
+                <tr>
+                  <td>{{if eq .Role "owner"}}владелец{{else}}участник{{end}}</td>
+                  <td class="muted">создал(а) {{.CreatedBy}}, {{time .CreatedAt}}</td>
+                  <td class="muted">до {{time .ExpiresAt}}</td>
+                  <td class="right">
+                    <form method="post" action="{{path "/bot/invite/revoke"}}">
+                      <input type="hidden" name="csrf" value="{{$csrf}}" />
+                      <input type="hidden" name="id" value="{{.ID}}" />
+                      <button class="button button-ghost" type="submit">Отозвать</button>
+                    </form>
+                  </td>
+                </tr>
+              {{else}}
+                <tr><td class="muted">Нет.</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="dash-side stack">
+      <section class="card">
+        <h2 class="card-title">Состояние</h2>
+        <div class="card-body">
+          {{if not $d.Configured}}
+            <p><span class="dot dot-warn"></span>Бот не настроен.</p>
+            <p class="muted">Создайте бота у @BotFather и добавьте токен: <code>sudo /opt/krokosha/repo/deploy/install.sh --telegram-token-file ФАЙЛ</code> — установщик проверит токен и перезапустит сервис. Заявки тем временем ждут в очереди и придут в бот, как только он появится.</p>
+          {{else}}
+            <dl class="facts">
+              <div><dt>Бот</dt><dd>{{if $d.Status.Username}}<span class="dot dot-ok"></span>@{{$d.Status.Username}}{{else}}<span class="dot dot-warn"></span>подключается…{{end}}</dd></div>
+              <div><dt>Обновления</dt><dd>{{if eq $d.Status.Mode "polling"}}сайт сам спрашивает Telegram{{else}}Telegram вызывает сайт (webhook){{end}}</dd></div>
+              {{if not $d.Status.ConnectedAt.IsZero}}<div><dt>Подключён</dt><dd>{{time $d.Status.ConnectedAt}}</dd></div>{{end}}
+              <div><dt>Последнее обновление</dt><dd>{{if $d.Status.LastUpdateAt.IsZero}}после запуска ещё не было{{else}}{{ago $d.Status.LastUpdateAt}} назад{{end}}</dd></div>
+            </dl>
+            {{if $d.Status.LastError}}<p class="notice notice-error">{{time $d.Status.LastErrorAt}} — {{$d.Status.LastError}}</p>{{end}}
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Новое приглашение</h2>
+        <form class="card-body" method="post" action="{{path "/bot/invite"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <label for="invite-role">Кого приглашаем</label>
+          <select id="invite-role" name="role">
+            <option value="member">участника — получает заявки и работает с ними</option>
+            <option value="owner">владельца — ещё и управляет доступом</option>
+          </select>
+          <button class="button" type="submit">Создать</button>
+          <p class="muted">Код одноразовый и живёт 24 часа. То же самое — командой <code>/invite</code> в боте или <code>sudo krokosha-cli bot invite</code> на сервере.</p>
+        </form>
+      </section>
+    </div>
+  </div>
+{{end}}

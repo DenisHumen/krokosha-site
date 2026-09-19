@@ -1228,3 +1228,15 @@ details summary {
     text-align: left;
   }
 }
+
+/* A code or a link to copy: shown once, so it has to be easy to pick up whole. */
+.copyable {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

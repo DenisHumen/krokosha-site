@@ -21,6 +21,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
 
 //go:embed templates/*.html static/*
@@ -60,6 +61,11 @@ type Options struct {
 	Leads *leads.Store
 	Form  func() config.Form
 	Kick  func()
+
+	// BotAccess knows who may use the Telegram bot; BotStatus says how the bot is doing, and
+	// false when there is no token (invitations can be prepared before there is a bot).
+	BotAccess *telegram.Access
+	BotStatus func() (telegram.Status, bool)
 }
 
 // Handler serves the admin area.
@@ -125,7 +131,7 @@ func New(opts Options) (*Handler, error) {
 			return [...]string{"accent", "cyan", "pink"}[index%3]
 		},
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "templates", "account", "error"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "templates", "bot", "account", "error"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -165,6 +171,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/leads/{id}/delete", h.private(h.leadDelete))
 	mux.Handle("GET "+p+"/templates", h.private(h.templatesPage))
 	mux.Handle("POST "+p+"/templates", h.private(h.templateSave))
+	mux.Handle("GET "+p+"/bot", h.private(h.botPage))
+	mux.Handle("POST "+p+"/bot/invite", h.private(h.botInvite))
+	mux.Handle("POST "+p+"/bot/invite/revoke", h.private(h.botInviteRevoke))
+	mux.Handle("POST "+p+"/bot/member", h.private(h.botMember))
 	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
 	mux.Handle("GET "+p+"/status", h.private(h.status))
 	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
@@ -316,6 +326,10 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"lead-deleted":     "Данные клиента удалены. В журнале осталась только запись об удалении.",
 	"template-saved":   "Шаблон сохранён.",
 	"template-deleted": "Шаблон удалён.",
+
+	"bot-invite-revoked": "Приглашение отозвано.",
+	"bot-disabled":       "Доступ отключён: бот больше не отвечает этому человеку и не присылает ему заявки.",
+	"bot-enabled":        "Доступ возвращён.",
 }
 
 func (h *Handler) attemptMeta(r *http.Request) auth.Attempt {
