@@ -1,0 +1,15 @@
+[Unit]
+Description=krokosha site: the «rebuild now» button of the admin area
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+
+# The web service has no right to start anything. It drops a file; this unit notices it and starts
+# the very same build the timer runs. deploy/bin/build-release.sh removes the file first thing.
+[Path]
+PathExists=/var/lib/krokosha/requests/rebuild
+Unit=krokosha-sync.service
+# A build that cannot even start must not be retried in a tight loop.
+TriggerLimitIntervalSec=5min
+TriggerLimitBurst=6
+
+[Install]
+WantedBy=multi-user.target

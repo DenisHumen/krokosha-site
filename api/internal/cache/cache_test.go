@@ -102,10 +102,18 @@ func TestAllowSurvivesRedisOutage(t *testing.T) {
 	if err := server.Restart(); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Allow(ctx, "e:after-recovery", 1, time.Minute) {
-		t.Error("requests are refused after Redis came back")
+	// The client needs a moment to notice: its first dial after the restart may still fail
+	// (seen on a loaded CI machine). What matters is that it recovers by itself, and soon.
+	recovered := false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && !recovered; time.Sleep(50 * time.Millisecond) {
+		if !c.Allow(ctx, "e:after-recovery", 1_000_000, time.Minute) {
+			t.Fatal("requests are refused after Redis came back")
+		}
+		c.mu.Lock()
+		recovered = !c.degraded
+		c.mu.Unlock()
 	}
-	if c.degraded {
+	if !recovered {
 		t.Error("the cache still thinks Redis is down")
 	}
 }

@@ -15,7 +15,11 @@
           <p class="legend">
             <span class="legend-item"><span class="swatch swatch-accent"></span>Визиты{{if $o.Hourly}} по часам{{else}} по дням{{end}}</span>
             <span class="legend-item"><span class="swatch swatch-pink"></span>По рекламе (UTM, click id)</span>
-            <span class="legend-item muted">Боты и запросы без JavaScript — на экране «Трафик сервера»</span>
+            {{if .Data.HasBots}}
+              <span class="legend-item"><span class="swatch swatch-cyan"></span>Боты и программы (по логу сервера)</span>
+            {{else}}
+              <span class="legend-item muted">Боты видны в логе сервера — экран «Трафик»</span>
+            {{end}}
           </p>
         </div>
       </section>

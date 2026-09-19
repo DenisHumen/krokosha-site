@@ -25,6 +25,8 @@ PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=-/srv/krokosha/attachments
+# The «rebuild now» button: the service drops a file here, krokosha-rebuild.path does the rest.
+ReadWritePaths=-/var/lib/krokosha/requests
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

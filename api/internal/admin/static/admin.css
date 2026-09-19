@@ -255,6 +255,10 @@ td .button,
   border-left-color: var(--error);
 }
 
+.notice-warn {
+  border-left-color: var(--warn);
+}
+
 .dot {
   display: inline-block;
   width: 0.55rem;
@@ -270,6 +274,15 @@ td .button,
 
 .dot-warn {
   background: var(--warn);
+}
+
+.dot-error {
+  background: var(--error);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* Tables */
@@ -501,6 +514,10 @@ td .button,
   fill: var(--pink);
 }
 
+.chart-bar-bots {
+  fill: var(--cyan);
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -523,6 +540,10 @@ td .button,
 
 .swatch-pink {
   background: var(--pink);
+}
+
+.swatch-cyan {
+  background: var(--cyan);
 }
 
 /* Breakdown rows: share · name · bar · value */
@@ -581,6 +602,27 @@ td .button,
 
 .bar-pink {
   fill: var(--pink);
+}
+
+.bar-warn {
+  fill: var(--warn);
+}
+
+.bar-error {
+  fill: var(--error);
+}
+
+/* Rows without a share and a bar: a name and one or two numbers. */
+.rows-plain .row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.rows-meter .row {
+  grid-template-columns: 2.75rem minmax(0, 1fr) minmax(3rem, 25%) auto;
+}
+
+.rows-meter {
+  margin-top: 0.75rem;
 }
 
 /* Scores: rings */

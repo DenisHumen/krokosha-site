@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,7 +23,9 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
+	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
 	"github.com/DenisHumen/krokosha-site/api/internal/testenv"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
@@ -39,6 +43,7 @@ type site struct {
 	cookie  string // value of the session cookie, once signed in
 	db      *sql.DB
 	feed    chan analytics.Live // what the «analytics service» publishes to the live feed
+	state   string              // the server's state directory: build report, rebuild requests
 }
 
 // The dashboards are tested on a fixed day, so that the numbers on the page are known.
@@ -65,13 +70,20 @@ func newSite(t *testing.T) *site {
 		t.Fatal(err)
 	}
 
-	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4)}
+	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4), state: t.TempDir()}
+	if err := os.MkdirAll(filepath.Join(s.state, "requests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	system := sysstatus.New(sysstatus.Options{StateDir: s.state, WWWDir: t.TempDir(), ContentDir: t.TempDir(), DB: pool, Cache: store,
+		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay }})
 	srv := server.New(server.Deps{Env: &config.Env{Listen: "127.0.0.1:0"}, DB: pool, Cache: store, Log: quiet, Started: time.Now()})
 	panel, err := New(Options{
 		Prefix: prefix, SiteHost: "krokosha.xyz", Auth: accounts, Log: quiet, Version: "test",
 		Reports: analytics.NewReports(pool, time.UTC, func() time.Time { return reportDay }),
 		Feed:    func() (<-chan analytics.Live, func()) { return s.feed, func() {} },
 		Active:  func(context.Context, time.Duration) int { return 3 },
+		Traffic: nginxlog.NewReports(pool, time.UTC), System: system,
+		LogPolled: func() time.Time { return time.Now().Add(-7 * time.Second) },
 	})
 	if err != nil {
 		t.Fatal(err)

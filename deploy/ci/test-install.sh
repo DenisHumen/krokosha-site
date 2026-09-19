@@ -167,7 +167,7 @@ check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADM
 # midnight the visit recorded above may belong to either day, so both are asked for.
 # (grep -q stops reading at the first match; curl's complaint about the closed pipe is noise.)
 both_days() { { admin_get "$ADMIN$1" && admin_get "$ADMIN$1?p=day&d=$(date -u +%F)"; } 2>/dev/null || true; }
-check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1</title>' <(both_days /)
+check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1[;<]' <(both_days /)
 check "the list of visits" grep -q 'google.com' <(both_days /visits)
 check "CSV export of page views" grep -q ',/uk/,uk,search,google.com,google,cpc,' <(both_days /export/pageviews.csv)
 check "CSV export of events" grep -q ',click,cta-telegram,' <(both_days /export/events.csv)
@@ -176,6 +176,36 @@ check "the live feed streams through nginx" grep -q '^event: active' <(admin_get
 check "the owner's own page view is answered like any other" test "$(beacon "${view/00112233aabbccdd/00112233aabbcc03}" --cookie "$JAR")" = 204
 sleep 2
 check "but it is not counted: the owner is not a visitor" test "$(sql 'SELECT COUNT(*) FROM analytics_pageviews')" = 1
+
+echo "Server traffic and system status"
+# The API follows nginx's access log; it looks at it every ten seconds.
+wait_for() { # wait_for SECONDS command… — true as soon as the command succeeds
+  local deadline=$((SECONDS + $1))
+  shift
+  until "$@" 2>/dev/null; do
+    ((SECONDS < deadline)) || return 1
+    sleep 2
+  done
+}
+traffic_is_counted() { [[ $(sql 'SELECT COALESCE(SUM(requests), 0) FROM traffic_minutes') -ge 20 ]]; }
+check "requests from nginx's log are counted" wait_for 40 traffic_is_counted
+check "page addresses are kept without query strings" test "$(sql "SELECT COUNT(*) FROM traffic_paths WHERE path LIKE '%?%'")" = 0
+check "the admin area stays out of the traffic statistics" test "$(sql "SELECT COUNT(*) FROM traffic_paths WHERE path LIKE '$ADMIN_PATH%'")" = 0
+check "the scanner-like requests of this test are noticed" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE pattern = '.env'")" -ge 1
+check "networks of scanners are truncated" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
+check "the traffic screen" grep -q 'curl' <(both_days /traffic)
+check "the overview's timeline shows bots from the server log" grep -q 'chart-bar-bots' <(both_days /)
+
+check "the build left its report" python3 -c "import json; r = json.load(open('/var/lib/krokosha/status/sync.json')); assert r['ok'] and r['step'] == 'done' and r['release'], r"
+status_page=$(admin_get "$ADMIN/status")
+check "the status screen names the live release" grep -q "$(basename "$(readlink -f /var/www/krokosha/current)")" <<<"$status_page"
+check "…and describes the certificate nginx serves" grep -q 'не доверенный' <<<"$status_page"
+check "the API may write rebuild requests, and only there" bash -c "systemctl show krokosha-api.service -p ReadWritePaths | grep -q /var/lib/krokosha/requests && systemctl show krokosha-api.service -p ProtectSystem | grep -q strict"
+before_rebuild=$(readlink -f /var/www/krokosha/current)
+check "the «rebuild now» button is accepted" test "$(admin_post /status/rebuild --data-urlencode "csrf=$(csrf)")" = 303
+site_was_rebuilt() { [[ $(readlink -f /var/www/krokosha/current) != "$before_rebuild" && ! -e /var/lib/krokosha/requests/rebuild ]]; }
+check "…and a new release is published within two minutes" wait_for 120 site_was_rebuilt
+check "the button is in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.rebuild'")" = 1
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303
@@ -253,6 +283,7 @@ echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
+check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"
 check "the CLI link and the fail2ban filter are gone" bash -c "[[ ! -e /usr/local/bin/krokosha-cli && ! -L /usr/local/bin/krokosha-cli && ! -e /etc/fail2ban/filter.d/krokosha-admin.conf ]]"
 check "fail2ban still runs" systemctl is-active --quiet fail2ban
 check "user is gone" bash -c "! id krokosha >/dev/null 2>&1"

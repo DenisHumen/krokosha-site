@@ -24,6 +24,7 @@ type Cache struct {
 	windows map[string]*window
 	values  map[string]*value
 	active  map[string]map[string]time.Time
+	sets    map[string]*distinctSet
 	// degraded remembers that Redis failed, so the log gets one line per outage, not one per request.
 	degraded bool
 }
@@ -43,7 +44,7 @@ type value struct {
 func New(ctx context.Context, url string, log *slog.Logger) (*Cache, error) {
 	c := &Cache{
 		log: log, now: time.Now,
-		windows: map[string]*window{}, values: map[string]*value{}, active: map[string]map[string]time.Time{},
+		windows: map[string]*window{}, values: map[string]*value{}, active: map[string]map[string]time.Time{}, sets: map[string]*distinctSet{},
 	}
 	if url == "" {
 		log.Info("REDIS_URL is not set: rate limits and live data stay in memory")

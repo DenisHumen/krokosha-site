@@ -26,7 +26,8 @@ sudo ./krokosha-site/deploy/install.sh --domain example.com --email admin@exampl
 | API | `krokosha-api.service`: `127.0.0.1:8080`, за nginx (`/api/`), миграции базы применяет при старте |
 | Админка | `https://<домен><ADMIN_PATH>/` — путь случайный (или `--admin-path`), хранится в `/etc/krokosha/env`. Только HTTPS. Учётные записи: `sudo krokosha-cli admin …` ([api/README.md](../api/README.md)) |
 | Кэши | `/var/lib/krokosha` — npm, Go, ответы GitHub; можно удалить без потерь |
-| Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог сайта и отдельный — админки, 30 дней) |
+| Логи | `journalctl -u krokosha-sync.service`, `/var/log/krokosha/` (JSON access-лог сайта и отдельный — админки, 30 дней). Access-лог сайта читает API (группа `adm`) для экрана «Трафик сервера» |
+| Состояние | `/var/lib/krokosha/status/sync.json` — отчёт последней сборки для экрана «Статус системы»; `/var/lib/krokosha/requests/` — сюда админка кладёт запрос «пересобрать сейчас» |
 | Пользователь | `krokosha` — системный, без шелла и пароля; от него идут sync и сборка |
 
 ## Локальный стенд
@@ -64,6 +65,9 @@ sudo /opt/krokosha/repo/deploy/uninstall.sh           # удалить сайт 
 2. `npm ci --omit=dev` — только если изменился `package-lock.json`.
 3. `astro build` → `check-dist.mjs`. Не прошла проверка — релиз не публикуется, живой сайт не трогается.
 4. Копия в `releases/<дата-время>`, атомарная смена симлинка `current`, удаление релизов старше трёх.
+5. Отчёт в `status/sync.json` — чем кончилось и на каком шаге остановилось (пишется и при сбое).
+
+Кроме таймера сборку запускает кнопка «Пересобрать сейчас» в админке: `krokosha-rebuild.path` следит за файлом-запросом и стартует тот же юнит. У веб-сервиса нет прав что-либо запускать — только положить этот файл.
 
 npm и сборка запускаются с **чистым окружением**: секреты из `/etc/krokosha/env` (токен GitHub, позже — почта и бот) стороннему коду не видны. Сам юнит изолирован средствами systemd (`ProtectSystem=strict`, без привилегий, лимит памяти), чтобы сборка не мешала остальному на небольшом VPS.
 
@@ -98,7 +102,7 @@ sudo fail2ban-client set krokosha-admin unbanip АДРЕС   # снять бан
 
 ## Проверка в CI
 
-Job `deploy`: shellcheck всех скриптов и [`ci/test-install.sh`](ci/test-install.sh) — настоящая установка на чистой Ubuntu 24.04 (одноразовая VM GitHub) с самоподписанным сертификатом и тестовым WireGuard-интерфейсом: сайт на трёх языках, редиректы, заголовки, кэш, сжатие, база и API, аналитика, админка (вход, cookie, CSRF, лимиты, fail2ban, CLI), фаервол, повторный запуск, `update.sh`, откат, удаление.
+Job `deploy`: shellcheck всех скриптов и [`ci/test-install.sh`](ci/test-install.sh) — настоящая установка на чистой Ubuntu 24.04 (одноразовая VM GitHub) с самоподписанным сертификатом и тестовым WireGuard-интерфейсом: сайт на трёх языках, редиректы, заголовки, кэш, сжатие, база и API, аналитика, админка (вход, cookie, CSRF, лимиты, fail2ban, CLI, экраны, живая лента), трафик по логу nginx, кнопка «пересобрать» (новый релиз через path-юнит), фаервол, повторный запуск, `update.sh`, откат, удаление.
 
 ## Структура
 
@@ -114,7 +118,7 @@ deploy/
 ├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза
 ├── lib/                common.sh — общие функции: журнал, шаблоны, /etc/krokosha/env
 ├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
-├── systemd/            krokosha-api.service, krokosha-sync.service + .timer; позже — krokosha-certwatch
+├── systemd/            krokosha-api.service, krokosha-sync.service + .timer, krokosha-rebuild.path; позже — krokosha-certwatch
 ├── logrotate/          ротация access-лога: 30 дней
 ├── fail2ban/           jail для sshd и для входа в админку (+ фильтр); позже — почта
 ├── env/                .env.example — описание /etc/krokosha/env

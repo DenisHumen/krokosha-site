@@ -46,6 +46,12 @@ type Options struct {
 	Feed func() (feed <-chan analytics.Live, cancel func())
 	// Active answers «how many visitors were seen within the window».
 	Active func(ctx context.Context, window time.Duration) int
+
+	// Traffic reads what nginx served; System knows how the server is doing and passes the
+	// «rebuild now» button on. LogPolled says when nginx's log was last read.
+	Traffic   TrafficReports
+	System    SystemStatus
+	LogPolled func() time.Time
 }
 
 // Handler serves the admin area.
@@ -59,6 +65,9 @@ type Handler struct {
 func New(opts Options) (*Handler, error) {
 	if opts.Location == nil {
 		opts.Location = time.UTC
+	}
+	if opts.LogPolled == nil {
+		opts.LogPolled = func() time.Time { return time.Time{} }
 	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
@@ -75,6 +84,12 @@ func New(opts Options) (*Handler, error) {
 		"clock":    func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
 		"day":      func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
 		"duration": func(ms any) string { return duration(toInt64(ms)) },
+		"elapsed":  func(d time.Duration) string { return duration(d.Milliseconds()) },
+		"bytes":    func(value any) string { return formatBytes(toInt64(value)) },
+		"count":    func(value any) string { return formatCount(toInt64(value)) },
+		"ago":      func(t time.Time) string { return ago(time.Since(t)) },
+		"meter":    meter,
+		"usage":    usage,
 		"pct":      formatPercent,
 		"ring":     ring,
 		"bar":      bar,
@@ -90,7 +105,7 @@ func New(opts Options) (*Handler, error) {
 			return [...]string{"accent", "cyan", "pink"}[index%3]
 		},
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "account", "error"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "account", "error"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -120,6 +135,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/visits", h.private(h.visits))
 	mux.Handle("GET "+p+"/visits/{id}", h.private(h.visit))
 	mux.Handle("GET "+p+"/export/{table}", h.private(h.export))
+	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
+	mux.Handle("GET "+p+"/status", h.private(h.status))
+	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
 	mux.Handle("GET "+p+"/account", h.private(h.account))
 	mux.Handle("POST "+p+"/account/password", h.private(h.changePassword))
 	mux.Handle("POST "+p+"/account/totp/begin", h.private(h.totpBegin))
@@ -254,6 +272,7 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"totp-on":  "Двухфакторная аутентификация включена.",
 	"totp-off": "Двухфакторная аутентификация выключена.",
 	"revoked":  "Сеанс завершён.",
+	"rebuild":  "Пересборка запрошена: она начнётся в течение нескольких секунд и займёт около минуты.",
 }
 
 func (h *Handler) attemptMeta(r *http.Request) auth.Attempt {
