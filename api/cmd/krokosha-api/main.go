@@ -153,13 +153,21 @@ func run() error {
 	// invitations can be prepared first. Without a token nothing talks to Telegram.
 	botAccess := telegram.NewAccess(pool, nil)
 	var botRunner *telegram.Runner
+	var bot *telegram.Bot
 	if env.Telegram.Token != "" {
-		bot := telegram.New(telegram.Options{
+		bot = telegram.New(telegram.Options{
 			API: telegram.NewClient(env.Telegram.Token, env.Telegram.API), Access: botAccess, Cache: store, Log: log, SiteURL: env.SiteURL,
+			DB: pool, Leads: leadStore, Form: form.Current, Location: location, AdminURL: env.SiteURL + env.AdminPath, Kick: deliveries.Kick,
+			Hurry: func(ctx context.Context) { deliveries.Hurry(ctx, outbox.ChannelTelegram) },
 			Audit: func(ctx context.Context, actor, action, subject, details string) {
 				accounts.Audit(ctx, actor, action, subject, details, "telegram")
 			},
 		})
+		// New requests reach the bot through the outbox; whatever then happens to a request — in
+		// the bot or in the admin area — redraws its cards, and erasing one wipes them.
+		deliveries.Register(outbox.ChannelTelegram, bot)
+		leadStore.OnChange(bot.Changed)
+		leadStore.OnErase(bot.Erasing)
 		botRunner = telegram.NewRunner(bot, telegram.RunnerOptions{Mode: env.Telegram.Mode, SiteURL: env.SiteURL, Secret: []byte(env.Secret), Log: log})
 		botRunner.Register(srv.Mux())
 	} else {
@@ -208,10 +216,14 @@ func run() error {
 		}.Run(ctx)
 	}()
 	if botRunner != nil {
-		workers.Add(1)
+		workers.Add(2)
 		go func() {
 			defer workers.Done()
 			botRunner.Run(ctx)
+		}()
+		go func() {
+			defer workers.Done()
+			bot.RunCards(ctx)
 		}()
 	}
 	go func() {

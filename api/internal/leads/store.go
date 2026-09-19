@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
@@ -61,6 +62,13 @@ type Store struct {
 	db    *sql.DB
 	now   func() time.Time
 	files *Files // where attachments live; nil — this installation keeps none
+
+	// Listeners: the Telegram bot keeps its cards in step with what happens here.
+	hooks struct {
+		sync.RWMutex
+		changed []func(leadID int64)
+		erasing []func(ctx context.Context, leadID int64)
+	}
 }
 
 // NewStore builds the store.
@@ -73,6 +81,39 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 
 // UseFiles tells the store where attachments are kept, so that deleting a request deletes them too.
 func (s *Store) UseFiles(files *Files) { s.files = files }
+
+// OnChange registers a listener called after anything about a request changed — it was taken,
+// answered, moved to another status — wherever that was done: the admin area or the bot. The
+// listener must be quick; whatever takes time it does elsewhere.
+func (s *Store) OnChange(listener func(leadID int64)) {
+	s.hooks.Lock()
+	defer s.hooks.Unlock()
+	s.hooks.changed = append(s.hooks.changed, listener)
+}
+
+// OnErase registers a listener called just before a request is deleted or anonymised: the last
+// moment at which whoever keeps copies elsewhere (messages in Telegram chats) still knows where.
+func (s *Store) OnErase(listener func(ctx context.Context, leadID int64)) {
+	s.hooks.Lock()
+	defer s.hooks.Unlock()
+	s.hooks.erasing = append(s.hooks.erasing, listener)
+}
+
+func (s *Store) changed(leadID int64) {
+	s.hooks.RLock()
+	defer s.hooks.RUnlock()
+	for _, listener := range s.hooks.changed {
+		listener(leadID)
+	}
+}
+
+func (s *Store) erasing(ctx context.Context, leadID int64) {
+	s.hooks.RLock()
+	defer s.hooks.RUnlock()
+	for _, listener := range s.hooks.erasing {
+		listener(ctx, leadID)
+	}
+}
 
 // Create stores a request, its first message, the record of it, and the notifications to send —
 // in one transaction (brief B10.2): either everything is there, or the visitor is told to try

@@ -193,6 +193,37 @@ func TestTasksWaitForAChannelThatIsNotSetUp(t *testing.T) {
 	}
 }
 
+// The bot is there, but nobody has joined it yet: the card of a request waits for people, however
+// long that takes, and uses up none of its attempts.
+func TestTasksWaitForSomebodyToDeliverTo(t *testing.T) {
+	f := newFixture(t)
+	members := 0
+	var delivered []string
+	f.worker.Register(ChannelTelegram, SenderFunc(func(_ context.Context, task Task) error {
+		if members == 0 {
+			return NotReady(errors.New("nobody has access to the bot yet"))
+		}
+		delivered = append(delivered, task.Kind)
+		return nil
+	}))
+	f.enqueue(NewTask{Channel: ChannelTelegram, Kind: "lead.notify", LeadID: 1, DedupeKey: "k", Payload: struct{}{}})
+	for range 20 { // many more looks at the queue than a task has attempts
+		f.deliver(1)
+		f.now = f.now.Add(unconfiguredIn)
+	}
+	if status, attempts, lastError, _ := f.row("k"); status != "pending" || attempts != 0 || !strings.Contains(lastError, "nobody has access") {
+		t.Fatalf("a task with nobody to go to: %s, %d attempts, %q", status, attempts, lastError)
+	}
+	// Somebody joins a minute after the last look: the task does not sit out its ten minutes.
+	f.now = f.now.Add(-unconfiguredIn + time.Minute)
+	members = 1
+	f.worker.Hurry(context.Background(), ChannelTelegram)
+	f.deliver(1)
+	if status, _, _, _ := f.row("k"); status != "sent" || len(delivered) != 1 {
+		t.Errorf("after the first person joined: %s, delivered %v", status, delivered)
+	}
+}
+
 func TestACrashedDeliveryIsPickedUpAgain(t *testing.T) {
 	f := newFixture(t)
 	mail := &mailbox{}

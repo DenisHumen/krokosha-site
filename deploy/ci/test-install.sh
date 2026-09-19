@@ -358,6 +358,30 @@ check "…and was told so" wait_for 10 owner_welcomed
 check "a second person comes with the same invitation" test "$(deliver "$webhook_secret" "$(start_update 3 "$owner_code" 7003 Mallory)")" = 200
 sleep 2
 check "…and is not let in" test "$(krokosha-cli bot users | wc -l)" = 1
+# Cards of requests. The request of the contact-form test above has been waiting in the queue:
+# there was nobody in the bot to show it to. The owner joining sends it on its way.
+card_of() { grep -c "sendMessage.*Заявка #$1</b>" "$BOT_CALLS" || true; }
+first_card_arrived() { [[ $(card_of K-0001) -ge 1 ]]; }
+check "a request that came before anybody joined reaches the owner at once" wait_for 30 first_card_arrived
+check "…as a card with buttons" bash -c "grep 'sendMessage' '$BOT_CALLS' | grep 'Заявка #K-0001</b>' | grep -q 'l:reply:1'"
+check "spam is not announced" test "$(card_of K-0003)" = 0
+fresh=$(lead_files 198.51.100.31 | sed -n 's/.*"id":"K-0*\([0-9]*\)".*/\1/p')
+fresh_card_arrived() { [[ $(card_of "K-$(printf '%04d' "$fresh")") -ge 1 ]]; }
+check "a new request comes to Telegram within seconds" wait_for 30 fresh_card_arrived
+press() { printf '{"update_id":%s,"callback_query":{"id":"cb%s","from":{"id":%s,"first_name":"%s"},"data":"%s","message":{"message_id":1,"chat":{"id":%s,"type":"private"}}}}' "$1" "$1" "$2" "$3" "$4" "$2"; }
+check "«take» pressed in Telegram" test "$(deliver "$webhook_secret" "$(press 10 7002 Denis "l:take:$fresh")")" = 200
+taken_in_telegram() { [[ $(sql "SELECT CONCAT(status, ' ', assignee) FROM leads WHERE id = $fresh") == "in_progress Denis" ]]; }
+check "…takes the request, under the name from Telegram" wait_for 20 taken_in_telegram
+card_redrawn() { grep -q 'editMessageText.*В работе · взял(а) Denis' "$BOT_CALLS"; }
+check "…and the card is redrawn" wait_for 20 card_redrawn
+check "a stranger's press does nothing" bash -c "[[ \$1 == 200 ]] && sleep 2 && grep -q 'answerCallbackQuery.*Нет доступа' '$BOT_CALLS'" _ "$(deliver "$webhook_secret" "$(press 11 7003 Mallory "l:done:$fresh")")"
+check "…the request is as it was" test "$(sql "SELECT status FROM leads WHERE id = $fresh")" = in_progress
+check "what is done in the admin area shows in Telegram" bash -c "[[ \$1 == 303 ]]" _ "$(admin_post "/leads/$fresh/status" --data-urlencode "csrf=$(csrf)" --data-urlencode 'status=done')"
+card_finished() { grep -q "editMessageText.*Заявка #K-$(printf '%04d' "$fresh").*Завершена" "$BOT_CALLS"; }
+check "…the card says «done»" wait_for 20 card_finished
+check "deleting the client's data" test "$(admin_post "/leads/$fresh/delete" --data-urlencode "csrf=$(csrf)" --data-urlencode "confirm=K-$(printf '%04d' "$fresh")")" = 303
+card_wiped() { grep -q "editMessageText.*Заявка #K-$(printf '%04d' "$fresh"): данные клиента удалены" "$BOT_CALLS"; }
+check "…wipes what the bot wrote about the request in Telegram" wait_for 30 card_wiped
 check "the webhook's address stays out of the traffic log" bash -c "! grep -q '/api/telegram/' /var/log/krokosha/nginx-access.json.log"
 check "CLI: an invitation for a colleague" grep -qE '^/start i_[a-z2-7]{20}$' <(krokosha-cli bot invite 2>/dev/null)
 check "the bot's page in the admin area" grep -q '@krokosha_ci_bot' <(admin_get "$ADMIN/bot")

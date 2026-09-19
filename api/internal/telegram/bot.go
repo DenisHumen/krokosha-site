@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 )
 
 // ClientPrefix starts the «continue in Telegram» links of clients (brief B10.5).
@@ -22,6 +25,19 @@ type Options struct {
 	Access *Access
 	Cache  *cache.Cache
 	Log    *slog.Logger
+	// DB keeps what the bot has sent about requests; Leads is where every action on a request
+	// ends — the same store the admin area works with.
+	DB    *sql.DB
+	Leads *leads.Store
+	// Form names the directions of requests (content/site.yaml); Location is the owner's time zone.
+	Form     func() config.Form
+	Location *time.Location
+	// AdminURL is the address of the admin area, for the «open in the admin area» button.
+	AdminURL string
+	// Kick tells the outbox that there is something to deliver right now. Hurry does more: it
+	// makes cards that were waiting for somebody to join go out at once.
+	Kick  func()
+	Hurry func(ctx context.Context)
 	// Audit writes into the journal of the admin area: who let whom in, who switched whom off.
 	Audit func(ctx context.Context, actor, action, subject, details string)
 	// SiteURL is the public address of the site, for the greeting of strangers.
@@ -33,6 +49,9 @@ type Options struct {
 type Bot struct {
 	opts Options
 	me   atomic.Pointer[User] // who the token belongs to; set by the runner once Telegram answered
+
+	redraw chan int64    // requests whose cards have to be redrawn
+	wipe   chan struct{} // «there is something to wipe»
 }
 
 // Username is the bot's own name in Telegram, "" until Telegram confirmed the token.
@@ -51,7 +70,19 @@ func New(opts Options) *Bot {
 	if opts.Audit == nil {
 		opts.Audit = func(context.Context, string, string, string, string) {}
 	}
-	return &Bot{opts: opts}
+	if opts.Kick == nil {
+		opts.Kick = func() {}
+	}
+	if opts.Hurry == nil {
+		opts.Hurry = func(context.Context) {}
+	}
+	if opts.Form == nil {
+		opts.Form = func() config.Form { return config.Form{} }
+	}
+	if opts.Location == nil {
+		opts.Location = time.UTC
+	}
+	return &Bot{opts: opts, redraw: make(chan int64, 256), wipe: make(chan struct{}, 1)}
 }
 
 // Handle deals with one update. Nothing is returned: whatever goes wrong is logged, and the
@@ -102,6 +133,14 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		b.invite(ctx, message, member, argument)
 	case "/users":
 		b.users(ctx, message.Chat.ID, member)
+	case "/cancel":
+		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
+		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Отменено."})
+	case "":
+		// A plain text: the answer, the note or the reason the bot asked for.
+		if !b.dialogText(ctx, message, member) {
+			b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Не понял. Чтобы ответить клиенту или оставить заметку, нажмите кнопку на карточке заявки. Команды — /help"})
+		}
 	default:
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Не понял. Список команд — /help"})
 	}
@@ -162,6 +201,8 @@ func (b *Bot) redeem(ctx context.Context, message *Message, code string) {
 		b.opts.Audit(ctx, "bot:"+member.Actor(), "bot.join", strconv.FormatInt(member.TelegramID, 10), member.Role+", пригласил(а) "+member.InvitedBy)
 		b.opts.Log.Info("telegram: a person joined by invitation", "role", member.Role, "telegram_id", member.TelegramID)
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Доступ открыт, " + Escape(member.Name) + ".\n\n" + b.help(member)})
+		// Requests that came while nobody could receive them have been waiting for this moment.
+		b.opts.Hurry(ctx)
 	}
 }
 
@@ -169,9 +210,10 @@ func (b *Bot) redeem(ctx context.Context, message *Message, code string) {
 
 func (b *Bot) help(member *Member) string {
 	lines := []string{
-		"Новые заявки с сайта приходят сюда карточками с кнопками: взять в работу, ответить клиенту, оставить заметку, отклонить.",
+		"Новые заявки с сайта приходят сюда карточками с кнопками: взять в работу, ответить клиенту, оставить заметку, отклонить. Что бы ни сделали вы или коллеги — здесь или в админке, — карточка меняется у всех сразу.",
 		"",
 		"/help — эта справка",
+		"/cancel — отменить то, что бот сейчас ждёт (текст ответа, заметки, причины)",
 	}
 	if member.Owner() {
 		lines = append(lines,
@@ -278,6 +320,8 @@ func (b *Bot) callback(ctx context.Context, query *CallbackQuery) {
 	switch {
 	case len(parts) == 3 && parts[0] == "u":
 		b.switchMember(ctx, query, member, parts[1] == "off", parts[2], answer)
+	case len(parts) >= 3 && parts[0] == "l":
+		b.leadButton(ctx, query, member, parts, answer)
 	default:
 		answer("Эта кнопка больше не работает.", false)
 	}

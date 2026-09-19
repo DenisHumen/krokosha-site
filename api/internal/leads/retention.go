@@ -59,6 +59,7 @@ func (s *Store) Anonymize(ctx context.Context, id int64) error {
 		return err
 	}
 	now := s.now().UTC()
+	s.erasing(ctx, id)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
