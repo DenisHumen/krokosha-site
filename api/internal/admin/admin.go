@@ -158,6 +158,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/leads", h.private(h.leadsList))
 	mux.Handle("GET "+p+"/leads/export.csv", h.private(h.leadsExport))
 	mux.Handle("GET "+p+"/leads/{id}", h.private(h.leadCard))
+	mux.Handle("GET "+p+"/leads/{id}/files/{file}", h.private(h.leadFile))
 	mux.Handle("POST "+p+"/leads/{id}/status", h.private(h.leadStatus))
 	mux.Handle("POST "+p+"/leads/{id}/note", h.private(h.leadNote))
 	mux.Handle("POST "+p+"/leads/{id}/reply", h.private(h.leadReply))

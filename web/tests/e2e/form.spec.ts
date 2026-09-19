@@ -225,6 +225,9 @@ test.describe('contact form without JavaScript', () => {
       await expect(page.locator(field)).toHaveAttribute('required', '');
     }
     await expect(page.locator('#form-description')).toHaveAttribute('minlength', '20');
+    // Files are off unless content/site.yaml says «attachments: true» (contract §7, v1.4).
+    await expect(form.locator('input[type="file"]')).toHaveCount(0);
+    await expect(form).not.toHaveAttribute('enctype', 'multipart/form-data');
     await expect(page.locator('#form-success')).toBeHidden();
     await expect(page.locator('#form-error-rate')).toBeHidden();
   });

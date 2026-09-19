@@ -175,6 +175,8 @@ type Entry struct {
 	Delivery  string // queued | sent | failed, for answers
 	Action    string // for events: created | status | assigned…
 	From, To  string // statuses, for events
+	MessageID int64
+	Files     []Attachment // what came with this message
 }
 
 // Card is everything about one request.
@@ -184,6 +186,7 @@ type Card struct {
 	AssignedAt      sql.NullTime
 	FirstResponseAt sql.NullTime
 	RejectReason    string
+	AnonymizedAt    sql.NullTime // set when the storage period ran out: the person and the conversation are gone
 	Feed            []Entry
 }
 
@@ -198,32 +201,47 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 	}
 	card := &Card{Lead: lead}
 	var assignee, reason sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT assignee, assigned_at, first_response_at, reject_reason FROM leads WHERE id = ?`, id).
-		Scan(&assignee, &card.AssignedAt, &card.FirstResponseAt, &reason); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT assignee, assigned_at, first_response_at, reject_reason, anonymized_at FROM leads WHERE id = ?`, id).
+		Scan(&assignee, &card.AssignedAt, &card.FirstResponseAt, &reason, &card.AnonymizedAt); err != nil {
 		return nil, err
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT created_at, IF(direction = 'note', 'note', 'message'), direction, channel, COALESCE(author, ''), body, COALESCE(delivery, ''), '', '', ''
+		SELECT created_at, IF(direction = 'note', 'note', 'message'), direction, channel, COALESCE(author, ''), body, COALESCE(delivery, ''), '', '', '', id
 		  FROM lead_messages WHERE lead_id = ?
 		UNION ALL
-		SELECT created_at, 'event', '', '', actor, COALESCE(details, ''), '', action, COALESCE(from_status, ''), COALESCE(to_status, '')
+		SELECT created_at, 'event', '', '', actor, COALESCE(details, ''), '', action, COALESCE(from_status, ''), COALESCE(to_status, ''), 0
 		  FROM lead_events WHERE lead_id = ?
 		ORDER BY 1`, id, id)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var entry Entry
 		if err := rows.Scan(&entry.At, &entry.Kind, &entry.Direction, &entry.Channel, &entry.Author, &entry.Body, &entry.Delivery,
-			&entry.Action, &entry.From, &entry.To); err != nil {
+			&entry.Action, &entry.From, &entry.To, &entry.MessageID); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		card.Feed = append(card.Feed, entry)
 	}
-	return card, rows.Err()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	files, err := s.Attachments(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		for i := range card.Feed {
+			if card.Feed[i].MessageID == file.MessageID && file.MessageID != 0 {
+				card.Feed[i].Files = append(card.Feed[i].Files, file)
+			}
+		}
+	}
+	return card, nil
 }
 
 // Take assigns a new request to whoever asks first. A second «take» — from the admin area or
@@ -423,27 +441,37 @@ func (s *Store) ThreadIDs(ctx context.Context, leadID int64) ([]string, error) {
 	return out, rows.Err()
 }
 
-// Delete removes everything about a request — the request, the conversation, the history, the
-// notifications still queued — when the client asks for it (brief B10.6). What remains is one
-// line in the audit log of the admin area, written by the caller: that K-0042 was deleted, by
-// whom and when, nothing about the person.
+// Delete removes everything about a request — the request, the conversation, the files, the
+// history, the notifications still queued — when the client asks for it (brief B10.6). What
+// remains is one line in the audit log of the admin area, written by the caller: that K-0042
+// was deleted, by whom and when, nothing about the person.
+//
+// ErrFilesLeft means the database part is done and a file could not be removed right now.
 func (s *Store) Delete(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	files, err := storedFiles(ctx, tx, id)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM outbox WHERE lead_id = ?`, id); err != nil {
 		return err
 	}
-	result, err := tx.ExecContext(ctx, `DELETE FROM leads WHERE id = ?`, id) // messages and events go with it (ON DELETE CASCADE)
+	result, err := tx.ExecContext(ctx, `DELETE FROM leads WHERE id = ?`, id) // messages, files' rows and events go with it (ON DELETE CASCADE)
 	if err != nil {
 		return err
 	}
 	if deleted, _ := result.RowsAffected(); deleted == 0 {
 		return ErrNotFound
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Only now: a file must not disappear while its request may still stay.
+	return s.removeFiles(files)
 }
 
 func event(ctx context.Context, tx *sql.Tx, id int64, now time.Time, actor, action, from, to, details string) error {

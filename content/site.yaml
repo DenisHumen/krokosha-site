@@ -191,7 +191,7 @@ contacts:
     ru: "Быстрее всего — в Telegram. Для задачи с деталями — форма ниже."
   form:
     enabled: true
-    attachments: false                  # B10.1: вложения выключены по умолчанию
+    attachments: false                  # B10.1: вложения выключены по умолчанию. true — в форме появится поле «Файлы»
     reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»; пока не задано — фраза не показывается
     labels:
       name:           { en: "Name", uk: "Ім'я", ru: "Имя" }
@@ -204,6 +204,12 @@ contacts:
       budget:         { en: "Budget", uk: "Бюджет", ru: "Бюджет" }
       timeline:       { en: "Timeline", uk: "Терміни", ru: "Сроки" }
       optional:       { en: "optional", uk: "необов'язково", ru: "необязательно" }
+      # Показываются, только когда attachments: true
+      attachments:    { en: "Files", uk: "Файли", ru: "Файлы" }
+      attachments_hint:
+        en: "up to 3 files of 10 MB each: PDF, PNG, JPG, TXT, DOCX"
+        uk: "до 3 файлів по 10 МБ: PDF, PNG, JPG, TXT, DOCX"
+        ru: "до 3 файлов по 10 МБ: PDF, PNG, JPG, TXT, DOCX"
       consent:        # {privacy_link} — ссылка на /privacy с текстом privacy_link_text
         en: "I consent to data processing under the {privacy_link}"
         uk: "Даю згоду на обробку даних відповідно до {privacy_link}"
@@ -244,6 +250,9 @@ contacts:
       invalid_phone:      { en: "Check the phone number", uk: "Перевірте номер телефону", ru: "Проверьте номер телефона" }
       description_length: { en: "20 to 4000 characters", uk: "Від 20 до 4000 символів", ru: "От 20 до 4000 символов" }
       consent_required:   { en: "Consent is required to send the request", uk: "Без згоди заявку не надіслати", ru: "Без согласия заявку не отправить" }
+      too_many_files:     { en: "No more than 3 files", uk: "Не більше 3 файлів", ru: "Не больше 3 файлов" }
+      file_too_big:       { en: "A file is larger than 10 MB", uk: "Файл більший за 10 МБ", ru: "Файл больше 10 МБ" }
+      file_type:          { en: "Only PDF, PNG, JPG, TXT and DOCX files are accepted", uk: "Приймаються лише файли PDF, PNG, JPG, TXT і DOCX", ru: "Принимаются только файлы PDF, PNG, JPG, TXT и DOCX" }
     directions:
       - { id: networks,     label: { en: "Networks & hardware", uk: "Мережі та обладнання", ru: "Сети и оборудование" } }
       - { id: servers,      label: { en: "Servers, storage, clusters", uk: "Сервери, СЗД, кластери", ru: "Серверы, СХД, кластеры" } }

@@ -139,6 +139,8 @@
         "budget": "Budget",
         "timeline": "Timeline",
         "optional": "optional",
+        "attachments": "Files",
+        "attachments_hint": "up to 3 files of 10 MB each: PDF, PNG, JPG, TXT, DOCX",
         "consent": "I consent to data processing under the {privacy_link}",
         "privacy_link_text": "privacy policy",
         "submit": "Send request",
@@ -165,7 +167,10 @@
         "invalid_telegram": "Check the Telegram username",
         "invalid_phone": "Check the phone number",
         "description_length": "20 to 4000 characters",
-        "consent_required": "Consent is required to send the request"
+        "consent_required": "Consent is required to send the request",
+        "too_many_files": "No more than 3 files",
+        "file_too_big": "A file is larger than 10 MB",
+        "file_type": "Only PDF, PNG, JPG, TXT and DOCX files are accepted"
       },
       "directions": [
         {

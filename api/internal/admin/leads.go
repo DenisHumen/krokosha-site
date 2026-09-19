@@ -4,6 +4,8 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -194,7 +196,7 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	}
 	lead := card.Lead
 	data := leadData{Card: card, Direction: h.directionName(lead.Direction), Next: leads.NextStatuses(lead.Status), Draft: draft,
-		CanReply: lead.Status != leads.StatusSpam, ByPhone: lead.ContactMethod == leads.MethodPhone}
+		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: lead.ContactMethod == leads.MethodPhone}
 	switch lead.ContactMethod {
 	case leads.MethodEmail:
 		data.Contact = "mailto:" + lead.ContactValue
@@ -359,7 +361,13 @@ func (h *Handler) leadDelete(w http.ResponseWriter, r *http.Request) {
 		h.showLead(w, r, http.StatusBadRequest, "Для удаления введите номер заявки: "+leads.Number(id), "")
 		return
 	}
-	switch err := h.opts.Leads.Delete(r.Context(), id); {
+	err := h.opts.Leads.Delete(r.Context(), id)
+	if errors.Is(err, leads.ErrFilesLeft) {
+		// The request is gone; a file that could not be removed now goes with the daily sweep.
+		h.opts.Log.Warn("a deleted request left files behind", "lead", leads.Number(id), "error", err)
+		err = nil
+	}
+	switch {
 	case err == nil:
 		// The journal keeps the number and who deleted it — nothing about the person.
 		h.auditLead(r, "lead.delete", id, "данные клиента удалены по запросу")
@@ -368,6 +376,42 @@ func (h *Handler) leadDelete(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r, "Заявка не найдена")
 	default:
 		h.fail(w, r, "cannot delete a request", err)
+	}
+}
+
+// leadFile hands out a file that came with a request (brief B10.7): to a signed-in administrator
+// only, and only as a download — whatever is inside, the browser is told to save it, not to
+// show or run it.
+func (h *Handler) leadFile(w http.ResponseWriter, r *http.Request) {
+	id, ok := leadID(r)
+	fileID, err := strconv.ParseInt(r.PathValue("file"), 10, 64)
+	if !ok || err != nil || fileID <= 0 {
+		h.notFound(w, r, "Файл не найден")
+		return
+	}
+	file, content, err := h.opts.Leads.OpenAttachment(r.Context(), id, fileID)
+	if errors.Is(err, leads.ErrNotFound) {
+		h.notFound(w, r, "Файл не найден: возможно, заявка удалена или обезличена.")
+		return
+	}
+	if err != nil {
+		h.fail(w, r, "cannot open an attachment", err)
+		return
+	}
+	defer content.Close()
+
+	header := w.Header()
+	header.Set("Content-Type", "application/octet-stream")
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": file.Filename})
+	if disposition == "" {
+		disposition = "attachment" // a name the header cannot carry: the browser makes one up
+	}
+	header.Set("Content-Disposition", disposition)
+	header.Set("Content-Length", strconv.FormatInt(file.Size, 10))
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if _, err := io.Copy(w, content); err != nil {
+		h.opts.Log.Warn("an attachment was not sent completely", "lead", leads.Number(id), "error", err)
 	}
 }
 

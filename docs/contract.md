@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.3** (2026-09-19). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]**.
+**Версия 1.4** (2026-09-19). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -9,6 +9,7 @@
 | 1.1 | `tier` / `archived` / `stale` у проектов, `site.json`, `data-field`, новые секции и треки |
 | 1.2 | **Три языка** (§6): `mock/` разложен по локалям `mock/{en,uk,ru}/`. В `site.json` добавлены `i18n`, `ui`, `not_found`, `projects.labels`, подписи/ошибки/сообщения формы. Реальные Telegram и email |
 | 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
+| 1.4 | **Файлы в форме** (§7), только при `form.attachments: true`: поле `files`, `enctype="multipart/form-data"`. В `site.json` добавлены `form.labels.{attachments, attachments_hint}` и `form.errors.{too_many_files, file_too_big, file_type}` |
 
 ---
 
@@ -259,12 +260,13 @@
 | `direction` | `<select>`: значения — `id` из `form.directions` | `required` |
 | `description` | задача | `required`, `minlength="20"`, `maxlength="4000"` |
 | `budget`, `timeline` | необязательные `<select>`: значение — **порядковый номер** варианта (`0`, `1`…), пустое — «не выбрано» | — |
+| **[v1.4]** `files` | `<input type="file" multiple>` — **только при `form.attachments: true`** (по умолчанию выключено), иначе поля нет совсем. Атрибуты: `accept=".pdf,.png,.jpg,.jpeg,.txt,.docx"`, `data-max-files="3"`, `data-max-bytes="10485760"` — по ним скрипт проверяет файлы до отправки. Вместе с полем у `<form>` обязателен `enctype="multipart/form-data"`: без него браузер отправит только имена файлов | `accept` (подсказка браузеру, не проверка) |
 | `consent` | чекбокс согласия со ссылкой на `/privacy`, значение `on` | `required` |
 | `lang` | скрытое: язык страницы (`en` / `uk` / `ru`) — на нём клиенту придёт письмо | — |
 | `altcha` | скрытое, пустое: сюда скрипт кладёт решение proof-of-work | — |
 | `website` | **ловушка для роботов**: текстовое поле, которое человек не видит и не достигает с клавиатуры (`tabindex="-1"`, вынесено за экран, **не** `display: none`). Заполнено → заявка молча уходит в спам | — |
 
-**Подписи и ошибки.** У каждого поля — `<label>` из `form.labels.*` (`data-field="labels.<ключ>"`). Рядом с полем — пустой элемент `data-error-for="<name>"` с `role="alert"`: скрипт пишет туда текст из `form.errors.*`. Коды ошибок: `required`, `invalid_email`, `invalid_telegram`, `invalid_phone`, `description_length`, `consent_required`.
+**Подписи и ошибки.** У каждого поля — `<label>` из `form.labels.*` (`data-field="labels.<ключ>"`). Рядом с полем — пустой элемент `data-error-for="<name>"` с `role="alert"`: скрипт пишет туда текст из `form.errors.*`. Коды ошибок: `required`, `invalid_email`, `invalid_telegram`, `invalid_phone`, `description_length`, `consent_required`; **[v1.4]** для поля `files` — `too_many_files`, `file_too_big`, `file_type` (сервер определяет тип по содержимому файла, а не по имени; пустой файл — тоже `file_type`).
 
 **Блоки сообщений** — рядом с формой, скрыты, пока у них нет класса `is-shown` **или** пока на них не указывает адрес (`:target`): посетителя без JavaScript API возвращает на `/<язык>/#form-error-…`, и блок показывается одним CSS.
 
@@ -275,7 +277,7 @@
 | `form-error-server` | `messages.server_error` (подставлен email) | всё остальное |
 | `form-success` | заголовок `data-field="title"` (`messages.success_generic`, скрипт заменяет на `messages.success_title` с номером), текст `data-field="text"`, кнопка `data-field="telegram"` (скрыта, пока API не прислал ссылку) | заявка принята; форма при этом скрывается |
 
-**Что делает скрипт** (`/assets/form.js`, подключается как есть — в нём нет ничего о внешнем виде): отключает проверку браузера (`novalidate`) и проверяет поля сам, на языке страницы; при первом касании формы берёт задачу `GET /api/leads/challenge` и решает её, пока человек пишет; отправляет `FormData` на `/api/leads` с `Accept: application/json`. Ответы: `201 {ok, id, reply_within_hours?, telegram_url?}`, `422 {errors: {<name>: <код>}}`, `429`, остальное — ошибка сервера. После успеха — событие `krokosha:lead` на `document` (`detail.id`), на него можно повесить анимацию.
+**Что делает скрипт** (`/assets/form.js`, подключается как есть — в нём нет ничего о внешнем виде): отключает проверку браузера (`novalidate`) и проверяет поля сам, на языке страницы; при первом касании формы берёт задачу `GET /api/leads/challenge` и решает её, пока человек пишет; отправляет `FormData` на `/api/leads` с `Accept: application/json`. Ответы: `201 {ok, id, reply_within_hours?, telegram_url?}`, `422 {errors: {<name>: <код>}}`, **[v1.4]** `413 {errors: {files: "file_too_big"}}` (файлы вместе больше, чем сервер читает), `429`, остальное — ошибка сервера. После успеха — событие `krokosha:lead` на `document` (`detail.id`), на него можно повесить анимацию.
 
 **Страница «спасибо»** — `/thanks/`, `/uk/thanks/`, `/ru/thanks/` (`noindex`). Посетитель без JavaScript попадает на неё после отправки: API берёт собранную страницу из релиза и заменяет метки. Метки обязательны, проверяются при сборке:
 

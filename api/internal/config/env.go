@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -40,8 +41,18 @@ type Env struct {
 	Secret string
 	// Mail is how notifications and replies are sent. Without it they wait in the outbox.
 	Mail Mail
+	// Retention is how long requests are kept (brief B10.7).
+	Retention Retention
 
 	LogLevel string
+}
+
+// Retention holds the rule for old requests. The privacy page promises 24 months: a longer
+// period here must be written there first.
+type Retention struct {
+	KeepMonths int  // LEADS_KEEP_MONTHS: after so many months without activity a request expires; 0 — never
+	Delete     bool // LEADS_EXPIRED=delete: expired requests are deleted; the default, anonymize, keeps the statistics
+	SpamDays   int  // LEADS_SPAM_DAYS: what the spam filter caught is deleted after so many days; 0 — never
 }
 
 // Mail holds the settings of outgoing mail.
@@ -101,6 +112,23 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 	}
 
 	var problems []string
+	number := func(key string, fallback, most int) int {
+		value, err := strconv.Atoi(get(key, strconv.Itoa(fallback)))
+		if err != nil || value < 0 || value > most {
+			problems = append(problems, fmt.Sprintf("%s must be a number from 0 to %d", key, most))
+			return fallback
+		}
+		return value
+	}
+	env.Retention.KeepMonths = number("LEADS_KEEP_MONTHS", 24, 240)
+	env.Retention.SpamDays = number("LEADS_SPAM_DAYS", 30, 3650)
+	switch expired := strings.ToLower(get("LEADS_EXPIRED", "anonymize")); expired {
+	case "anonymize":
+	case "delete":
+		env.Retention.Delete = true
+	default:
+		problems = append(problems, "LEADS_EXPIRED must be anonymize or delete")
+	}
 	if host, _, err := net.SplitHostPort(env.Listen); err != nil {
 		problems = append(problems, fmt.Sprintf("KROKOSHA_LISTEN: %v", err))
 	} else if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {

@@ -49,15 +49,22 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		return err
 	}
 
+	// Letters name the files that came with the request; the files themselves stay on the
+	// server and are downloaded from the admin area.
+	files, err := m.Store.Attachments(ctx, lead.ID)
+	if err != nil {
+		return err
+	}
+
 	var message mail.Message
 	switch task.Kind {
 	case TaskNotify:
-		message, err = m.notification(lead)
+		message, err = m.notification(lead, files)
 	case TaskAutoReply:
 		if lead.ContactMethod != MethodEmail {
 			return outbox.Permanent(errors.New("the client left no email address"))
 		}
-		message, err = m.autoReply(lead)
+		message, err = m.autoReply(lead, files)
 	case TaskReply:
 		return m.sendReply(ctx, lead, payload.MessageID)
 	default:
@@ -90,6 +97,7 @@ type view struct {
 	TelegramURL string
 	ReplyHours  int
 	Host        string
+	Files       string // «spec.pdf (1,2 МБ), plan.png (310 КБ)»
 	Body        string // an answer to the client
 	Author      string
 	T           map[string]string // the texts of the client's language
@@ -156,8 +164,9 @@ var (
 )
 
 // notification is the owner's copy: everything known about the request, in the owner's language.
-func (m *Mailer) notification(lead *Lead) (mail.Message, error) {
+func (m *Mailer) notification(lead *Lead, files []Attachment) (mail.Message, error) {
 	v := m.view(lead, "ru")
+	v.Files = fileList(files)
 	text, html, err := render(notifyText, notifyHTML, v)
 	if err != nil {
 		return mail.Message{}, err
@@ -178,12 +187,13 @@ func (m *Mailer) notification(lead *Lead) (mail.Message, error) {
 }
 
 // autoReply confirms the request to the client, in the language of the page they wrote from.
-func (m *Mailer) autoReply(lead *Lead) (mail.Message, error) {
+func (m *Mailer) autoReply(lead *Lead, files []Attachment) (mail.Message, error) {
 	lang := lead.Lang
 	if texts[lang] == nil {
 		lang = "en"
 	}
 	v := m.view(lead, lang)
+	v.Files = fileList(files)
 	text, html, err := render(autoReplyText, autoReplyHTML, v)
 	if err != nil {
 		return mail.Message{}, err
@@ -259,6 +269,27 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 	}
 }
 
+// fileList names the files of a request in one line.
+func fileList(files []Attachment) string {
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		names = append(names, fmt.Sprintf("%s (%s)", file.Filename, FormatSize(file.Size)))
+	}
+	return strings.Join(names, ", ")
+}
+
+// FormatSize writes a size the way people say it: 310 КБ, 1,2 МБ.
+func FormatSize(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return strings.Replace(fmt.Sprintf("%.1f МБ", float64(size)/(1<<20)), ".", ",", 1)
+	case size >= 1<<10:
+		return fmt.Sprintf("%d КБ", size>>10)
+	default:
+		return fmt.Sprintf("%d Б", size)
+	}
+}
+
 func render(text *texttemplate.Template, html *htmltemplate.Template, v view) (string, string, error) {
 	var plain, rich bytes.Buffer
 	if err := text.Execute(&plain, v); err != nil {
@@ -275,19 +306,19 @@ var texts = map[string]map[string]string{
 	"en": {
 		"subject": "Request {id} received — {host}", "hello": "Hello", "thanks": "Thank you for your request. Its number is",
 		"reply": "I'll reply within", "hours": "h.", "copy": "A copy of what you sent", "name": "Name", "contact": "Contact",
-		"area": "Area", "budget": "Budget", "timeline": "Timeline", "task": "Task", "telegram": "Continue in Telegram",
+		"area": "Area", "budget": "Budget", "timeline": "Timeline", "files": "Files", "task": "Task", "telegram": "Continue in Telegram",
 		"auto": "This is an automatic confirmation. If you did not send this request, simply ignore this email.",
 	},
 	"uk": {
 		"subject": "Заявку {id} прийнято — {host}", "hello": "Вітаю", "thanks": "Дякую за заявку. Її номер —",
 		"reply": "Відповім протягом", "hours": "год.", "copy": "Копія того, що ви надіслали", "name": "Ім'я", "contact": "Контакт",
-		"area": "Напрям", "budget": "Бюджет", "timeline": "Терміни", "task": "Задача", "telegram": "Продовжити в Telegram",
+		"area": "Напрям", "budget": "Бюджет", "timeline": "Терміни", "files": "Файли", "task": "Задача", "telegram": "Продовжити в Telegram",
 		"auto": "Це автоматичне підтвердження. Якщо ви не надсилали заявку, просто проігноруйте цей лист.",
 	},
 	"ru": {
 		"subject": "Заявка {id} принята — {host}", "hello": "Здравствуйте", "thanks": "Спасибо за заявку. Её номер —",
 		"reply": "Отвечу в течение", "hours": "ч.", "copy": "Копия того, что вы отправили", "name": "Имя", "contact": "Контакт",
-		"area": "Направление", "budget": "Бюджет", "timeline": "Сроки", "task": "Задача", "telegram": "Продолжить в Telegram",
+		"area": "Направление", "budget": "Бюджет", "timeline": "Сроки", "files": "Файлы", "task": "Задача", "telegram": "Продолжить в Telegram",
 		"auto": "Это автоматическое подтверждение. Если вы не отправляли заявку, просто проигнорируйте это письмо.",
 	},
 }
@@ -304,7 +335,8 @@ var notifyText = texttemplate.Must(texttemplate.New("notify.txt").Parse(`Зая�
 
 {{.Lead.Description}}
 
-{{if .Source}}Откуда: {{.Source}}
+{{if .Files}}Вложения (в админке): {{.Files}}
+{{end}}{{if .Source}}Откуда: {{.Source}}
 {{end}}{{if .Sections}}Смотрел: {{.Sections}}{{if .TimeOnSite}} ({{.TimeOnSite}}){{end}}
 {{end}}{{if .Lead.Verdict.Score}}Подозрение на спам: {{.Lead.Verdict.Score}} из 100
 {{end}}
@@ -326,7 +358,9 @@ var autoReplyText = texttemplate.Must(texttemplate.New("autoreply.txt").Parse(`{
 {{.T.timeline}}: {{.Lead.Timeline}}{{end}}
 
 {{.Lead.Description}}
-{{if .TelegramURL}}
+{{if .Files}}
+{{.T.files}}: {{.Files}}
+{{end}}{{if .TelegramURL}}
 {{.T.telegram}}: {{.TelegramURL}}
 {{end}}
 --
@@ -355,6 +389,7 @@ var notifyHTML = htmltemplate.Must(htmltemplate.New("notify.html").Parse(mailFra
 {{if .Lead.Timeline}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Сроки</td><td>{{.Lead.Timeline}}</td></tr>{{end}}
 </table>
 <p style="margin:16px 0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Lead.Description}}</p>
+{{if .Files}}<p style="margin:0 0 12px;font-size:14px;">Вложения <span style="color:#6b6f7e;">(скачать — в админке)</span>: {{.Files}}</p>{{end}}
 {{if .Source}}<p style="margin:0 0 4px;font-size:13px;color:#6b6f7e;">Откуда: {{.Source}}</p>{{end}}
 {{if .Sections}}<p style="margin:0 0 4px;font-size:13px;color:#6b6f7e;">Смотрел: {{.Sections}}{{if .TimeOnSite}} ({{.TimeOnSite}}){{end}}</p>{{end}}
 {{if .Lead.Verdict.Score}}<p style="margin:0 0 4px;font-size:13px;color:#b26a00;">Подозрение на спам: {{.Lead.Verdict.Score}} из 100</p>{{end}}
@@ -375,6 +410,7 @@ var autoReplyHTML = htmltemplate.Must(htmltemplate.New("autoreply.html").Parse(m
 {{if .Lead.Timeline}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">{{.T.timeline}}</td><td>{{.Lead.Timeline}}</td></tr>{{end}}
 </table>
 <p style="margin:12px 0 0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Lead.Description}}</p>
+{{if .Files}}<p style="margin:12px 0 0;font-size:14px;"><span style="color:#6b6f7e;">{{.T.files}}:</span> {{.Files}}</p>{{end}}
 {{if .TelegramURL}}<p style="margin:20px 0 0;"><a href="{{.TelegramURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.telegram}}</a></p>{{end}}
 {{end}}
 {{define "foot"}}<a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a><br>{{.T.auto}}{{end}}`))

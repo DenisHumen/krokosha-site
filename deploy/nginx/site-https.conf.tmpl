@@ -44,6 +44,18 @@ server {
         include snippets/krokosha-proxy.conf;
     }
 
+    # The contact form. Files may come with it — up to 3 × 10 MB — when content/site.yaml allows
+    # them (contacts.form.attachments). This is only the ceiling: the API reads 48 KB while files
+    # are off, and checks the number, the size and the content of every file when they are on.
+    location = /api/leads {
+        limit_req zone=krokosha_form burst=20 nodelay;
+        limit_req_status 429;
+        limit_conn krokosha_uploads 2;
+        limit_conn_status 429;
+        client_max_body_size 32m;
+        include snippets/krokosha-proxy.conf;
+    }
+
     # The admin area (brief B6): behind a secret path (ADMIN_PATH in /etc/krokosha/env) and over
     # HTTPS only — the plain-HTTP server never proxies it. Signing in is limited much harder than
     # the rest: every password check costs the server 64 MB and a good part of a second.

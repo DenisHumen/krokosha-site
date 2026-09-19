@@ -263,6 +263,55 @@ check "deleting a client's data needs the number typed in" test "$(admin_post /l
 check "…and then removes everything about the request" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0002')" = 303
 check "…the conversation and the queued notifications included" test "$(sql 'SELECT (SELECT COUNT(*) FROM leads WHERE id = 2) + (SELECT COUNT(*) FROM lead_messages WHERE lead_id = 2) + (SELECT COUNT(*) FROM outbox WHERE lead_id = 2)')" = 0
 check "…leaving one line in the journal" test "$(sql "SELECT CONCAT(actor, ' ', subject) FROM audit_log WHERE action = 'lead.delete'")" = "ci-admin K-0002"
+echo "Files with a request"
+# The form takes no files unless content/site.yaml says so (contacts.form.attachments). The API is
+# asked directly here, each time «from» another address: this machine has used up its three
+# requests an hour above.
+pdf=$(mktemp --suffix=.pdf) program=$(mktemp --suffix=.pdf) megabyte=$(mktemp --suffix=.txt) toobig=$(mktemp --suffix=.txt)
+printf '%%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%%%EOF\n' >"$pdf"
+{ printf 'MZ\220\000\003\000\000\000'; head -c 4096 /dev/urandom; } >"$program"
+head -c 1048576 /dev/zero | tr '\0' 'x' >"$megabyte"
+head -c 34000000 /dev/zero | tr '\0' 'x' >"$toobig"
+form_fields=(--form 'name=Файловый клиент' --form 'contact_method=email' --form 'contact_value=files@company.test'
+  --form 'direction=servers' --form 'description=Схема стойки и список оборудования — во вложении.' --form 'consent=on' --form 'lang=ru')
+lead_files() { # lead_files ADDRESS [curl options…] → the JSON answer of the API itself
+  local address=$1
+  shift
+  curl --silent --max-time 30 --header 'Accept: application/json' --header "Host: $DOMAIN" --header "X-Real-IP: $address" \
+    "${form_fields[@]}" "$@" http://127.0.0.1:8080/api/leads
+}
+check "files are refused while the form takes none" grep -q '"files":"files_disabled"' <(lead_files 198.51.100.21 --form "files=@$pdf")
+sed -i 's/^\( *attachments:\) false/\1 true /' /opt/krokosha/repo/content/site.yaml
+sleep 6 # the API looks at site.yaml every five seconds
+check "a request with files is accepted once the content allows them" grep -q '"ok":true' \
+  <(lead_files 198.51.100.22 --form "files=@$pdf;filename=Схема стойки.pdf" --form "files=@$megabyte;filename=notes.txt")
+file_lead=$(sql 'SELECT MAX(lead_id) FROM lead_attachments')
+file_id=$(sql 'SELECT MIN(id) FROM lead_attachments')
+check "the files are in the data root, under names of their own" test "$(find /srv/krokosha/attachments -type f -regex '.*/[0-9a-f]+' | wc -l)" = 2
+check "…for the service's eyes only" test "$(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U %a' /srv/krokosha/attachments)" = "0 krokosha 700"
+check "a program called .pdf is told by what is inside it" grep -q '"files":"file_type"' <(lead_files 198.51.100.23 --form "files=@$program;filename=invoice.pdf")
+check "four files are one too many" grep -q '"files":"too_many_files"' \
+  <(lead_files 198.51.100.24 --form "files=@$pdf" --form "files=@$pdf" --form "files=@$pdf" --form "files=@$pdf")
+check "refused files leave nothing behind" test "$(find /srv/krokosha/attachments -type f | wc -l)" = 2
+# Through nginx. This address is over its hourly limit, so the API's «too many» is the proof that
+# nginx let the megabyte through; nginx's own refusal would be a 413 without JSON.
+check "nginx lets a form with files through to the API" grep -q '"error":"rate_limited"' \
+  <(body --header 'Accept: application/json' "${form_fields[@]}" --form "files=@$megabyte" "https://$DOMAIN/api/leads")
+check "…and stops what no three files add up to" test "$(status "${form_fields[@]}" --form "files=@$toobig" "https://$DOMAIN/api/leads")" = 413
+check "the rest of the API still takes small requests only" test "$(status --request POST --data-binary "@$megabyte" "https://$DOMAIN/api/e")" = 413
+check "the card offers the files" grep -q "/leads/$file_lead/files/$file_id\" download>Схема стойки.pdf" <(admin_get "$ADMIN/leads/$file_lead")
+downloaded=$(mktemp)
+check "the admin area hands a file out — as a download, whatever is inside" bash -c "grep -qi '^content-disposition: attachment' <<<\"\$1\" && grep -qi '^content-type: application/octet-stream' <<<\"\$1\"" _ \
+  "$(admin_get --output "$downloaded" --dump-header - "$ADMIN/leads/$file_lead/files/$file_id")"
+check "…byte for byte" cmp -s "$downloaded" "$pdf"
+check "nobody else gets it" test "$(status "$ADMIN/leads/$file_lead/files/$file_id")" = 303
+check "files are never reachable as pages of the site" test "$(status "https://$DOMAIN/attachments/")" = 404
+check "deleting the client's data" test "$(admin_post "/leads/$file_lead/delete" --data-urlencode "csrf=$(csrf)" --data-urlencode "confirm=K-$(printf '%04d' "$file_lead")")" = 303
+check "…removes the files too" test "$(find /srv/krokosha/attachments -type f | wc -l)" = 0
+sed -i 's/^\( *attachments:\) true /\1 false/' /opt/krokosha/repo/content/site.yaml
+check "the content is as it was" test -z "$(runuser -u krokosha -- git -C /opt/krokosha/repo status --porcelain)"
+rm -f "$pdf" "$program" "$megabyte" "$toobig" "$downloaded"
+
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303

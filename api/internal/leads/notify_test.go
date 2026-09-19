@@ -298,3 +298,44 @@ func TestAnswersReachTheClientInOneThread(t *testing.T) {
 	}
 	_ = third
 }
+
+// Files stay on the server; the letters say which ones came.
+func TestLettersNameTheFiles(t *testing.T) {
+	f := newFixture(t)
+	f.acceptFiles = true
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	store := NewStore(f.db, nil)
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form:     formWithLabels, Location: time.UTC,
+	})
+
+	files := []testFile{{"Схема & <план>.pdf", pdfFile()}, {"plan.png", append(pngFile(), make([]byte, 2<<20)...)}}
+	if got := f.upload(validValues(), files, asJSON); got.status != http.StatusCreated {
+		t.Fatalf("the form: %d %s", got.status, got.body)
+	}
+	if _, err := worker.Deliver(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()
+	if len(received) != 2 {
+		t.Fatalf("letters received: %d, want 2", len(received))
+	}
+	for _, letter := range received {
+		_, text, html := parts(t, letter)
+		if !strings.Contains(text, "Схема & план.pdf (77 Б), plan.png (2,0 МБ)") {
+			t.Errorf("the plain letter to %v does not name the files:\n%s", letter.To, text)
+		}
+		if !strings.Contains(html, "Схема &amp; план.pdf (77 Б), plan.png (2,0 МБ)") {
+			t.Errorf("the HTML letter to %v: files missing or not escaped:\n%s", letter.To, html)
+		}
+		if strings.Contains(strings.ToLower(text+html), "content-disposition: attachment") {
+			t.Error("a file travelled by mail")
+		}
+	}
+}

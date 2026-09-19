@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -280,5 +281,69 @@ func TestTemplatesEditor(t *testing.T) {
 	}
 	if page = s.do(http.MethodGet, prefix+"/templates", nil, nil); strings.Contains(page.body, "Счёт выставлен") {
 		t.Error("the deleted template is still there")
+	}
+}
+
+// Files of a request: handed out to a signed-in administrator only, and only as downloads.
+func TestFilesOfARequest(t *testing.T) {
+	s := newSite(t)
+	files := leads.NewFiles(t.TempDir())
+	s.leads.UseFiles(files)
+	page := []byte("<html><script>alert(document.cookie)</script></html> — what a «text file» may well contain")
+	lead := s.addLead(func(sub *leads.Submission) {
+		upload, err := files.Save("Схема сети & план.txt", leads.KindTXT, bytes.NewReader(page))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub.Files = []leads.Upload{upload}
+	})
+	other := s.addLead(nil)
+	link := fmt.Sprintf("%s/leads/%d/files/1", prefix, lead.ID)
+
+	if got := s.do(http.MethodGet, link, nil, nil); got.status != http.StatusSeeOther || got.location != prefix+"/login" {
+		t.Fatalf("a file without signing in: %d → %q", got.status, got.location)
+	}
+	s.signIn()
+
+	card := s.do(http.MethodGet, fmt.Sprintf("%s/leads/%d", prefix, lead.ID), nil, nil)
+	if !strings.Contains(card.body, `href="`+link+`" download>Схема сети &amp; план.txt</a>`) || !strings.Contains(card.body, fmt.Sprintf("txt · %d Б", len(page))) {
+		t.Errorf("the card does not offer the file:\n%s", card.body)
+	}
+
+	got := s.do(http.MethodGet, link, nil, nil)
+	if got.status != http.StatusOK || got.body != string(page) {
+		t.Fatalf("the download: %d, %d bytes", got.status, len(got.body))
+	}
+	// Whatever is inside, the browser saves it; it never shows or runs it.
+	for header, want := range map[string]string{
+		"Content-Type":            "application/octet-stream",
+		"X-Content-Type-Options":  "nosniff",
+		"Content-Security-Policy": "default-src 'none'; sandbox",
+		"Cache-Control":           "no-store",
+	} {
+		if value := got.header.Get(header); !strings.Contains(value, want) {
+			t.Errorf("%s: %q, want %q", header, value, want)
+		}
+	}
+	if disposition := got.header.Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment; filename*=utf-8''") {
+		t.Errorf("Content-Disposition: %q", disposition)
+	}
+
+	for name, path := range map[string]string{
+		"under another request": fmt.Sprintf("%s/leads/%d/files/1", prefix, other.ID),
+		"a file that is not":    fmt.Sprintf("%s/leads/%d/files/99", prefix, lead.ID),
+		"a made-up number":      fmt.Sprintf("%s/leads/%d/files/..%%2f..%%2fetc%%2fpasswd", prefix, lead.ID),
+	} {
+		if got := s.do(http.MethodGet, path, nil, nil); got.status != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", name, got.status)
+		}
+	}
+
+	// Deleting the client's data takes the file along.
+	if got := s.post(fmt.Sprintf("/leads/%d/delete", lead.ID), url.Values{"confirm": {lead.Number()}}); got.status != http.StatusSeeOther {
+		t.Fatalf("delete: %d", got.status)
+	}
+	if got := s.do(http.MethodGet, link, nil, nil); got.status != http.StatusNotFound {
+		t.Errorf("the file of a deleted request: %d", got.status)
 	}
 }

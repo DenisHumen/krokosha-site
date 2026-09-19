@@ -139,6 +139,8 @@
         "budget": "Бюджет",
         "timeline": "Терміни",
         "optional": "необов'язково",
+        "attachments": "Файли",
+        "attachments_hint": "до 3 файлів по 10 МБ: PDF, PNG, JPG, TXT, DOCX",
         "consent": "Даю згоду на обробку даних відповідно до {privacy_link}",
         "privacy_link_text": "політики конфіденційності",
         "submit": "Надіслати заявку",
@@ -165,7 +167,10 @@
         "invalid_telegram": "Перевірте нікнейм у Telegram",
         "invalid_phone": "Перевірте номер телефону",
         "description_length": "Від 20 до 4000 символів",
-        "consent_required": "Без згоди заявку не надіслати"
+        "consent_required": "Без згоди заявку не надіслати",
+        "too_many_files": "Не більше 3 файлів",
+        "file_too_big": "Файл більший за 10 МБ",
+        "file_type": "Приймаються лише файли PDF, PNG, JPG, TXT і DOCX"
       },
       "directions": [
         {

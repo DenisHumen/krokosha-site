@@ -58,8 +58,9 @@ type TaskPayload struct {
 
 // Store keeps requests.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db    *sql.DB
+	now   func() time.Time
+	files *Files // where attachments live; nil — this installation keeps none
 }
 
 // NewStore builds the store.
@@ -69,6 +70,9 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 	}
 	return &Store{db: db, now: now}
 }
+
+// UseFiles tells the store where attachments are kept, so that deleting a request deletes them too.
+func (s *Store) UseFiles(files *Files) { s.files = files }
 
 // Create stores a request, its first message, the record of it, and the notifications to send —
 // in one transaction (brief B10.2): either everything is there, or the visitor is told to try
@@ -110,13 +114,30 @@ func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, ses
 		return nil, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', 'form', ?)`,
-		lead.ID, now, sub.Description); err != nil {
+	message, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', 'form', ?)`,
+		lead.ID, now, sub.Description)
+	if err != nil {
 		return nil, err
+	}
+	messageID, err := message.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	// The files are on disk already (Files.Save); from here on the database knows whose they are.
+	for _, file := range sub.Files {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lead_attachments (lead_id, message_id, created_at, filename, kind, size, sha256, stored_as) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			lead.ID, messageID, now, cut(file.Filename, 255), file.Kind, file.Size, file.SHA256, file.StoredAs); err != nil {
+			return nil, err
+		}
 	}
 	details := "форма на сайте"
 	if lead.Status == StatusSpam {
-		details = cut("похоже на спам: "+strings.Join(verdict.Reasons, "; "), 255)
+		details = "похоже на спам: " + strings.Join(verdict.Reasons, "; ")
+		if sub.FilesDropped > 0 {
+			details += fmt.Sprintf("; вложения не сохранены (%d)", sub.FilesDropped)
+		}
+		details = cut(details, 255)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO lead_events (lead_id, created_at, actor, action, to_status, details) VALUES (?, ?, 'client', 'created', ?, ?)`,
 		lead.ID, now, lead.Status, details); err != nil {

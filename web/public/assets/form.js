@@ -86,19 +86,45 @@
     if (!length) found.description = 'required';
     else if (length < 20 || length > 4000) found.description = 'description_length';
     if (!form.elements.consent.checked) found.consent = 'consent_required';
+    var problem = checkFiles();
+    if (problem) found.files = problem;
     return found;
   }
 
+  // The file field is there only when the site accepts files. The server looks inside every
+  // file; here the visitor is told at once what would not pass anyway.
+  function checkFiles() {
+    var input = form.elements.files;
+    if (!input || !input.files) return '';
+    var accepted = (input.getAttribute('accept') || '').toLowerCase().split(',');
+    var maxBytes = Number(input.getAttribute('data-max-bytes')) || Infinity;
+    if (input.files.length > (Number(input.getAttribute('data-max-files')) || Infinity))
+      return 'too_many_files';
+    for (var i = 0; i < input.files.length; i++) {
+      var name = input.files[i].name.toLowerCase();
+      var dot = name.lastIndexOf('.');
+      if (dot < 0 || accepted.indexOf(name.slice(dot)) < 0 || !input.files[i].size)
+        return 'file_type';
+      if (input.files[i].size > maxBytes) return 'file_too_big';
+    }
+    return '';
+  }
+
   function showAll(found) {
-    ['name', 'contact_value', 'direction', 'description', 'consent'].forEach(function (field) {
-      show(field, found[field]);
-    });
+    ['name', 'contact_value', 'direction', 'description', 'files', 'consent'].forEach(
+      function (field) {
+        show(field, found[field]);
+      },
+    );
     var first = Object.keys(found)[0];
     if (first && form.elements[first] && form.elements[first].focus) form.elements[first].focus();
   }
 
   form.addEventListener('input', function (event) {
     if (event.target.name) show(event.target.name, '');
+  });
+  form.addEventListener('change', function (event) {
+    if (event.target.name === 'files') show('files', checkFiles());
   });
 
   // --- proof of work ----------------------------------------------------------------------------
@@ -206,7 +232,8 @@
           })
           .then(function (result) {
             if (response.status === 201 && result.ok) return succeed(result);
-            if (response.status === 422 && result.errors) {
+            // 413: the files together are more than the server reads.
+            if ((response.status === 422 || response.status === 413) && result.errors) {
               showAll(result.errors);
               return message('form-error-invalid');
             }
