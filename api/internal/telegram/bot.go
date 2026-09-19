@@ -38,6 +38,10 @@ type Options struct {
 	// makes cards that were waiting for somebody to join go out at once.
 	Kick  func()
 	Hurry func(ctx context.Context)
+	// RemindAfter: a new request nobody took for so long is pushed once more; 0 — never.
+	// DigestAt: «09:00» — when the morning list of open requests goes out, by the owner's clock; "" — never.
+	RemindAfter time.Duration
+	DigestAt    string
 	// Audit writes into the journal of the admin area: who let whom in, who switched whom off.
 	Audit func(ctx context.Context, actor, action, subject, details string)
 	// SiteURL is the public address of the site, for the greeting of strangers.
@@ -133,6 +137,16 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		b.invite(ctx, message, member, argument)
 	case "/users":
 		b.users(ctx, message.Chat.ID, member)
+	case "/leads":
+		b.leadsCommand(ctx, message.Chat.ID, member, "")
+	case "/lead":
+		b.leadCommand(ctx, message.Chat.ID, argument)
+	case "/search":
+		b.searchCommand(ctx, message.Chat.ID, argument)
+	case "/stats":
+		b.statsCommand(ctx, message.Chat.ID)
+	case "/mute":
+		b.muteCommand(ctx, message.Chat.ID, member, argument)
 	case "/cancel":
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Отменено."})
@@ -177,6 +191,16 @@ func (b *Bot) stranger(ctx context.Context, message *Message, command, argument 
 		b.redeem(ctx, message, argument)
 		return
 	}
+	// A client: somebody who came by the link of their own request, or comes by it right now.
+	if b.opts.Leads != nil {
+		if command == "/start" && strings.HasPrefix(argument, ClientPrefix) && b.opts.Cache.Allow(ctx, "tg-link:"+who, 10, time.Hour) &&
+			b.linkClient(ctx, message, argument) {
+			return
+		}
+		if b.clientWrites(ctx, message, command) {
+			return
+		}
+	}
 	// One greeting in ten minutes; whatever else they write meanwhile stays unanswered.
 	if !b.opts.Cache.Allow(ctx, "tg-greeting:"+who, 1, 10*time.Minute) {
 		return
@@ -212,8 +236,13 @@ func (b *Bot) help(member *Member) string {
 	lines := []string{
 		"Новые заявки с сайта приходят сюда карточками с кнопками: взять в работу, ответить клиенту, оставить заметку, отклонить. Что бы ни сделали вы или коллеги — здесь или в админке, — карточка меняется у всех сразу.",
 		"",
-		"/help — эта справка",
+		"/leads — открытые заявки: все, новые, мои, ждут клиента",
+		"/lead K-0042 — карточка заявки по номеру",
+		"/search текст — поиск по имени, контакту, тексту, номеру",
+		"/stats — неделя в цифрах",
+		"/mute 2h — заявки приходят без звука; /mute off — вернуть звук",
 		"/cancel — отменить то, что бот сейчас ждёт (текст ответа, заметки, причины)",
+		"/help — эта справка",
 	}
 	if member.Owner() {
 		lines = append(lines,
@@ -221,12 +250,6 @@ func (b *Bot) help(member *Member) string {
 			"/users — кто имеет доступ; отключить или вернуть доступ")
 	}
 	return strings.Join(lines, "\n")
-}
-
-// Commands is the menu next to the input field. Telegram shows one menu to everybody, so it
-// lists what every member may use; owner-only commands are in /help.
-func Commands() []Command {
-	return []Command{{Command: "help", Description: "Что умеет бот"}}
 }
 
 func (b *Bot) invite(ctx context.Context, message *Message, member *Member, argument string) {
@@ -322,6 +345,8 @@ func (b *Bot) callback(ctx context.Context, query *CallbackQuery) {
 		b.switchMember(ctx, query, member, parts[1] == "off", parts[2], answer)
 	case len(parts) >= 3 && parts[0] == "l":
 		b.leadButton(ctx, query, member, parts, answer)
+	case len(parts) == 2 && parts[0] == "ls":
+		b.listButton(ctx, query, member, parts[1], answer)
 	default:
 		answer("Эта кнопка больше не работает.", false)
 	}

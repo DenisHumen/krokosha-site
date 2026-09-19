@@ -65,10 +65,12 @@ func (s Summary) Number() string { return Number(s.ID) }
 
 // Filter narrows the list.
 type Filter struct {
-	Status string // "" = everything except spam, "all" = everything
+	Status string // "" = everything except spam, "all" = everything, "open" = what still needs somebody
 	Query  string // in the name, the contact, the description
-	Limit  int
-	Offset int
+	// Assignee narrows to the requests one person took (the bot's «мои»).
+	Assignee string
+	Limit    int
+	Offset   int
 }
 
 // List returns requests, newest first, and how many match in total.
@@ -78,9 +80,15 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Summary, int, error)
 	case "":
 		where = append(where, "l.status <> 'spam'")
 	case "all":
+	case "open":
+		where = append(where, "l.status IN ('new', 'in_progress', 'waiting_client')")
 	default:
 		where = append(where, "l.status = ?")
 		args = append(args, filter.Status)
+	}
+	if filter.Assignee != "" {
+		where = append(where, "l.assignee = ?")
+		args = append(args, filter.Assignee)
 	}
 	if query := strings.TrimSpace(filter.Query); query != "" {
 		if id, ok := parseNumber(query); ok {
@@ -187,7 +195,9 @@ type Card struct {
 	FirstResponseAt sql.NullTime
 	RejectReason    string
 	AnonymizedAt    sql.NullTime // set when the storage period ran out: the person and the conversation are gone
-	Feed            []Entry
+	// ReplyVia is how the next answer will reach the client: email | telegram | phone.
+	ReplyVia string
+	Feed     []Entry
 }
 
 // Card reads a request with its conversation and history, oldest first.
@@ -206,6 +216,9 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 		return nil, err
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
+	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod); err != nil {
+		return nil, err
+	}
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT created_at, IF(direction = 'note', 'note', 'message'), direction, channel, COALESCE(author, ''), body, COALESCE(delivery, ''), '', '', '', id
@@ -358,6 +371,25 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 	return nil
 }
 
+// replyChannel says how an answer reaches the client: the way the client wrote last. Somebody who
+// left an email address and then continued in Telegram is answered in Telegram; before they write
+// anything, the contact of the form decides.
+func replyChannel(ctx context.Context, db interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}, id int64, method string) (string, error) {
+	var last string
+	err := db.QueryRowContext(ctx, `SELECT channel FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return method, nil
+	case err != nil:
+		return "", err
+	case last == ChannelEmail && method != MethodEmail:
+		return method, nil // a letter from somebody whose address the form does not have: see the mail step
+	}
+	return last, nil
+}
+
 // Reply stores an answer to the client and queues its delivery through the channel the client
 // chose (brief B10.4). The request then waits for the client; the first answer stops the clock
 // of «time to first reaction». A phone call cannot be delivered by a machine: for those the
@@ -381,8 +413,12 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 		}
 		return 0, err
 	}
-	channel, delivery := method, sql.NullString{String: "queued", Valid: true}
-	if method == MethodPhone {
+	channel, err := replyChannel(ctx, tx, id, method)
+	if err != nil {
+		return 0, err
+	}
+	delivery := sql.NullString{String: "queued", Valid: true}
+	if channel == MethodPhone {
 		delivery = sql.NullString{} // nothing to deliver: the call has happened
 	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, delivery) VALUES (?, ?, 'out', ?, ?, ?, ?)`,
@@ -406,9 +442,9 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	if err := event(ctx, tx, id, now, actor, "replied", status, next, ""); err != nil {
 		return 0, err
 	}
-	if method != MethodPhone {
+	if channel != MethodPhone {
 		outboxChannel := outbox.ChannelEmail
-		if method == MethodTelegram {
+		if channel == MethodTelegram {
 			outboxChannel = outbox.ChannelTelegram
 		}
 		if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskReply, LeadID: id,
@@ -483,6 +519,53 @@ func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text strin
 	}
 	s.changed(id)
 	return messageID, nil
+}
+
+// ClientLinked writes into the history that the client opened the bot by the link of the «thank
+// you» page: from now on answers can reach them in Telegram.
+func (s *Store) ClientLinked(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := event(ctx, tx, id, s.now().UTC(), "client", "client_linked", "", "", "Telegram"); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed(id)
+	return nil
+}
+
+// Unclaimed lists new requests nobody has taken since before the given moment and nobody was
+// reminded of yet (brief B10.4, «напоминания»).
+func (s *Store) Unclaimed(ctx context.Context, before time.Time) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT l.id FROM leads l
+		WHERE l.status = 'new' AND l.created_at < ?
+		  AND NOT EXISTS (SELECT 1 FROM lead_events e WHERE e.lead_id = l.id AND e.action = 'reminded')
+		ORDER BY l.id LIMIT 20`, before.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MarkReminded writes down that people were reminded of a request: one reminder is enough.
+func (s *Store) MarkReminded(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO lead_events (lead_id, created_at, actor, action) VALUES (?, ?, 'system', 'reminded')`, id, s.now().UTC())
+	return err
 }
 
 // IncomingMessage returns the text of a stored message of the client, for whoever announces it.

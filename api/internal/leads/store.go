@@ -44,6 +44,8 @@ type Lead struct {
 	Session analytics.SessionSummary
 	// IPPrefix is the truncated address the request came from.
 	IPPrefix string
+	// Anonymized: the storage period ran out, the person and the conversation are gone.
+	Anonymized bool
 }
 
 // Number is how a request is called everywhere: #K-0042.
@@ -215,10 +217,10 @@ func (s *Store) Get(ctx context.Context, id int64) (*Lead, error) {
 	err := s.db.QueryRowContext(ctx, `
 		SELECT public_token, status, created_at, name, contact_method, contact_value, direction, description, budget, timeline, lang,
 		       spam_score, spam_reasons, session_id, source, referrer_host, utm_source, utm_medium, utm_campaign, country, device,
-		       browser, os, ip_prefix, sections_seen, time_on_site_ms
+		       browser, os, ip_prefix, sections_seen, time_on_site_ms, anonymized_at IS NOT NULL
 		FROM leads WHERE id = ?`, id).Scan(&token, &lead.Status, &lead.CreatedAt, &lead.Name, &lead.ContactMethod, &lead.ContactValue,
 		&lead.Direction, &lead.Description, &budget, &timeline, &lead.Lang, &lead.Verdict.Score, &reasons, &session, &source, &referrer,
-		&utmSource, &utmMedium, &utmCampaign, &country, &device, &browser, &os, &lead.IPPrefix, &sections, &timeOnSite)
+		&utmSource, &utmMedium, &utmCampaign, &country, &device, &browser, &os, &lead.IPPrefix, &sections, &timeOnSite, &lead.Anonymized)
 	if err != nil {
 		return nil, err
 	}

@@ -339,3 +339,47 @@ func TestLettersNameTheFiles(t *testing.T) {
 		}
 	}
 }
+
+// The owner hears by mail too when a client writes again — in the thread of the request.
+func TestTheOwnerIsToldWhenTheClientWritesAgain(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	store := NewStore(f.db, func() time.Time { return f.now })
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form:     formWithLabels, Location: time.UTC,
+	})
+	lead := f.seed(nil)
+	if _, err := worker.Deliver(context.Background()); err != nil { // the notification and the confirmation
+		t.Fatal(err)
+	}
+	if _, err := store.ClientMessage(context.Background(), lead, ChannelTelegram, "Забыл сказать: нужен ещё <b>гостевой</b> Wi-Fi."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.Deliver(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()
+	if len(received) != 3 {
+		t.Fatalf("letters received: %d, want 3", len(received))
+	}
+	letter := received[2]
+	header, text, html := parts(t, letter)
+	if letter.To[0] != "owner@krokosha.xyz" || subject(t, header) != "Re: Заявка #K-0001 · Сети и оборудование · Иван Петров" {
+		t.Errorf("the letter: to %v, subject %q", letter.To, subject(t, header))
+	}
+	if header.Get("In-Reply-To") != "<lead-1.notify@krokosha.xyz>" || header.Get("Message-Id") != fmt.Sprintf("<lead-1.client-%d@krokosha.xyz>", 2) {
+		t.Errorf("threading: In-Reply-To %q, Message-Id %q", header.Get("In-Reply-To"), header.Get("Message-Id"))
+	}
+	if !strings.Contains(text, "Иван Петров пишет по заявке #K-0001 (в Telegram)") || !strings.Contains(text, "нужен ещё <b>гостевой</b> Wi-Fi") {
+		t.Errorf("the plain letter:\n%s", text)
+	}
+	if !strings.Contains(html, "&lt;b&gt;гостевой&lt;/b&gt;") || !strings.Contains(html, `href="https://krokosha.xyz/_secret1/leads/1"`) {
+		t.Errorf("the HTML letter:\n%s", html)
+	}
+}

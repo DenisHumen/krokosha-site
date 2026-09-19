@@ -382,6 +382,36 @@ check "…the card says «done»" wait_for 20 card_finished
 check "deleting the client's data" test "$(admin_post "/leads/$fresh/delete" --data-urlencode "csrf=$(csrf)" --data-urlencode "confirm=K-$(printf '%04d' "$fresh")")" = 303
 card_wiped() { grep -q "editMessageText.*Заявка #K-$(printf '%04d' "$fresh"): данные клиента удалены" "$BOT_CALLS"; }
 check "…wipes what the bot wrote about the request in Telegram" wait_for 30 card_wiped
+# The client's side (brief B10.5): the «thank you» page offers to continue in Telegram, and the
+# bot relays between the client and the staff.
+relay_answer=$(lead_files 198.51.100.41)
+relay_lead=$(sed -n 's/.*"id":"K-0*\([0-9]*\)".*/\1/p' <<<"$relay_answer")
+relay_number="K-$(printf '%04d' "$relay_lead")"
+client_link=$(sed -n 's/.*"telegram_url":"\([^"]*\)".*/\1/p' <<<"$relay_answer")
+check "a request is answered with a link into the bot" grep -qE '^https://t\.me/krokosha_ci_bot\?start=c_[A-Za-z0-9_-]{22}$' <<<"$client_link"
+message() { printf '{"update_id":%s,"message":{"message_id":%s,"date":0,"text":"%s","from":{"id":%s,"first_name":"%s","language_code":"ru"},"chat":{"id":%s,"type":"private"}}}' "$1" "$1" "$4" "$2" "$3" "$2"; }
+said_to() { grep 'sendMessage' "$BOT_CALLS" | grep "\"chat_id\": $1" | grep -c "$2" || true; } # said_to CHAT TEXT
+check "the client opens it" test "$(deliver "$webhook_secret" "$(message 20 8001 Ivan "/start ${client_link##*start=}")")" = 200
+client_welcomed() { [[ $(said_to 8001 "Заявка #$relay_number у нас") -ge 1 ]]; }
+check "…and is told the state of their own request" wait_for 20 client_welcomed
+check "somebody else with the same link" test "$(deliver "$webhook_secret" "$(message 21 8002 Mallory "/start ${client_link##*start=}")")" = 200
+link_refused() { [[ $(said_to 8002 'уже открыта в другом аккаунте') -ge 1 ]]; }
+check "…gets nothing out of it" wait_for 20 link_refused
+check "the client writes in Telegram" test "$(deliver "$webhook_secret" "$(message 22 8001 Ivan 'Забыл сказать: стойка уже куплена.')")" = 200
+client_message_stored() { [[ $(sql "SELECT COUNT(*) FROM lead_messages WHERE lead_id = $relay_lead AND direction = 'in' AND channel = 'telegram'") == 1 ]]; }
+check "…the message lands in the conversation of the request" wait_for 20 client_message_stored
+staff_told() { [[ $(said_to 7002 "#$relay_number</b>.*пишет в Telegram") -ge 1 ]]; }
+check "…and the staff hears about it" wait_for 30 staff_told
+check "an answer from the admin area" test "$(admin_post "/leads/$relay_lead/reply" --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Отлично, тогда начнём с сети.')" = 303
+client_answered() { [[ $(said_to 8001 'Отлично, тогда начнём с сети.') -ge 1 ]]; }
+check "…reaches the client in Telegram" wait_for 30 client_answered
+check "…and is marked as delivered" test "$(sql "SELECT delivery FROM lead_messages WHERE lead_id = $relay_lead AND direction = 'out'")" = sent
+check "the client asks for the staff's lists" test "$(deliver "$webhook_secret" "$(message 23 8001 Ivan '/leads')")" = 200
+client_kept_out() { [[ $(said_to 8001 "Заявка #$relay_number, статус") -ge 1 && $(said_to 8001 'Открытые заявки') == 0 ]]; }
+check "…and sees only their own request" wait_for 20 client_kept_out
+check "/leads for the owner" test "$(deliver "$webhook_secret" "$(message 24 7002 Denis '/leads')")" = 200
+owner_list() { [[ $(said_to 7002 'Открытые заявки') -ge 1 ]]; }
+check "…lists what is open" wait_for 20 owner_list
 check "the webhook's address stays out of the traffic log" bash -c "! grep -q '/api/telegram/' /var/log/krokosha/nginx-access.json.log"
 check "CLI: an invitation for a colleague" grep -qE '^/start i_[a-z2-7]{20}$' <(krokosha-cli bot invite 2>/dev/null)
 check "the bot's page in the admin area" grep -q '@krokosha_ci_bot' <(admin_get "$ADMIN/bot")
