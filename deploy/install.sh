@@ -46,6 +46,14 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
                          without it the installer asks, and an empty answer means «later».
                          The token is checked with Telegram (getMe) and kept in $KROKOSHA_ENV only
   --telegram-api URL     another Bot API server (a self-hosted one; tests). Default: Telegram's own
+  --no-mail              do not set up the mail server (it needs HTTPS, about 500 MB of memory,
+                         and a provider that lets port 25 out)
+  --mailbox ADDRESS      a mailbox to create besides the service one, e.g. denis@DOMAIN: letters
+                         about requests go there, answers to clients are sent in its name
+  --mail-name NAME       the name letters are signed with, e.g. "Denis Humen"
+  --mailbox-password-file FILE
+                         the password of that mailbox on the first line of FILE, instead of
+                         asking for it without echo; at least 12 characters
   --repo URL             git repository to install from (default: $DEFAULT_REPO)
   --branch NAME          branch or tag (default: main)
   --from-env             take every setting from $KROKOSHA_ENV (what update.sh does)
@@ -60,6 +68,7 @@ DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SK
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
+MAIL='' MAILBOX='' MAIL_NAME='' MAILBOX_PASSWORD_FILE=''
 EXTRA_PORTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -78,6 +87,10 @@ while [[ $# -gt 0 ]]; do
     --admin-password-file) ADMIN_PASSWORD_FILE=${2:?--admin-password-file needs a value}; shift 2 ;;
     --telegram-token-file) TELEGRAM_TOKEN_FILE=${2:?--telegram-token-file needs a value}; shift 2 ;;
     --telegram-api) TELEGRAM_API=${2:?--telegram-api needs a value}; shift 2 ;;
+    --no-mail) MAIL=no; shift ;;
+    --mailbox) MAILBOX=${2:?--mailbox needs a value}; shift 2 ;;
+    --mail-name) MAIL_NAME=${2:?--mail-name needs a value}; shift 2 ;;
+    --mailbox-password-file) MAILBOX_PASSWORD_FILE=${2:?--mailbox-password-file needs a value}; shift 2 ;;
     --repo) REPO_URL=${2:?--repo needs a value}; shift 2 ;;
     --branch) REPO_BRANCH=${2:?--branch needs a value}; shift 2 ;;
     --from-env) FROM_ENV=yes; shift ;;
@@ -145,6 +158,22 @@ valid_admin_path "$ADMIN_PATH" || die "--admin-path must look like /_k7f3a9: a s
 [[ -z $ADMIN_PASSWORD_FILE || -r $ADMIN_PASSWORD_FILE ]] || die "--admin-password-file: cannot read $ADMIN_PASSWORD_FILE"
 [[ -z $ADMIN_PASSWORD_FILE || -n $ADMIN_LOGIN ]] || die "--admin-password-file needs --admin-login"
 [[ -z $TELEGRAM_TOKEN_FILE || -r $TELEGRAM_TOKEN_FILE ]] || die "--telegram-token-file: cannot read $TELEGRAM_TOKEN_FILE"
+# Mail: on unless refused once (the refusal is remembered), and impossible without TLS — mail
+# programs and the site itself sign in with passwords.
+: "${MAIL:=$(env_get MAIL)}"
+: "${MAIL:=yes}"
+if [[ $MAIL == yes && $TLS_MODE == none ]]; then
+  warn "no mail server with --tls none: passwords would travel in clear text"
+  MAIL=no
+fi
+: "${MAILBOX:=$(env_get MAILBOX)}"
+MAILBOX=${MAILBOX,,}
+[[ -z $MAILBOX || $MAILBOX =~ ^[a-z0-9][a-z0-9._-]*@${DOMAIN//./\\.}$ ]] || die "--mailbox must be an address at $DOMAIN, e.g. denis@$DOMAIN"
+[[ $MAILBOX != "leads@$DOMAIN" ]] || die "--mailbox: leads@$DOMAIN is the service mailbox of the site; choose another address"
+[[ -z $MAILBOX_PASSWORD_FILE || -r $MAILBOX_PASSWORD_FILE ]] || die "--mailbox-password-file: cannot read $MAILBOX_PASSWORD_FILE"
+[[ -z $MAILBOX_PASSWORD_FILE || -n $MAILBOX ]] || die "--mailbox-password-file needs --mailbox"
+case $MAIL_NAME in *[\"\<\>\\]*) die "--mail-name must not contain quotes, angle brackets or backslashes" ;; esac
+MAIL_HOST="mail.$DOMAIN"
 [[ -z $TELEGRAM_API || $TELEGRAM_API =~ ^https?://[^[:space:]]+$ ]] || die "--telegram-api must be an address like https://api.telegram.org"
 
 WWW=$KROKOSHA_WWW
@@ -204,6 +233,25 @@ else
     ok "www.$DOMAIN points to this server"
   else
     warn "www.$DOMAIN does not point here: it will not be served"
+  fi
+fi
+
+SERVE_MAIL_NAME=no
+if [[ $MAIL == yes ]]; then
+  if [[ $SKIP_DNS == yes ]] || resolves_here "$MAIL_HOST"; then
+    SERVE_MAIL_NAME=yes
+  else
+    warn "$MAIL_HOST does not point here yet: the certificate will not cover it, and mail programs will complain until it does. Add the A record and run the installer again"
+  fi
+  if have ss; then
+    foreign=$(ss -Htlnp '( sport = :25 or sport = :465 or sport = :587 or sport = :993 )' 2>/dev/null | grep -v docker-proxy || true)
+    [[ -z $foreign ]] || die "the mail ports (25, 465, 587, 993) are taken by another program — remove it or pass --no-mail:"$'\n'"$foreign"
+  fi
+  # Many providers close outgoing port 25 until asked: without it no letter leaves the server.
+  if timeout 6 bash -c 'exec 3<>/dev/tcp/aspmx.l.google.com/25' 2>/dev/null; then
+    ok "outgoing port 25 is open: mail can leave the server"
+  else
+    warn "outgoing port 25 seems CLOSED: mail to other servers will not leave. Ask the provider to open it (the site itself keeps working, letters wait in the queue)"
   fi
 fi
 
@@ -395,6 +443,35 @@ if [[ $TLS_MODE == none ]]; then
   env_set TELEGRAM_MODE polling
 else
   env_default TELEGRAM_MODE webhook
+fi
+# Mail (brief B8, B10.5). The site sends through its own mail server as the service mailbox
+# leads@ — whose password nobody needs to know — and reads clients' answers from it.
+env_set MAIL "$MAIL"
+if [[ $MAIL == yes ]]; then
+  env_set MAILBOX "$MAILBOX"
+  env_default MAIL_SERVICE_PASSWORD "$(openssl rand -hex 24)"
+  env_set MAIL_HOST "$MAIL_HOST"
+  env_set MAIL_POSTMASTER "postmaster@$DOMAIN"
+  env_set SMTP_ADDR 127.0.0.1:587
+  env_set SMTP_USER "leads@$DOMAIN"
+  env_set SMTP_PASSWORD "$(env_get MAIL_SERVICE_PASSWORD)"
+  env_set IMAP_ADDR 127.0.0.1:993
+  env_set IMAP_USER "leads@$DOMAIN"
+  env_set IMAP_PASSWORD "$(env_get MAIL_SERVICE_PASSWORD)"
+  env_set MAIL_INBOX "leads@$DOMAIN"
+  # Letters are written in the owner's name when there is an owner's mailbox; notifications go there.
+  mail_from=${MAILBOX:-leads@$DOMAIN}
+  [[ -z $MAIL_NAME ]] || env_set MAIL_NAME "$MAIL_NAME"
+  if [[ -n $(env_get MAIL_NAME) ]]; then
+    env_set MAIL_FROM "$(env_get MAIL_NAME) <$mail_from>"
+  else
+    env_set MAIL_FROM "$mail_from"
+  fi
+  env_set MAIL_NOTIFY_TO "${MAILBOX:-$ADMIN_EMAIL}"
+else
+  for key in SMTP_ADDR SMTP_USER SMTP_PASSWORD IMAP_ADDR IMAP_USER IMAP_PASSWORD MAIL_INBOX; do
+    [[ -z $(env_get "$key") ]] || env_set "$key" ""
+  done
 fi
 if [[ -n ${GITHUB_TOKEN:-} ]]; then
   env_set GITHUB_TOKEN "$GITHUB_TOKEN"
@@ -606,6 +683,9 @@ write_site() { # http-only | https
   fi
 }
 
+# cert_covers FILE NAME — does the certificate name the host?
+cert_covers() { openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null | grep -qE "DNS:$2(,|\$)"; }
+
 # shellcheck disable=SC2034
 TLS_CERT='' TLS_KEY=''
 case $TLS_MODE in
@@ -616,12 +696,13 @@ case $TLS_MODE in
     ;;
   selfsigned)
     TLS_CERT=$KROKOSHA_ETC/tls/selfsigned.crt TLS_KEY=$KROKOSHA_ETC/tls/selfsigned.key
-    if [[ ! -f $TLS_CERT ]]; then
+    if [[ ! -f $TLS_CERT ]] || ! cert_covers "$TLS_CERT" "$MAIL_HOST"; then
       install -d -m 0750 -o root -g root "$KROKOSHA_ETC/tls"
       openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 \
-        -subj "/CN=$DOMAIN" -addext "subjectAltName=DNS:$DOMAIN,DNS:www.$DOMAIN" \
+        -subj "/CN=$DOMAIN" -addext "subjectAltName=DNS:$DOMAIN,DNS:www.$DOMAIN,DNS:$MAIL_HOST" \
         -keyout "$TLS_KEY" -out "$TLS_CERT" 2>/dev/null
       chmod 0600 "$TLS_KEY"
+      NGINX_RESTART=yes
     fi
     write_headers no
     write_site https
@@ -629,20 +710,23 @@ case $TLS_MODE in
     ;;
   letsencrypt)
     TLS_CERT=/etc/letsencrypt/live/$DOMAIN/fullchain.pem TLS_KEY=/etc/letsencrypt/live/$DOMAIN/privkey.pem
-    if [[ ! -f $TLS_CERT ]]; then
+    # One certificate for the site and the mail server. An existing one that lacks the mail
+    # server's name is reissued with it («--expand»).
+    if [[ ! -f $TLS_CERT ]] || { [[ $SERVE_MAIL_NAME == yes ]] && ! cert_covers "$TLS_CERT" "$MAIL_HOST"; }; then
       # The challenge is answered over plain HTTP, so the site goes up on port 80 first.
       write_headers no
       write_site http-only
       certbot_args=(certonly --webroot --webroot-path "$WWW/acme" --cert-name "$DOMAIN" -d "$DOMAIN"
-        --non-interactive --agree-tos --email "$ADMIN_EMAIL" --no-eff-email --keep-until-expiring)
+        --non-interactive --agree-tos --email "$ADMIN_EMAIL" --no-eff-email --keep-until-expiring --expand)
       [[ $SERVE_WWW == yes ]] && certbot_args+=(-d "www.$DOMAIN")
+      [[ $SERVE_MAIL_NAME == yes ]] && certbot_args+=(-d "$MAIL_HOST")
       [[ $STAGING == yes ]] && certbot_args+=(--staging)
       log "requesting a certificate for $SERVER_NAMES"
       certbot "${certbot_args[@]}" || die "Let's Encrypt did not issue a certificate. The site stays on http://$DOMAIN; fix the problem and run the installer again"
     fi
     # certbot.timer (from the package) renews; nginx has to pick the new files up.
     install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
-    printf '#!/bin/sh\n# Installed by krokosha-site: load the renewed certificate.\nsystemctl reload nginx\n' >"$tmp"
+    printf '#!/bin/sh\n# Installed by krokosha-site: load the renewed certificate.\nsystemctl reload nginx\n# The mail server reads the same certificate; it notices the change by itself within a minute,\n# a restart makes it certain.\ndocker restart krokosha-mail-1 >/dev/null 2>&1 || true\n' >"$tmp"
     install_if_changed "$tmp" /etc/letsencrypt/renewal-hooks/deploy/krokosha-reload-nginx 0755 || true
     systemctl enable --quiet --now certbot.timer
     write_headers yes
@@ -652,6 +736,123 @@ case $TLS_MODE in
 esac
 rm -f "$tmp"
 
+# ---------------------------------------------------------------------------------------------
+step "Mail server"
+# ---------------------------------------------------------------------------------------------
+
+MAIL_DIR=$DATA_DIR/mail
+mail_summary="not set up (--no-mail, or no TLS). Later: sudo $0 --from-env --mailbox ADDRESS"
+if [[ $MAIL != yes ]]; then
+  warn "skipped: letters about requests wait in the queue until there is a mail server"
+  if docker ps --all --format '{{.Names}}' | grep -qx krokosha-mail-1; then
+    compose --profile mail rm --stop --force mail >/dev/null
+    ok "the mail server that ran here before is stopped; its data stays in $MAIL_DIR"
+  fi
+else
+  install -d -m 0750 -o root -g root "$MAIL_DIR" "$MAIL_DIR/config"
+  install -d -m 0755 "$MAIL_DIR/data" "$MAIL_DIR/state" "$MAIL_DIR/logs"
+
+  # Mailboxes: «address|{SHA512-CRYPT}hash» per line, the format docker-mailserver reads. A
+  # mailbox that exists is left alone — its password is its owner's business from then on.
+  accounts=$MAIL_DIR/config/postfix-accounts.cf
+  touch "$accounts"
+  chmod 0600 "$accounts"
+  add_mailbox() { # add_mailbox ADDRESS — the password comes on standard input
+    local address=$1 hash
+    hash=$(openssl passwd -6 -stdin) || die "cannot hash the password of $address"
+    printf '%s|{SHA512-CRYPT}%s\n' "$address" "$hash" >>"$accounts"
+  }
+  grep -q "^leads@$DOMAIN|" "$accounts" || env_get MAIL_SERVICE_PASSWORD | add_mailbox "leads@$DOMAIN"
+  if [[ -n $MAILBOX ]] && ! grep -q "^$MAILBOX|" "$accounts"; then
+    if [[ -n $MAILBOX_PASSWORD_FILE ]]; then
+      mailbox_password=$(head -n 1 "$MAILBOX_PASSWORD_FILE")
+    elif [[ $ASSUME_YES == no && -t 0 ]]; then
+      log "Password for the mailbox $MAILBOX: at least 12 characters, it is not shown while you type."
+      read -r -s -p "Password: " mailbox_password
+      echo >&2
+      read -r -s -p "Once more: " mailbox_again
+      echo >&2
+      [[ $mailbox_password == "$mailbox_again" ]] || die "the two passwords differ; run the installer again"
+    else
+      mailbox_password=''
+      warn "$MAILBOX was not created: nobody to ask for its password. Later: sudo $0 --from-env --mailbox $MAILBOX --mailbox-password-file FILE"
+    fi
+    if [[ -n $mailbox_password ]]; then
+      ((${#mailbox_password} >= 12)) || die "the password of $MAILBOX must be at least 12 characters long"
+      printf '%s' "$mailbox_password" | add_mailbox "$MAILBOX"
+      ok "mailbox $MAILBOX created"
+    fi
+    unset mailbox_password mailbox_again
+  fi
+  # postmaster@ and abuse@ are expected to exist (RFC 2142); they land in the owner's mailbox.
+  aliases=$MAIL_DIR/config/postfix-virtual.cf
+  touch "$aliases"
+  alias_target=$MAILBOX
+  grep -q "^$MAILBOX|" "$accounts" 2>/dev/null || alias_target="leads@$DOMAIN"
+  for name in postmaster abuse; do
+    grep -q "^$name@$DOMAIN " "$aliases" || printf '%s@%s %s\n' "$name" "$DOMAIN" "$alias_target" >>"$aliases"
+  done
+
+  # The certificate is the site's own; the container sees the directory it lives in.
+  case $TLS_MODE in
+    letsencrypt) env_set MAIL_TLS_DIR /etc/letsencrypt
+      env_set MAIL_TLS_CERT "/etc/krokosha-tls/live/$DOMAIN/fullchain.pem"
+      env_set MAIL_TLS_KEY "/etc/krokosha-tls/live/$DOMAIN/privkey.pem" ;;
+    selfsigned) env_set MAIL_TLS_DIR "$DATA_DIR/config/tls"
+      env_set MAIL_TLS_CERT /etc/krokosha-tls/selfsigned.crt
+      env_set MAIL_TLS_KEY /etc/krokosha-tls/selfsigned.key ;;
+  esac
+
+  compose --profile mail pull --quiet mail
+  compose --profile mail up --detach --wait mail || {
+    docker logs --tail 60 krokosha-mail-1 >&2 || true
+    die "the mail server did not start (log above)"
+  }
+
+  # DKIM: the key that signs outgoing mail. Made once; its public half goes into DNS.
+  dkim_dns=$MAIL_DIR/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.public.dns.txt
+  if [[ ! -s $dkim_dns ]]; then
+    docker exec krokosha-mail-1 setup config dkim keysize 2048 selector mail domain "$DOMAIN" >/dev/null ||
+      die "cannot make the DKIM key (docker exec krokosha-mail-1 setup config dkim …)"
+  fi
+  [[ -s $dkim_dns ]] || die "the DKIM key was made, but $dkim_dns is missing"
+
+  # What has to be entered at the DNS provider — kept in a file, shown at the end.
+  server_ip=$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 {print $1}')
+  [[ -n $server_ip ]] || server_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+  tmp=$(mktemp)
+  cat >"$tmp" <<RECORDS
+DNS records for mail at $DOMAIN (enter them at the DNS provider; «@» is the domain itself)
+
+  A      mail                $server_ip
+  MX     @                   10 $MAIL_HOST.
+  TXT    @                   "v=spf1 mx -all"
+  TXT    mail._domainkey     $(tr -d '\n' <"$dkim_dns")
+  TXT    _dmarc              "v=DMARC1; p=quarantine; rua=mailto:postmaster@$DOMAIN"
+  SRV    _imaps._tcp         0 1 993 $MAIL_HOST.
+  SRV    _submissions._tcp   0 1 465 $MAIL_HOST.
+  SRV    _submission._tcp    0 1 587 $MAIL_HOST.
+
+  PTR    $server_ip  →  $MAIL_HOST
+         Not a DNS record of yours: it is set in the control panel of the server's provider
+         («reverse DNS»). Without it big mail services put letters into spam.
+
+Mail programs: IMAP $MAIL_HOST:993 (SSL/TLS), SMTP $MAIL_HOST:465 (SSL/TLS) or 587 (STARTTLS),
+the user name is the whole address. Thunderbird finds these by itself.
+RECORDS
+  install_if_changed "$tmp" "$MAIL_DIR/DNS.txt" 0644 || true
+  rm -f "$tmp"
+
+  # Thunderbird and others ask the site how to set a mailbox up.
+  tmp=$(mktemp)
+  sed -e "s/@@DOMAIN@@/$DOMAIN/g" -e "s/@@MAIL_HOST@@/$MAIL_HOST/g" "$DEPLOY/mail/autoconfig.xml.tmpl" >"$tmp"
+  install_if_changed "$tmp" "$WWW/mail-autoconfig.xml" 0644 || true
+  rm -f "$tmp"
+
+  install_if_changed "$DEPLOY/bin/krokosha-mailbox" /usr/local/bin/krokosha-mailbox 0755 || true
+  mail_summary="$MAIL_HOST — mailboxes: $(cut -d'|' -f1 "$accounts" | paste -sd ' ')   (sudo krokosha-mailbox list | add | passwd | del)"
+  ok "the mail server runs; mailboxes: $(cut -d'|' -f1 "$accounts" | paste -sd ' ')"
+fi
 # ---------------------------------------------------------------------------------------------
 step "Timer: GitHub sync and rebuild every 6 hours"
 # ---------------------------------------------------------------------------------------------
@@ -678,6 +879,12 @@ else
   done
   ufw allow 80/tcp comment 'krokosha: HTTP (ACME, redirect)' >/dev/null
   ufw allow 443/tcp comment 'krokosha: HTTPS' >/dev/null
+  if [[ $MAIL == yes ]]; then
+    ufw allow 25/tcp comment 'krokosha: mail from other servers' >/dev/null
+    ufw allow 465/tcp comment 'krokosha: mail programs, sending' >/dev/null
+    ufw allow 587/tcp comment 'krokosha: mail programs, sending' >/dev/null
+    ufw allow 993/tcp comment 'krokosha: mail programs, reading' >/dev/null
+  fi
   for port in "${EXTRA_PORTS[@]}"; do
     ufw allow "$port" comment 'krokosha: --allow' >/dev/null
     log "kept open on request: $port"
@@ -742,6 +949,7 @@ cat >&2 <<EOF
   Admin area: $admin_url
   Accounts:   sudo krokosha-cli admin list | create LOGIN | passwd LOGIN | totp-reset LOGIN
   Bot:        $bot_summary
+  Mail:       $mail_summary
   Release:    $(readlink -f "$WWW/current")
   Rebuild:    sudo systemctl start krokosha-sync.service     (runs by itself every 6 hours)
   Update:     sudo $KROKOSHA_REPO/deploy/update.sh
@@ -752,6 +960,10 @@ cat >&2 <<EOF
   API:        $SITE_URL/api/health
 
 EOF
+if [[ $MAIL == yes ]]; then
+  sed 's/^/  /' "$MAIL_DIR/DNS.txt" >&2
+  printf '\n  (this list is kept in %s)\n\n' "$MAIL_DIR/DNS.txt" >&2
+fi
 }
 
 main "$@"

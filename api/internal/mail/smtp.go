@@ -19,6 +19,10 @@ type Sender struct {
 	Password string
 	// Hello is the name given in EHLO: the site's host name.
 	Hello string
+	// Envelope is the address given in MAIL FROM — where bounces go. The mail server lets an
+	// account send only under its own address (spoof protection), so this is the account the
+	// service signs in with, while the From header stays the owner's. Empty: the From address.
+	Envelope string
 	// Now is the clock of the Date header.
 	Now func() time.Time
 }
@@ -92,7 +96,11 @@ func (s *Sender) Send(ctx context.Context, message Message) error {
 			return classify(err)
 		}
 	}
-	if err := client.Mail(message.From.Address); err != nil {
+	envelope := s.Envelope
+	if envelope == "" {
+		envelope = message.From.Address
+	}
+	if err := client.Mail(envelope); err != nil {
 		return classify(err)
 	}
 	if err := client.Rcpt(message.To.Address); err != nil {

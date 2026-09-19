@@ -62,3 +62,52 @@ services:
       timeout: 3s
       retries: 20
     logging: *logging
+
+  # The mail server (brief B8, B10.5): Postfix, Dovecot and Rspamd in one container — receives
+  # mail for the domain, sends what the site sends (signed with DKIM), keeps the mailboxes.
+  # Started by install.sh only when mail is wanted (`--profile mail`); everything it must not
+  # lose lives under KROKOSHA_DATA/mail. No ClamAV: it alone would take a gigabyte of memory.
+  mail:
+    image: ghcr.io/docker-mailserver/docker-mailserver:16.0
+    profiles: ["mail"]
+    hostname: ${MAIL_HOST:-mail.invalid}
+    restart: unless-stopped
+    environment:
+      ENABLE_RSPAMD: 1 # spam filtering, DKIM signing and checking, SPF, DMARC — one program
+      ENABLE_OPENDKIM: 0
+      ENABLE_OPENDMARC: 0
+      ENABLE_POLICYD_SPF: 0
+      ENABLE_AMAVIS: 0
+      ENABLE_SPAMASSASSIN: 0
+      ENABLE_CLAMAV: 0
+      RSPAMD_LEARN: 1 # moving a letter to or out of «Junk» teaches the filter
+      RSPAMD_GREYLISTING: 0 # a client's first answer must not wait for a second delivery attempt
+      ENABLE_FAIL2BAN: 1
+      # An account sends under its own address only; nothing is relayed without a password,
+      # not even from this machine.
+      SPOOF_PROTECTION: 1
+      PERMIT_DOCKER: none
+      ENABLE_POP3: 0
+      ENABLE_UPDATE_CHECK: 0
+      POSTMASTER_ADDRESS: ${MAIL_POSTMASTER:-postmaster@mail.invalid}
+      POSTFIX_MESSAGE_SIZE_LIMIT: 26214400 # 25 MB
+      SSL_TYPE: manual
+      SSL_CERT_PATH: ${MAIL_TLS_CERT:-/etc/krokosha-tls/fullchain.pem}
+      SSL_KEY_PATH: ${MAIL_TLS_KEY:-/etc/krokosha-tls/privkey.pem}
+      LOG_LEVEL: info
+    volumes:
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/mail/data:/var/mail
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/mail/state:/var/mail-state
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/mail/logs:/var/log/mail
+      - ${KROKOSHA_DATA:?set in /etc/krokosha/env}/mail/config:/tmp/docker-mailserver
+      - ${MAIL_TLS_DIR:-/etc/ssl/certs}:/etc/krokosha-tls:ro
+    ports:
+      - "25:25" # mail from other servers
+      - "465:465" # mail programs: sending, TLS from the first byte
+      - "587:587" # mail programs and the site itself: sending, STARTTLS
+      - "993:993" # mail programs and the site itself: reading (IMAP over TLS)
+    cap_add:
+      - NET_ADMIN # fail2ban inside the container bans addresses with nftables
+    mem_limit: 768m
+    stop_grace_period: 60s
+    logging: *logging

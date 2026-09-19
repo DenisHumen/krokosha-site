@@ -56,6 +56,13 @@ server {
         include snippets/krokosha-proxy.conf;
     }
 
+    # Mail programs (Thunderbird and others) ask the site how to set up a mailbox of this domain.
+    # The file is written by install.sh together with the mail server; without one — 404.
+    location = /.well-known/autoconfig/mail/config-v1.1.xml {
+        default_type application/xml;
+        alias @@WWW@@/mail-autoconfig.xml;
+    }
+
     # Telegram delivers the bot's updates here (brief B10.3): to an address that ends in a secret,
     # with a secret header — the API checks both. The address stays out of the access log (and so
     # out of the «server traffic» screen), and only Telegram's own networks get through

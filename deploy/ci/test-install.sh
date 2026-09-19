@@ -36,8 +36,13 @@ ADMIN_PASSWORD='ci: correct horse battery staple'
 ADMIN_PASSWORD_FILE=$(mktemp)
 printf '%s\n' "$ADMIN_PASSWORD" >"$ADMIN_PASSWORD_FILE"
 
+MAILBOX_PASSWORD='ci: a mailbox password of some length'
+MAILBOX_PASSWORD_FILE=$(mktemp)
+printf '%s\n' "$MAILBOX_PASSWORD" >"$MAILBOX_PASSWORD_FILE"
+
 install_site() {
   "$SOURCE/deploy/install.sh" --domain "$DOMAIN" --email ci@example.com \
+    --mailbox "owner@$DOMAIN" --mail-name 'CI Owner' --mailbox-password-file "$MAILBOX_PASSWORD_FILE" \
     --repo "$SOURCE" --branch ci-test --tls selfsigned --skip-dns-check --yes \
     --admin-path "$ADMIN_PATH" --admin-login ci-admin --admin-password-file "$ADMIN_PASSWORD_FILE" "$@"
 }
@@ -447,6 +452,36 @@ check "the limit does not touch the site itself" test "$(status "https://$DOMAIN
 check "fail2ban watches the admin area" bash -c "fail2ban-client status krokosha-admin | grep -q nginx-admin.json.log"
 check "fail2ban recognises the failed logins" bash -c "fail2ban-regex /var/log/krokosha/nginx-admin.json.log /etc/fail2ban/filter.d/krokosha-admin.conf | grep -qE '^Failregex: [1-9][0-9]* total'"
 
+echo "Mail server"
+mailcheck() { python3 "$SOURCE/deploy/ci/mailcheck.py" "$@"; }
+SERVICE_PASSWORD=$(sed -n 's/^MAIL_SERVICE_PASSWORD=//p' /etc/krokosha/env)
+check "the mail server runs and says it is healthy" test "$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1)" = healthy
+check "its letters, state and keys live in the data root" test -d /srv/krokosha/mail/data -a -d /srv/krokosha/mail/state -a -s /srv/krokosha/mail/config/postfix-accounts.cf
+check "mailboxes: the site's own and the owner's" test "$(krokosha-mailbox list | sort | paste -sd ' ')" = "leads@$DOMAIN owner@$DOMAIN"
+check "passwords are kept as hashes" bash -c "! grep -qF -e '$MAILBOX_PASSWORD' -e '$SERVICE_PASSWORD' /srv/krokosha/mail/config/postfix-accounts.cf && [[ \$(grep -c '|{SHA512-CRYPT}\\\$6\\\$' /srv/krokosha/mail/config/postfix-accounts.cf) == 2 ]]"
+check "the site is told how to send and how to read" bash -c "grep -q '^SMTP_ADDR=127.0.0.1:587\$' /etc/krokosha/env && grep -q '^IMAP_ADDR=127.0.0.1:993\$' /etc/krokosha/env && grep -q '^MAIL_FROM=CI Owner <owner@$DOMAIN>\$' /etc/krokosha/env && grep -q '^MAIL_INBOX=leads@$DOMAIN\$' /etc/krokosha/env"
+check "a DKIM key was made" test -s "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt"
+check "the installation ends with the DNS records to enter" bash -c "grep -q 'MX .*10 mail.$DOMAIN\\.' '$INSTALL_LOG' && grep -q 'v=spf1 mx -all' '$INSTALL_LOG' && grep -q 'mail._domainkey .*v=DKIM1' '$INSTALL_LOG' && grep -q '_dmarc' '$INSTALL_LOG' && grep -q 'PTR ' '$INSTALL_LOG'"
+check "…and keeps them in a file" grep -q 'mail._domainkey' /srv/krokosha/mail/DNS.txt
+check "the certificate names the mail server too" bash -c "openssl s_client -connect 127.0.0.1:993 -servername mail.$DOMAIN </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName | grep -q 'DNS:mail.$DOMAIN'"
+check "the owner's mail program can sign in" mailcheck login "owner@$DOMAIN" "$MAILBOX_PASSWORD"
+check "…with the right password only" mailcheck nologin "owner@$DOMAIN" 'not the password at all'
+# The request of the contact-form test was announced by mail: through the site's own server,
+# signed, into the owner's mailbox.
+check "the letter about a request is in the owner's mailbox" mailcheck find "owner@$DOMAIN" "$MAILBOX_PASSWORD" 'MikroTik'
+letter_about_request() { docker exec krokosha-mail-1 sh -c "grep -rl 'X-Krokosha-Lead: K-0001' /var/mail/$DOMAIN/owner/ | head -n 1"; }
+check "…sent in the owner's name, under the envelope of the service mailbox" bash -c "docker exec krokosha-mail-1 cat \"\$1\" | grep -qi '^Return-Path: <leads@$DOMAIN>' && docker exec krokosha-mail-1 cat \"\$1\" | grep -q '^From: .*owner@$DOMAIN'" _ "$(letter_about_request)"
+check "…and signed with the domain's DKIM key" bash -c "docker exec krokosha-mail-1 cat \"\$1\" | tr -d '\r\n\t ' | grep -qi 'DKIM-Signature:[^:]*d=$DOMAIN;'" _ "$(letter_about_request)"
+check "an account cannot send under somebody else's address" mailcheck spoof "leads@$DOMAIN" "$SERVICE_PASSWORD" "owner@$DOMAIN" "owner@$DOMAIN"
+check "strangers cannot relay through the server" mailcheck relay stranger@example.org victim@example.net
+check "an answer to a request's address reaches the service mailbox" mailcheck send "owner@$DOMAIN" "$MAILBOX_PASSWORD" "owner@$DOMAIN" "leads+k-0001.aaaaaaaaaaaaaaaa@$DOMAIN" 'an answer by mail, as a client would send it'
+check "…whatever follows the plus sign" mailcheck find "leads@$DOMAIN" "$SERVICE_PASSWORD" 'an answer by mail'
+check "mail programs find their settings on the site" grep -q "<hostname>mail.$DOMAIN</hostname>" <(body "https://$DOMAIN/.well-known/autoconfig/mail/config-v1.1.xml")
+check "a second mailbox" bash -c "printf '%s\n' 'another long password' | krokosha-mailbox add Second@$DOMAIN --password-stdin 2>/dev/null && krokosha-mailbox list | grep -qx 'second@$DOMAIN'"
+check "…a short password is refused" bash -c "! printf 'short\n' | krokosha-mailbox add third@$DOMAIN --password-stdin 2>/dev/null"
+check "…and the site's own mailbox cannot be removed" bash -c "! krokosha-mailbox del leads@$DOMAIN 2>/dev/null"
+check "the mail ports are open in the firewall" bash -c "ufw status | grep -qE '^25/tcp +ALLOW' && ufw status | grep -qE '^993/tcp +ALLOW'"
+
 echo "Firewall"
 check "UFW is active" bash -c "ufw status | grep -q 'Status: active'"
 check "SSH stays open" bash -c "ufw status | grep -qE '^22/tcp +ALLOW'"
@@ -461,6 +496,7 @@ fi
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
 secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)
+mail_before=$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)
 "$SOURCE/deploy/install.sh" --from-env --yes
 echo "::endgroup::"
 echo "Idempotency"
@@ -471,6 +507,7 @@ check "the skipped DNS check is remembered" grep -q "^SKIP_DNS_CHECK=yes" /etc/k
 check "a new release was published" test "$(readlink -f /var/www/krokosha/current)" != "$before"
 check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
+check "the mail server, its mailboxes and its key survived" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && [[ \$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf \"/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt\" | sha256sum) == '$mail_before' ]]"
 check "the bot and its owner survived" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=.' /etc/krokosha/env && krokosha-cli bot users | grep -q 'owner'"
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1

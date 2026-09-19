@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Mailboxes of the site's mail server.
+#
+#   sudo krokosha-mailbox list
+#   sudo krokosha-mailbox add    ADDRESS     asks for the password (or: --password-stdin)
+#   sudo krokosha-mailbox passwd ADDRESS
+#   sudo krokosha-mailbox del    ADDRESS     the letters stay on disk until removed by hand
+#
+# Mailboxes live in one file of the data root (docker-mailserver's postfix-accounts.cf); the mail
+# server notices a change within seconds. A password is never an argument of any command: it
+# would be visible to everybody on the machine for as long as the command runs.
+set -euo pipefail
+
+ENV_FILE=/etc/krokosha/env
+[[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+[[ -r $ENV_FILE ]] || { echo "$ENV_FILE not found: is the site installed?" >&2; exit 1; }
+data=$(sed -n 's/^KROKOSHA_DATA=//p' "$ENV_FILE" | tail -n 1)
+domain=$(sed -n 's/^DOMAIN=//p' "$ENV_FILE" | tail -n 1)
+accounts=$data/mail/config/postfix-accounts.cf
+[[ -f $accounts ]] || { echo "no mail server here (installed with --no-mail?)" >&2; exit 1; }
+
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+command=${1:-}
+address=${2:-}
+address=${address,,}
+from_stdin=no
+[[ ${3:-} == --password-stdin ]] && from_stdin=yes
+
+valid_address() {
+  [[ $address =~ ^[a-z0-9][a-z0-9._-]*@${domain//./\.}$ ]] || { echo "the address must be at $domain, e.g. denis@$domain" >&2; exit 1; }
+}
+exists() { grep -q "^$address|" "$accounts"; }
+
+read_password() { # → $password
+  if [[ $from_stdin == yes ]]; then
+    IFS= read -r password
+  else
+    [[ -t 0 ]] || { echo "no terminal to ask for a password: use --password-stdin" >&2; exit 1; }
+    read -r -s -p "Password for $address (at least 12 characters): " password; echo >&2
+    read -r -s -p "Once more: " again; echo >&2
+    [[ $password == "$again" ]] || { echo "the two passwords differ" >&2; exit 1; }
+  fi
+  ((${#password} >= 12)) || { echo "the password must be at least 12 characters long" >&2; exit 1; }
+}
+
+write_line() { # replaces or adds the line of $address
+  local hash tmp
+  hash=$(printf '%s' "$password" | openssl passwd -6 -stdin)
+  tmp=$(mktemp "$accounts.XXXXXX")
+  grep -v "^$address|" "$accounts" >"$tmp" || true
+  printf '%s|{SHA512-CRYPT}%s\n' "$address" "$hash" >>"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$accounts"
+}
+
+case $command in
+  list)
+    cut -d'|' -f1 "$accounts"
+    ;;
+  add)
+    valid_address
+    ! exists || { echo "$address exists already; to change its password: krokosha-mailbox passwd $address" >&2; exit 1; }
+    read_password
+    write_line
+    echo "$address created" >&2
+    ;;
+  passwd)
+    valid_address
+    exists || { echo "no such mailbox: $address" >&2; exit 1; }
+    [[ $address != "leads@$domain" ]] || { echo "leads@$domain is the site's own mailbox: its password lives in $ENV_FILE and is managed by install.sh" >&2; exit 1; }
+    read_password
+    write_line
+    echo "the password of $address is changed" >&2
+    ;;
+  del)
+    valid_address
+    exists || { echo "no such mailbox: $address" >&2; exit 1; }
+    [[ $address != "leads@$domain" ]] || { echo "leads@$domain is the site's own mailbox: requests could neither be announced nor answered without it" >&2; exit 1; }
+    tmp=$(mktemp "$accounts.XXXXXX")
+    grep -v "^$address|" "$accounts" >"$tmp" || true
+    chmod 0600 "$tmp"
+    mv -f "$tmp" "$accounts"
+    echo "$address removed; its letters are still in $data/mail/data/$domain/${address%@*}" >&2
+    ;;
+  *) usage ;;
+esac

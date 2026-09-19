@@ -76,6 +76,13 @@ type Mail struct {
 	Password string
 	From     string // «Denis Humen <denis@krokosha.xyz>»
 	NotifyTo string // where notifications about new requests go
+	// Inbox (MAIL_INBOX) is the service mailbox: the envelope sender of everything the site
+	// sends, and — with the request's number signed into the address — where clients' answers
+	// come back. IMAP* is how the service reads that mailbox.
+	Inbox        string
+	IMAPAddr     string // IMAP_ADDR, host:port with TLS from the first byte (993); empty — answers by mail are not read
+	IMAPUser     string
+	IMAPPassword string
 }
 
 // MySQL holds the connection parameters of the main database.
@@ -119,6 +126,8 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 			Password: get("SMTP_PASSWORD", ""),
 			From:     get("MAIL_FROM", ""),
 			NotifyTo: get("MAIL_NOTIFY_TO", ""),
+			Inbox:    strings.ToLower(get("MAIL_INBOX", "")),
+			IMAPAddr: get("IMAP_ADDR", ""), IMAPUser: get("IMAP_USER", ""), IMAPPassword: get("IMAP_PASSWORD", ""),
 		},
 		Telegram: Telegram{
 			Token: get("TELEGRAM_BOT_TOKEN", ""),
@@ -187,6 +196,19 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 		}
 		if _, err := mail.ParseAddress(env.Mail.NotifyTo); err != nil {
 			problems = append(problems, "MAIL_NOTIFY_TO must be an email address when SMTP_ADDR is set")
+		}
+	}
+	if env.Mail.Inbox != "" {
+		if parsed, err := mail.ParseAddress(env.Mail.Inbox); err != nil || parsed.Address != env.Mail.Inbox || strings.Contains(env.Mail.Inbox, "+") {
+			problems = append(problems, "MAIL_INBOX must be a plain address like leads@example.com")
+		}
+	}
+	if env.Mail.IMAPAddr != "" {
+		if _, _, err := net.SplitHostPort(env.Mail.IMAPAddr); err != nil {
+			problems = append(problems, "IMAP_ADDR must look like 127.0.0.1:993")
+		}
+		if env.Mail.Inbox == "" || env.Mail.IMAPUser == "" {
+			problems = append(problems, "IMAP_ADDR needs MAIL_INBOX and IMAP_USER: whose mailbox is read")
 		}
 	}
 	if env.Telegram.Token != "" {

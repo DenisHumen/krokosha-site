@@ -116,10 +116,11 @@ func run() error {
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
 		notifyTo, _ := mail.ParseAddress(env.Mail.NotifyTo)
-		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname()}
+		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname(), Envelope: env.Mail.Inbox}
 		deliveries.Register(outbox.ChannelEmail, &leads.Mailer{
 			Store: leadStore, Deliver: smtp.Send, From: *from, NotifyTo: *notifyTo, SiteHost: siteURL.Hostname(),
 			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location, TelegramURL: telegramURL,
+			Inbox: env.Mail.Inbox, Secret: []byte(env.Secret),
 		})
 	} else {
 		log.Warn("SMTP_ADDR is not set: notifications about requests wait in the outbox until mail is configured")

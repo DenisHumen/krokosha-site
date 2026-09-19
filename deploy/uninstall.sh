@@ -50,7 +50,7 @@ main() {
   step "Stopping the containers (MySQL, Redis)"
   if have docker && [[ -f $KROKOSHA_REPO/deploy/compose/compose.yaml && -f $KROKOSHA_ENV ]]; then
     docker compose --env-file "$KROKOSHA_ENV" --env-file "$KROKOSHA_ETC/mysql-root.env" \
-      --file "$KROKOSHA_REPO/deploy/compose/compose.yaml" down --remove-orphans 2>/dev/null || true
+      --file "$KROKOSHA_REPO/deploy/compose/compose.yaml" --profile mail down --remove-orphans 2>/dev/null || true
   fi
 
   step "Removing the nginx site"
@@ -67,6 +67,7 @@ main() {
   step "Removing files"
   rm -rf "$KROKOSHA_ROOT" "$KROKOSHA_WWW" "$KROKOSHA_STATE" /var/log/krokosha
   [[ $(readlink /usr/local/bin/krokosha-cli 2>/dev/null) != "$KROKOSHA_ROOT"/* ]] || rm -f /usr/local/bin/krokosha-cli
+  rm -f /usr/local/bin/krokosha-mailbox
   if [[ $purge == yes ]]; then
     rm -rf "$KROKOSHA_ETC"
     if [[ -n $data_dir && $data_dir == /* && $data_dir != / && -d $data_dir ]]; then
