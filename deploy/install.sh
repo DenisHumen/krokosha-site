@@ -818,8 +818,10 @@ else
   [[ -s $dkim_dns ]] || die "the DKIM key was made, but $dkim_dns is missing"
 
   # What has to be entered at the DNS provider — kept in a file, shown at the end.
-  server_ip=$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 {print $1}')
-  [[ -n $server_ip ]] || server_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+  # (getent fails for a name that does not resolve — behind NAT, in tests: that is an answer, not an error)
+  server_ip=$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 {print $1}' || true)
+  [[ -n $server_ip ]] || server_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}' || true)
+  [[ -n $server_ip ]] || server_ip='<the address of this server>'
   tmp=$(mktemp)
   cat >"$tmp" <<RECORDS
 DNS records for mail at $DOMAIN (enter them at the DNS provider; «@» is the domain itself)
