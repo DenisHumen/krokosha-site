@@ -123,7 +123,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version | sed -n 2p
-          shellcheck -x deploy/*.sh deploy/lib/*.sh deploy/bin/*.sh deploy/ci/*.sh
+          shellcheck -x deploy/*.sh deploy/lib/*.sh deploy/bin/* deploy/ci/*.sh
 
       # The brief's acceptance criterion: a clean server is set up with one command.
       # Installs for a fake domain with a self-signed certificate, then checks the site, headers,
