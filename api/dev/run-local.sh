@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The API with the admin area on this machine, for looking at the dashboards while developing:
-# throw-away MySQL and Redis (compose.test.yaml), an administrator «dev», two weeks of demo visits.
+# throw-away MySQL and Redis (compose.test.yaml), an administrator «dev», two weeks of demo visits,
+# a dozen made-up requests.
 #
 #   api/dev/run-local.sh            → http://localhost:8099/_dev/   login: dev   password: local-dev-password
 #
@@ -9,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 docker compose -f compose.test.yaml up -d --wait
-mysql() { docker exec -i krokosha-test-mysql-1 mysql -uroot -pkrokosha-test "$@" 2>/dev/null; }
+mysql() { docker exec -i krokosha-test-mysql-1 mysql --default-character-set=utf8mb4 -uroot -pkrokosha-test "$@" 2>/dev/null; }
 mysql -e 'CREATE DATABASE IF NOT EXISTS krokosha_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
 
 # Git Bash on Windows would rewrite a value that looks like a POSIX path (/_dev) into C:/Program Files/Git/_dev.
@@ -34,5 +35,6 @@ export KROKOSHA_STATE="$work/state" KROKOSHA_WWW="$work/www" KROKOSHA_ACCESS_LOG
 # The CLI applies the migrations; «this login already exists» on later runs is fine.
 printf 'local-dev-password\n' | go run ./cmd/krokosha-cli admin create dev --password-stdin || true
 mysql krokosha_dev <dev/seed-demo.sql
+mysql krokosha_dev <dev/seed-demo-leads.sql
 echo "Admin area: http://localhost:8099/_dev/   login: dev   password: local-dev-password"
 exec go run ./cmd/krokosha-api

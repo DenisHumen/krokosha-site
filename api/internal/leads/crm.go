@@ -1,0 +1,634 @@
+package leads
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
+)
+
+// What people do with requests (brief B10.4, B10.6). The admin area uses these methods today, the
+// Telegram bot will use the very same ones: whoever presses «take» first gets the request, in
+// whichever of the two it happens.
+
+// Statuses lists the statuses in the order of the board.
+var Statuses = []string{StatusNew, StatusInProgress, StatusWaitingClient, StatusDone, StatusRejected, StatusSpam}
+
+// transitions says where a request may go from each status (brief B10.4). Anything may be
+// «reopened» — put back to new or in progress — so that a mistake is never final.
+var transitions = map[string][]string{
+	StatusNew:           {StatusInProgress, StatusRejected, StatusSpam},
+	StatusInProgress:    {StatusWaitingClient, StatusDone, StatusRejected, StatusNew},
+	StatusWaitingClient: {StatusInProgress, StatusDone, StatusRejected},
+	StatusDone:          {StatusInProgress},
+	StatusRejected:      {StatusInProgress, StatusNew},
+	StatusSpam:          {StatusNew},
+}
+
+// Errors of the operations.
+var (
+	ErrNotFound      = errors.New("no such request")
+	ErrAlreadyTaken  = errors.New("the request was taken by someone else")
+	ErrBadTransition = errors.New("the request cannot go to this status from where it is")
+	ErrEmptyText     = errors.New("the text is empty")
+)
+
+// NextStatuses returns where a request in the given status may go.
+func NextStatuses(status string) []string { return transitions[status] }
+
+// Summary is a line of the list and a card of the board.
+type Summary struct {
+	ID            int64
+	Status        string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Name          string
+	ContactMethod string
+	ContactValue  string
+	Direction     string
+	Budget        string
+	Excerpt       string
+	Assignee      string
+	Source        string
+	Campaign      string
+	SpamScore     int
+	Messages      int
+	LastFromUser  bool // the last word is the client's: somebody should answer
+}
+
+// Number of the request.
+func (s Summary) Number() string { return Number(s.ID) }
+
+// Filter narrows the list.
+type Filter struct {
+	Status string // "" = everything except spam, "all" = everything
+	Query  string // in the name, the contact, the description
+	Limit  int
+	Offset int
+}
+
+// List returns requests, newest first, and how many match in total.
+func (s *Store) List(ctx context.Context, filter Filter) ([]Summary, int, error) {
+	where, args := []string{"1 = 1"}, []any{}
+	switch filter.Status {
+	case "":
+		where = append(where, "l.status <> 'spam'")
+	case "all":
+	default:
+		where = append(where, "l.status = ?")
+		args = append(args, filter.Status)
+	}
+	if query := strings.TrimSpace(filter.Query); query != "" {
+		if id, ok := parseNumber(query); ok {
+			where = append(where, "l.id = ?")
+			args = append(args, id)
+		} else {
+			like := "%" + escapeLike(query) + "%"
+			where = append(where, "(l.name LIKE ? OR l.contact_value LIKE ? OR l.description LIKE ?)")
+			args = append(args, like, like, like)
+		}
+	}
+	condition := strings.Join(where, " AND ")
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM leads l WHERE `+condition, args...).Scan(&total); err != nil { // the condition is built from the constants above
+		return nil, 0, err
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+	//nolint:gosec // as above
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT l.id, l.status, l.created_at, l.updated_at, l.name, l.contact_method, l.contact_value, l.direction,
+		       COALESCE(l.budget, ''), LEFT(l.description, 240), COALESCE(l.assignee, ''), COALESCE(l.source, ''),
+		       COALESCE(l.utm_campaign, l.utm_source, ''), l.spam_score,
+		       (SELECT COUNT(*) FROM lead_messages m WHERE m.lead_id = l.id AND m.direction <> 'note'),
+		       COALESCE((SELECT m.direction FROM lead_messages m WHERE m.lead_id = l.id AND m.direction <> 'note' ORDER BY m.id DESC LIMIT 1), '')
+		FROM leads l WHERE `+condition+` ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?`,
+		append(args, filter.Limit, filter.Offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []Summary
+	for rows.Next() {
+		var item Summary
+		var last string
+		if err := rows.Scan(&item.ID, &item.Status, &item.CreatedAt, &item.UpdatedAt, &item.Name, &item.ContactMethod, &item.ContactValue,
+			&item.Direction, &item.Budget, &item.Excerpt, &item.Assignee, &item.Source, &item.Campaign, &item.SpamScore, &item.Messages, &last); err != nil {
+			return nil, 0, err
+		}
+		// Only where an answer is still owed: a new request is waiting to be taken, a closed one
+		// needs nothing. (A phone call counts once it is written down as an answer.)
+		open := item.Status == StatusInProgress || item.Status == StatusWaitingClient
+		item.LastFromUser = last == "in" && open
+		out = append(out, item)
+	}
+	return out, total, rows.Err()
+}
+
+// parseNumber understands «K-0042», «#K-42» and «42».
+func parseNumber(query string) (int64, bool) {
+	text := strings.TrimPrefix(strings.ToUpper(strings.TrimPrefix(query, "#")), "K-")
+	var id int64
+	if _, err := fmt.Sscanf(text, "%d", &id); err != nil || id <= 0 || fmt.Sprint(id) != strings.TrimLeft(text, "0") {
+		return 0, false
+	}
+	return id, true
+}
+
+func escapeLike(text string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
+}
+
+// Counts returns how many requests there are in each status.
+func (s *Store) Counts(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM leads GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[status] = count
+	}
+	return out, rows.Err()
+}
+
+// Entry is one line of a request's feed: a message, a note, or something that happened to it.
+type Entry struct {
+	At        time.Time
+	Kind      string // message | note | event
+	Direction string // in | out, for messages
+	Channel   string
+	Author    string
+	Body      string
+	Delivery  string // queued | sent | failed, for answers
+	Action    string // for events: created | status | assigned…
+	From, To  string // statuses, for events
+}
+
+// Card is everything about one request.
+type Card struct {
+	Lead            *Lead
+	Assignee        string
+	AssignedAt      sql.NullTime
+	FirstResponseAt sql.NullTime
+	RejectReason    string
+	Feed            []Entry
+}
+
+// Card reads a request with its conversation and history, oldest first.
+func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
+	lead, err := s.Get(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	card := &Card{Lead: lead}
+	var assignee, reason sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT assignee, assigned_at, first_response_at, reject_reason FROM leads WHERE id = ?`, id).
+		Scan(&assignee, &card.AssignedAt, &card.FirstResponseAt, &reason); err != nil {
+		return nil, err
+	}
+	card.Assignee, card.RejectReason = assignee.String, reason.String
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT created_at, IF(direction = 'note', 'note', 'message'), direction, channel, COALESCE(author, ''), body, COALESCE(delivery, ''), '', '', ''
+		  FROM lead_messages WHERE lead_id = ?
+		UNION ALL
+		SELECT created_at, 'event', '', '', actor, COALESCE(details, ''), '', action, COALESCE(from_status, ''), COALESCE(to_status, '')
+		  FROM lead_events WHERE lead_id = ?
+		ORDER BY 1`, id, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entry Entry
+		if err := rows.Scan(&entry.At, &entry.Kind, &entry.Direction, &entry.Channel, &entry.Author, &entry.Body, &entry.Delivery,
+			&entry.Action, &entry.From, &entry.To); err != nil {
+			return nil, err
+		}
+		card.Feed = append(card.Feed, entry)
+	}
+	return card, rows.Err()
+}
+
+// Take assigns a new request to whoever asks first. A second «take» — from the admin area or
+// from the bot, a moment later — gets ErrAlreadyTaken and learns who was faster.
+func (s *Store) Take(ctx context.Context, id int64, actor string) (takenBy string, err error) {
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// The WHERE clause is the lock: of two racing updates only one finds the row still «new».
+	result, err := tx.ExecContext(ctx, `UPDATE leads SET status = 'in_progress', assignee = ?, assigned_at = ?, updated_at = ? WHERE id = ? AND status = 'new'`,
+		actor, now, now, id)
+	if err != nil {
+		return "", err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		var status string
+		var assignee sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT status, assignee FROM leads WHERE id = ?`, id).Scan(&status, &assignee); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", ErrNotFound
+			}
+			return "", err
+		}
+		return assignee.String, ErrAlreadyTaken
+	}
+	if err := event(ctx, tx, id, now, actor, "assigned", StatusNew, StatusInProgress, ""); err != nil {
+		return "", err
+	}
+	return actor, tx.Commit()
+}
+
+// SetStatus moves a request along the allowed transitions and writes it into the history.
+func (s *Store) SetStatus(ctx context.Context, id int64, actor, status, reason string) error {
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var current string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&current); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if current == status {
+		return nil
+	}
+	allowed := false
+	for _, next := range transitions[current] {
+		allowed = allowed || next == status
+	}
+	if !allowed {
+		return fmt.Errorf("%w: %s → %s", ErrBadTransition, current, status)
+	}
+
+	closed := sql.NullTime{Time: now, Valid: status == StatusDone || status == StatusRejected}
+	reason = cut(strings.TrimSpace(reason), 255)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE leads SET status = ?, updated_at = ?, closed_at = ?, reject_reason = IF(? = 'rejected', NULLIF(?, ''), reject_reason),
+		       assignee = IF(? = 'in_progress' AND assignee IS NULL, ?, assignee), assigned_at = IF(? = 'in_progress' AND assigned_at IS NULL, ?, assigned_at)
+		WHERE id = ?`, status, now, closed, status, reason, status, actor, status, now, id); err != nil {
+		return err
+	}
+	if err := event(ctx, tx, id, now, actor, "status", current, status, reason); err != nil {
+		return err
+	}
+	// A request rescued from spam was never announced to anybody: do it now.
+	if current == StatusSpam && status == StatusNew {
+		for _, channel := range []string{outbox.ChannelEmail, outbox.ChannelTelegram} {
+			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: channel, Kind: TaskNotify, LeadID: id,
+				DedupeKey: fmt.Sprintf("lead:%d:notify:%s", id, channel), Payload: TaskPayload{LeadID: id}}); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// AddNote stores an internal comment: the client never sees it, colleagues do.
+func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error {
+	text = clean(text, true)
+	if text == "" {
+		return ErrEmptyText
+	}
+	now := s.now().UTC()
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body)
+		SELECT id, ?, 'note', 'admin', ?, ? FROM leads WHERE id = ?`, now, actor, cut(text, 8000), id)
+	if err != nil {
+		return err
+	}
+	if inserted, _ := result.RowsAffected(); inserted == 0 {
+		return ErrNotFound
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id)
+	return err
+}
+
+// Reply stores an answer to the client and queues its delivery through the channel the client
+// chose (brief B10.4). The request then waits for the client; the first answer stops the clock
+// of «time to first reaction». A phone call cannot be delivered by a machine: for those the
+// text is the record of the call.
+func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messageID int64, err error) {
+	text = clean(text, true)
+	if text == "" {
+		return 0, ErrEmptyText
+	}
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status, method string
+	if err := tx.QueryRowContext(ctx, `SELECT status, contact_method FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&status, &method); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	channel, delivery := method, sql.NullString{String: "queued", Valid: true}
+	if method == MethodPhone {
+		delivery = sql.NullString{} // nothing to deliver: the call has happened
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, delivery) VALUES (?, ?, 'out', ?, ?, ?, ?)`,
+		id, now, channel, actor, cut(text, 8000), delivery)
+	if err != nil {
+		return 0, err
+	}
+	if messageID, err = result.LastInsertId(); err != nil {
+		return 0, err
+	}
+
+	next := StatusWaitingClient
+	if status == StatusDone || status == StatusRejected || status == StatusSpam {
+		next = status // an answer to a closed request does not reopen it
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE leads SET status = ?, updated_at = ?, first_response_at = COALESCE(first_response_at, ?),
+		       assignee = COALESCE(assignee, ?), assigned_at = COALESCE(assigned_at, ?) WHERE id = ?`, next, now, now, actor, now, id); err != nil {
+		return 0, err
+	}
+	if err := event(ctx, tx, id, now, actor, "replied", status, next, ""); err != nil {
+		return 0, err
+	}
+	if method != MethodPhone {
+		outboxChannel := outbox.ChannelEmail
+		if method == MethodTelegram {
+			outboxChannel = outbox.ChannelTelegram
+		}
+		if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskReply, LeadID: id,
+			DedupeKey: fmt.Sprintf("lead:%d:reply:%d", id, messageID), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
+			return 0, err
+		}
+	}
+	return messageID, tx.Commit()
+}
+
+// Message returns the text of a stored answer, for the sender that delivers it.
+func (s *Store) Message(ctx context.Context, leadID, messageID int64) (body, author string, err error) {
+	var who sql.NullString
+	err = s.db.QueryRowContext(ctx, `SELECT body, author FROM lead_messages WHERE id = ? AND lead_id = ? AND direction = 'out'`, messageID, leadID).Scan(&body, &who)
+	return body, who.String, err
+}
+
+// MarkDelivery records what became of an answer: sent or failed.
+func (s *Store) MarkDelivery(ctx context.Context, messageID int64, delivery, emailMessageID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET delivery = ?, email_message_id = COALESCE(NULLIF(?, ''), email_message_id) WHERE id = ?`,
+		delivery, emailMessageID, messageID)
+	return err
+}
+
+// ThreadIDs returns the Message-IDs of the letters already sent about a request, oldest first,
+// so that an answer lands in the same thread of the client's mail program.
+func (s *Store) ThreadIDs(ctx context.Context, leadID int64) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT email_message_id FROM lead_messages WHERE lead_id = ? AND email_message_id IS NOT NULL ORDER BY id`, leadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// Delete removes everything about a request — the request, the conversation, the history, the
+// notifications still queued — when the client asks for it (brief B10.6). What remains is one
+// line in the audit log of the admin area, written by the caller: that K-0042 was deleted, by
+// whom and when, nothing about the person.
+func (s *Store) Delete(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM outbox WHERE lead_id = ?`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM leads WHERE id = ?`, id) // messages and events go with it (ON DELETE CASCADE)
+	if err != nil {
+		return err
+	}
+	if deleted, _ := result.RowsAffected(); deleted == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func event(ctx context.Context, tx *sql.Tx, id int64, now time.Time, actor, action, from, to, details string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO lead_events (lead_id, created_at, actor, action, from_status, to_status, details) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, now, actor, action, null(from), null(to), null(cut(details, 255)))
+	return err
+}
+
+// --- the funnel ----------------------------------------------------------------------------------
+
+// Funnel is the summary above the list (brief B10.6).
+type Funnel struct {
+	Total, New, InProgress, Waiting, Done, Rejected, Spam int
+	// FirstResponse is the median time from a request to the first answer; zero when unknown.
+	FirstResponse time.Duration
+	Sources       []SourceStat
+}
+
+// SourceStat says how requests of one origin ended.
+type SourceStat struct {
+	Source   string // ads | search | social | direct | other; "" when the visit is unknown
+	Campaign string // utm_campaign, so that advertising campaigns can be told apart
+	Requests int
+	Done     int
+}
+
+// Funnel counts the requests created in [from, to).
+func (s *Store) Funnel(ctx context.Context, from, to time.Time) (*Funnel, error) {
+	out := &Funnel{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(status = 'new'), 0), COALESCE(SUM(status = 'in_progress'), 0), COALESCE(SUM(status = 'waiting_client'), 0),
+		       COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status = 'rejected'), 0), COALESCE(SUM(status = 'spam'), 0)
+		FROM leads WHERE created_at >= ? AND created_at < ?`, from.UTC(), to.UTC()).
+		Scan(&out.Total, &out.New, &out.InProgress, &out.Waiting, &out.Done, &out.Rejected, &out.Spam)
+	if err != nil {
+		return nil, err
+	}
+
+	// The median, not the mean: one request answered after a holiday must not spoil the number.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT TIMESTAMPDIFF(SECOND, created_at, first_response_at) AS seconds FROM leads
+		WHERE created_at >= ? AND created_at < ? AND first_response_at IS NOT NULL AND status <> 'spam' ORDER BY seconds`, from.UTC(), to.UTC())
+	if err != nil {
+		return nil, err
+	}
+	var seconds []int64
+	for rows.Next() {
+		var value int64
+		if err := rows.Scan(&value); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		seconds = append(seconds, value)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(seconds) > 0 {
+		out.FirstResponse = time.Duration(seconds[len(seconds)/2]) * time.Second
+	}
+
+	sources, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(source, '') AS origin, COALESCE(utm_campaign, '') AS campaign, COUNT(*) AS requests, COALESCE(SUM(status = 'done'), 0)
+		FROM leads WHERE created_at >= ? AND created_at < ? AND status <> 'spam'
+		GROUP BY origin, campaign ORDER BY requests DESC, origin, campaign LIMIT 8`, from.UTC(), to.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer sources.Close()
+	for sources.Next() {
+		var stat SourceStat
+		if err := sources.Scan(&stat.Source, &stat.Campaign, &stat.Requests, &stat.Done); err != nil {
+			return nil, err
+		}
+		out.Sources = append(out.Sources, stat)
+	}
+	return out, sources.Err()
+}
+
+// Export streams all requests matching the filter, oldest first, as rows of text.
+func (s *Store) Export(ctx context.Context, fn func(row []string) error) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, created_at, status, COALESCE(assignee, ''), name, contact_method, contact_value, direction, COALESCE(budget, ''),
+		       COALESCE(timeline, ''), lang, description, COALESCE(source, ''), COALESCE(referrer_host, ''), COALESCE(utm_source, ''),
+		       COALESCE(utm_campaign, ''), COALESCE(country, ''), COALESCE(device, ''), spam_score,
+		       COALESCE(first_response_at, ''), COALESCE(closed_at, '')
+		FROM leads ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if err := fn([]string{"number", "created_at_utc", "status", "assignee", "name", "contact_method", "contact", "direction", "budget", "timeline",
+		"lang", "description", "source", "referrer", "utm_source", "utm_campaign", "country", "device", "spam_score", "first_response_at_utc", "closed_at_utc"}); err != nil {
+		return err
+	}
+	raw := make([]sql.RawBytes, 21)
+	targets := make([]any, len(raw))
+	for i := range raw {
+		targets[i] = &raw[i]
+	}
+	for rows.Next() {
+		if err := rows.Scan(targets...); err != nil {
+			return err
+		}
+		line := make([]string, len(raw))
+		for i, cell := range raw {
+			line[i] = string(cell)
+		}
+		var id int64
+		_, _ = fmt.Sscan(line[0], &id)
+		line[0] = Number(id)
+		if err := fn(line); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// --- ready-made answers --------------------------------------------------------------------------
+
+// Template is a ready-made answer or refusal, editable in the admin area.
+type Template struct {
+	ID    int64
+	Kind  string // reply | reject
+	Lang  string
+	Title string
+	Body  string
+}
+
+// Templates lists the templates of a kind ("" = all) in the order of the editor.
+func (s *Store) Templates(ctx context.Context, kind string) ([]Template, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, lang, title, body FROM reply_templates WHERE (? = '' OR kind = ?) ORDER BY kind, lang, position, id`, kind, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Template
+	for rows.Next() {
+		var item Template
+		if err := rows.Scan(&item.ID, &item.Kind, &item.Lang, &item.Title, &item.Body); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// SaveTemplate adds a template (ID 0) or changes one.
+func (s *Store) SaveTemplate(ctx context.Context, item Template) error {
+	item.Title, item.Body = clean(item.Title, false), clean(item.Body, true)
+	if item.Title == "" || item.Body == "" {
+		return ErrEmptyText
+	}
+	if item.Kind != "reply" && item.Kind != "reject" {
+		return errors.New("a template is a reply or a reject")
+	}
+	if !languages[item.Lang] {
+		return errors.New("unknown language of a template")
+	}
+	now := s.now().UTC()
+	if item.ID == 0 {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO reply_templates (kind, lang, position, title, body, updated_at)
+			SELECT ?, ?, COALESCE(MAX(position), 0) + 1, ?, ?, ? FROM reply_templates WHERE kind = ? AND lang = ?`,
+			item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.Kind, item.Lang)
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE reply_templates SET kind = ?, lang = ?, title = ?, body = ?, updated_at = ? WHERE id = ?`,
+		item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.ID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteTemplate removes a template.
+func (s *Store) DeleteTemplate(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM reply_templates WHERE id = ?`, id)
+	return err
+}
+
+// FillTemplate puts the client's name and the number of the request into a template.
+func FillTemplate(body string, lead *Lead) string {
+	return strings.NewReplacer("{name}", lead.Name, "{id}", "#"+lead.Number()).Replace(body)
+}

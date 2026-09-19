@@ -18,6 +18,8 @@ import (
 
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 )
 
@@ -52,6 +54,12 @@ type Options struct {
 	Traffic   TrafficReports
 	System    SystemStatus
 	LogPolled func() time.Time
+
+	// Leads are the requests from the site's form; Form gives the names of their directions.
+	// Kick tells the outbox worker that there is something to deliver right now.
+	Leads *leads.Store
+	Form  func() config.Form
+	Kick  func()
 }
 
 // Handler serves the admin area.
@@ -69,6 +77,12 @@ func New(opts Options) (*Handler, error) {
 	if opts.LogPolled == nil {
 		opts.LogPolled = func() time.Time { return time.Time{} }
 	}
+	if opts.Kick == nil {
+		opts.Kick = func() {}
+	}
+	if opts.Form == nil {
+		opts.Form = func() config.Form { return config.Form{} }
+	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
 		"path": func(parts ...string) string { return opts.Prefix + strings.Join(parts, "") },
@@ -80,16 +94,22 @@ func New(opts Options) (*Handler, error) {
 			}
 			return template.URL(opts.Prefix + path + "?" + query) //nolint:gosec // query comes from url.Values.Encode
 		},
-		"time":     func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
-		"clock":    func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
-		"day":      func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
-		"duration": func(ms any) string { return duration(toInt64(ms)) },
-		"elapsed":  func(d time.Duration) string { return duration(d.Milliseconds()) },
-		"bytes":    func(value any) string { return formatBytes(toInt64(value)) },
-		"count":    func(value any) string { return formatCount(toInt64(value)) },
-		"ago":      func(t time.Time) string { return ago(time.Since(t)) },
-		"meter":    meter,
-		"usage":    usage,
+		"time":       func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		"clock":      func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
+		"day":        func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
+		"duration":   func(ms any) string { return duration(toInt64(ms)) },
+		"elapsed":    func(d time.Duration) string { return duration(d.Milliseconds()) },
+		"bytes":      func(value any) string { return formatBytes(toInt64(value)) },
+		"count":      func(value any) string { return formatCount(toInt64(value)) },
+		"ago":        func(t time.Time) string { return ago(time.Since(t)) },
+		"meter":      meter,
+		"usage":      usage,
+		"statusName": named(statusNames, "—"),
+		"methodName": named(methodNames, "—"),
+		"direction":  func(id string) string { return h.directionName(id) },
+		"safeURL": func(link string) template.URL { // links built by this package from validated contacts
+			return template.URL(link) //nolint:gosec // see leadCard: mailto:, https://t.me/, tel: of a validated value
+		},
 		"pct":      formatPercent,
 		"ring":     ring,
 		"bar":      bar,
@@ -105,7 +125,7 @@ func New(opts Options) (*Handler, error) {
 			return [...]string{"accent", "cyan", "pink"}[index%3]
 		},
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "account", "error"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "templates", "account", "error"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -135,6 +155,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/visits", h.private(h.visits))
 	mux.Handle("GET "+p+"/visits/{id}", h.private(h.visit))
 	mux.Handle("GET "+p+"/export/{table}", h.private(h.export))
+	mux.Handle("GET "+p+"/leads", h.private(h.leadsList))
+	mux.Handle("GET "+p+"/leads/export.csv", h.private(h.leadsExport))
+	mux.Handle("GET "+p+"/leads/{id}", h.private(h.leadCard))
+	mux.Handle("POST "+p+"/leads/{id}/status", h.private(h.leadStatus))
+	mux.Handle("POST "+p+"/leads/{id}/note", h.private(h.leadNote))
+	mux.Handle("POST "+p+"/leads/{id}/reply", h.private(h.leadReply))
+	mux.Handle("POST "+p+"/leads/{id}/delete", h.private(h.leadDelete))
+	mux.Handle("GET "+p+"/templates", h.private(h.templatesPage))
+	mux.Handle("POST "+p+"/templates", h.private(h.templateSave))
 	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
 	mux.Handle("GET "+p+"/status", h.private(h.status))
 	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
@@ -243,18 +272,24 @@ func (h *Handler) clearCookie(w http.ResponseWriter) {
 
 // view is what every template gets.
 type view struct {
-	Title   string
-	Nav     string
-	Session *auth.Session
-	Version string
-	Flash   string // a message about what just happened
-	Error   string
-	Data    any
+	Title    string
+	Nav      string
+	NewLeads int // requests nobody has taken yet: the number next to «Заявки» in the menu
+	Session  *auth.Session
+	Version  string
+	Flash    string // a message about what just happened
+	Error    string
+	Data     any
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
 	v.Session = sessionOf(r)
 	v.Version = h.opts.Version
+	if v.Session != nil && h.opts.Leads != nil {
+		if counts, err := h.opts.Leads.Counts(r.Context()); err == nil {
+			v.NewLeads = counts[leads.StatusNew]
+		}
+	}
 	if v.Flash == "" {
 		v.Flash = flashText[r.URL.Query().Get("ok")]
 	}
@@ -273,6 +308,13 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"totp-off": "Двухфакторная аутентификация выключена.",
 	"revoked":  "Сеанс завершён.",
 	"rebuild":  "Пересборка запрошена: она начнётся в течение нескольких секунд и займёт около минуты.",
+
+	"lead-status":      "Статус изменён.",
+	"lead-note":        "Заметка сохранена.",
+	"lead-reply":       "Ответ сохранён и поставлен в очередь на отправку.",
+	"lead-deleted":     "Данные клиента удалены. В журнале осталась только запись об удалении.",
+	"template-saved":   "Шаблон сохранён.",
+	"template-deleted": "Шаблон удалён.",
 }
 
 func (h *Handler) attemptMeta(r *http.Request) auth.Attempt {

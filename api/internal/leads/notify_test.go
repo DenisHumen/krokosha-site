@@ -3,6 +3,7 @@ package leads
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -226,4 +227,74 @@ func TestMailerRefusesWhatItCannotDo(t *testing.T) {
 			t.Errorf("%s: %v, want a permanent error", name, err)
 		}
 	}
+}
+
+func TestAnswersReachTheClientInOneThread(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	store := NewStore(f.db, func() time.Time { return f.now })
+	mailer := &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1",
+		From: netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"}, NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form: formWithLabels,
+	}
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, mailer)
+	ctx := context.Background()
+
+	id := f.seed(nil)
+	first, err := store.Reply(ctx, id, "denis", "Спасибо, изучу и отвечу до конца дня.\n\n<b>Без разметки</b>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var answer mailtest.Received
+	for _, letter := range smtp.Messages() {
+		if message, _ := letter.Message(); strings.HasPrefix(subject(t, message.Header), "Re: ") {
+			answer = letter
+		}
+	}
+	if len(answer.To) != 1 || answer.To[0] != "Ivan.Petrov@company.com" {
+		t.Fatalf("the answer went to %v", answer.To)
+	}
+	header, text, html := parts(t, answer)
+	if got := subject(t, header); got != "Re: Заявка #K-0001 принята — krokosha.xyz" {
+		t.Errorf("subject = %q", got)
+	}
+	// It continues the thread the confirmation started.
+	if header.Get("In-Reply-To") != "<lead-1.autoreply@krokosha.xyz>" || header.Get("Message-Id") != fmt.Sprintf("<lead-1.reply-%d@krokosha.xyz>", first) {
+		t.Errorf("thread headers: In-Reply-To %q, Message-ID %q", header.Get("In-Reply-To"), header.Get("Message-Id"))
+	}
+	if !strings.Contains(text, "Спасибо, изучу и отвечу до конца дня.") || !strings.Contains(text, "Denis Humen") ||
+		!strings.Contains(html, "&lt;b&gt;Без разметки&lt;/b&gt;") || strings.Contains(html, "<b>Без") {
+		t.Errorf("the answer:\n%s\n%s", text, html)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM lead_messages WHERE id = %d AND delivery = 'sent' AND email_message_id IS NOT NULL`, first)); n != 1 {
+		t.Error("the answer is not marked as sent")
+	}
+
+	// The next answer points at the previous one; an address that bounces for good marks the answer failed.
+	second, _ := store.Reply(ctx, id, "denis", "Коммерческое предложение во вложении.")
+	smtp.RejectWith("550 5.1.1 no such user")
+	if _, err := worker.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM lead_messages WHERE id = %d AND delivery = 'failed'`, second)); n != 1 {
+		t.Error("a bounced answer is not marked as failed")
+	}
+	smtp.RejectWith("")
+	third, _ := store.Reply(ctx, id, "denis", "Пробую ещё раз.")
+	if _, err := worker.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	letters := smtp.Messages()
+	last, _ := letters[len(letters)-1].Message()
+	if want := fmt.Sprintf("<lead-1.reply-%d@krokosha.xyz>", first); last.Header.Get("In-Reply-To") != want || !strings.Contains(last.Header.Get("References"), "<lead-1.autoreply@krokosha.xyz>") {
+		t.Errorf("the third answer: In-Reply-To %q, References %q", last.Header.Get("In-Reply-To"), last.Header.Get("References"))
+	}
+	_ = third
 }

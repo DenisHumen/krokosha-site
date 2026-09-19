@@ -26,7 +26,11 @@
   function line(item) {
     var row = document.createElement('li');
     row.className = 'is-new';
-    [['time', item.time, ''], ['span', item.path, 'feed-path'], ['span', item.text, 'feed-text']].forEach(function (part) {
+    [
+      ['time', item.time, ''],
+      ['span', item.path, 'feed-path'],
+      ['span', item.text, 'feed-text'],
+    ].forEach(function (part) {
       var node = document.createElement(part[0]);
       node.textContent = part[1];
       if (part[2]) node.className = part[2];
@@ -66,4 +70,101 @@
       say('Переподключение…');
     }
   };
+})();
+
+// The board of requests: a card dragged to another column changes its status. The server decides
+// whether that is allowed (and who took a request first); if it says no, the card goes back and
+// the reason is shown. Without this script the same buttons are on the card's own page.
+(function () {
+  'use strict';
+
+  var board = document.querySelector('[data-board]');
+  if (!board || !window.fetch) return;
+
+  var state = document.getElementById('board-state');
+  var dragged = null;
+
+  function say(message) {
+    if (!state) return;
+    state.textContent = message;
+    state.hidden = !message;
+  }
+
+  function recount() {
+    Array.prototype.forEach.call(board.querySelectorAll('[data-status]'), function (column) {
+      var count = column.querySelector('[data-count]');
+      if (count) count.textContent = column.querySelectorAll('[data-lead]').length;
+    });
+  }
+
+  function clearTargets(except) {
+    Array.prototype.forEach.call(board.querySelectorAll('.is-target'), function (column) {
+      if (column !== except) column.classList.remove('is-target');
+    });
+  }
+
+  board.addEventListener('dragstart', function (event) {
+    var card = event.target.closest && event.target.closest('[data-lead]');
+    if (!card) return;
+    dragged = card;
+    card.classList.add('is-dragged');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', card.getAttribute('data-lead'));
+  });
+
+  board.addEventListener('dragend', function () {
+    if (dragged) dragged.classList.remove('is-dragged');
+    dragged = null;
+    clearTargets(null);
+  });
+
+  board.addEventListener('dragover', function (event) {
+    var column = event.target.closest && event.target.closest('[data-status]');
+    if (!column || !dragged) return;
+    event.preventDefault();
+    clearTargets(column);
+    column.classList.add('is-target');
+  });
+
+  board.addEventListener('drop', function (event) {
+    var column = event.target.closest && event.target.closest('[data-status]');
+    var card = dragged;
+    if (!column || !card) return;
+    event.preventDefault();
+    var from = card.closest('[data-status]');
+    if (from === column) return;
+
+    var body = new URLSearchParams();
+    body.set('csrf', board.getAttribute('data-csrf'));
+    body.set('status', column.getAttribute('data-status'));
+    column.querySelector('.board-cards').appendChild(card);
+    recount();
+    say('');
+
+    function back(message) {
+      from.querySelector('.board-cards').appendChild(card);
+      recount();
+      say(message);
+    }
+
+    fetch(board.getAttribute('data-action') + card.getAttribute('data-lead') + '/status', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    })
+      .then(function (response) {
+        return response
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (result) {
+            if (!response.ok || !result.ok)
+              back(result.error || 'Не получилось изменить статус. Обновите страницу.');
+          });
+      })
+      .catch(function () {
+        back('Нет связи с сервером. Обновите страницу.');
+      });
+  });
 })();
