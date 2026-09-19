@@ -329,12 +329,12 @@ check "the token is in the settings file only" bash -c "grep -q '^TELEGRAM_BOT_T
 check "…and never in the service's log" bash -c "! journalctl -u krokosha-api.service --no-pager | grep -qF '$BOT_TOKEN'"
 webhook_is_set() { [[ $(bot_called setWebhook) -ge 1 ]]; }
 check "the bot registered a webhook with Telegram" wait_for 30 webhook_is_set
+# The service started more than once while the installer worked: the last registration counts.
 webhook=$(python3 - "$BOT_CALLS" <<'PY'
 import json, sys
-for line in open(sys.argv[1], encoding="utf-8"):
-    call = json.loads(line)
-    if call["method"] == "setWebhook":
-        print(call["params"]["url"], call["params"]["secret_token"])
+calls = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+last = [call["params"] for call in calls if call["method"] == "setWebhook"][-1]
+print(last["url"], last["secret_token"])
 PY
 )
 webhook_url=${webhook% *} webhook_secret=${webhook#* }
