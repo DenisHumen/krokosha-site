@@ -43,8 +43,17 @@ type Env struct {
 	Mail Mail
 	// Retention is how long requests are kept (brief B10.7).
 	Retention Retention
+	// Telegram is the bot requests are worked with in (brief B10.3). Without a token there is none.
+	Telegram Telegram
 
 	LogLevel string
+}
+
+// Telegram holds the settings of the bot.
+type Telegram struct {
+	Token string // TELEGRAM_BOT_TOKEN, from @BotFather; lives in /etc/krokosha/env and nowhere else
+	Mode  string // TELEGRAM_MODE: webhook (Telegram calls the site, the default) | polling (the site asks Telegram)
+	API   string // TELEGRAM_API_URL: where the Bot API is; only tests and staging point elsewhere
 }
 
 // Retention holds the rule for old requests. The privacy page promises 24 months: a longer
@@ -71,6 +80,8 @@ type MySQL struct {
 	User     string
 	Password string
 }
+
+var reBotToken = regexp.MustCompile(`^[0-9]{5,}:[A-Za-z0-9_-]{30,}$`)
 
 var reAdminPath = regexp.MustCompile(`^/[A-Za-z0-9_-]{4,64}$`)
 
@@ -101,6 +112,11 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 			Password: get("SMTP_PASSWORD", ""),
 			From:     get("MAIL_FROM", ""),
 			NotifyTo: get("MAIL_NOTIFY_TO", ""),
+		},
+		Telegram: Telegram{
+			Token: get("TELEGRAM_BOT_TOKEN", ""),
+			Mode:  strings.ToLower(get("TELEGRAM_MODE", "webhook")),
+			API:   strings.TrimRight(get("TELEGRAM_API_URL", ""), "/"),
 		},
 		LogLevel: strings.ToLower(get("KROKOSHA_LOG_LEVEL", "info")),
 		MySQL: MySQL{
@@ -156,6 +172,26 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 		}
 		if _, err := mail.ParseAddress(env.Mail.NotifyTo); err != nil {
 			problems = append(problems, "MAIL_NOTIFY_TO must be an email address when SMTP_ADDR is set")
+		}
+	}
+	if env.Telegram.Token != "" {
+		if !reBotToken.MatchString(env.Telegram.Token) {
+			problems = append(problems, "TELEGRAM_BOT_TOKEN does not look like a token from @BotFather (123456789:AA…)")
+		}
+		switch env.Telegram.Mode {
+		case "polling":
+		case "webhook":
+			// Telegram delivers to HTTPS only.
+			if !strings.HasPrefix(env.SiteURL, "https://") {
+				problems = append(problems, "TELEGRAM_MODE=webhook needs an https:// SITE_URL; use TELEGRAM_MODE=polling")
+			}
+		default:
+			problems = append(problems, "TELEGRAM_MODE must be webhook or polling")
+		}
+		if env.Telegram.API != "" {
+			if parsed, err := url.Parse(env.Telegram.API); err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+				problems = append(problems, "TELEGRAM_API_URL must be an address like https://api.telegram.org")
+			}
 		}
 	}
 	if env.RedisURL != "" {

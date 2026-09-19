@@ -54,6 +54,7 @@ func TestLoadEnvRejects(t *testing.T) {
 		"smtp without a port":            {"SMTP_ADDR", "127.0.0.1", "SMTP_ADDR"},
 		"smtp without a sender":          {"SMTP_ADDR", "127.0.0.1:587", "MAIL_FROM"},
 		"months that are not a number":   {"LEADS_KEEP_MONTHS", "two years", "LEADS_KEEP_MONTHS"},
+		"a bot token that is not one":    {"TELEGRAM_BOT_TOKEN", "my-bot", "TELEGRAM_BOT_TOKEN"},
 		"a negative number of days":      {"LEADS_SPAM_DAYS", "-1", "LEADS_SPAM_DAYS"},
 		"an unknown rule for old data":   {"LEADS_EXPIRED", "archive", "LEADS_EXPIRED"},
 	}
@@ -121,5 +122,34 @@ func TestLoadEnvRetention(t *testing.T) {
 	values["LEADS_KEEP_MONTHS"], values["LEADS_SPAM_DAYS"], values["LEADS_EXPIRED"] = "12", "0", "Delete"
 	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Retention != (Retention{KeepMonths: 12, Delete: true}) {
 		t.Errorf("set by hand: %+v %v", env.Retention, err)
+	}
+}
+
+func TestLoadEnvTelegram(t *testing.T) {
+	values := validEnv()
+	env, err := LoadEnv(lookupFrom(values))
+	if err != nil || env.Telegram.Token != "" {
+		t.Fatalf("without a token there is no bot: %+v %v", env.Telegram, err)
+	}
+	values["TELEGRAM_BOT_TOKEN"] = "123456789:AAH-abcdefghijklmnopqrstuvwxyz_0123456"
+	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Telegram.Mode != "webhook" || env.Telegram.API != "" {
+		t.Fatalf("defaults: %+v %v", env.Telegram, err)
+	}
+	for name, change := range map[string][2]string{
+		"an unknown mode":            {"TELEGRAM_MODE", "push"},
+		"an API address that is not": {"TELEGRAM_API_URL", "telegram"},
+		"a webhook without https":    {"SITE_URL", "http://localhost:8099"},
+	} {
+		broken := validEnv()
+		broken["TELEGRAM_BOT_TOKEN"] = values["TELEGRAM_BOT_TOKEN"]
+		broken[change[0]] = change[1]
+		if _, err := LoadEnv(lookupFrom(broken)); err == nil || !strings.Contains(err.Error(), "TELEGRAM_") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A developer's machine: no HTTPS, so the site asks Telegram instead of being called.
+	values["SITE_URL"], values["TELEGRAM_MODE"], values["TELEGRAM_API_URL"] = "http://localhost:8099", "Polling", "http://127.0.0.1:8081/"
+	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Telegram.Mode != "polling" || env.Telegram.API != "http://127.0.0.1:8081" {
+		t.Errorf("polling on a developer's machine: %+v %v", env.Telegram, err)
 	}
 }

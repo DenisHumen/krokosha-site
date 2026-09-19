@@ -3,6 +3,7 @@
 //
 //	krokosha-cli sync      pull public repositories and the avatar from GitHub
 //	krokosha-cli admin     manage the accounts of the admin area
+//	krokosha-cli bot       the Telegram bot: check the token, invitations, access
 package main
 
 import (
@@ -28,6 +29,7 @@ Usage:
                                into content/generated/ (input of the site build)
   krokosha-cli admin <cmd>     accounts of the admin area: list, create, passwd, disable,
                                enable, totp-reset
+  krokosha-cli bot <cmd>       the Telegram bot: check, invite, users, disable, enable
 
 Run "krokosha-cli <command> -h" for the flags of a command.
 
@@ -55,6 +57,8 @@ func run() int {
 		err = runSync(ctx, args)
 	case "admin":
 		err = runAdmin(ctx, args)
+	case "bot":
+		err = runBot(ctx, args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
