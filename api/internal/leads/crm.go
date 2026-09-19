@@ -274,7 +274,11 @@ func (s *Store) Take(ctx context.Context, id int64, actor string) (takenBy strin
 	if err := event(ctx, tx, id, now, actor, "assigned", StatusNew, StatusInProgress, ""); err != nil {
 		return "", err
 	}
-	return actor, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	s.changed(id)
+	return actor, nil
 }
 
 // SetStatus moves a request along the allowed transitions and writes it into the history.
@@ -324,7 +328,11 @@ func (s *Store) SetStatus(ctx context.Context, id int64, actor, status, reason s
 			}
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed(id)
+	return nil
 }
 
 // AddNote stores an internal comment: the client never sees it, colleagues do.
@@ -343,8 +351,11 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 	if inserted, _ := result.RowsAffected(); inserted == 0 {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id)
-	return err
+	if _, err = s.db.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id); err != nil {
+		return err
+	}
+	s.changed(id)
+	return nil
 }
 
 // Reply stores an answer to the client and queues its delivery through the channel the client
@@ -405,7 +416,11 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 			return 0, err
 		}
 	}
-	return messageID, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	s.changed(id)
+	return messageID, nil
 }
 
 // Message returns the text of a stored answer, for the sender that delivers it.
@@ -448,6 +463,7 @@ func (s *Store) ThreadIDs(ctx context.Context, leadID int64) ([]string, error) {
 //
 // ErrFilesLeft means the database part is done and a file could not be removed right now.
 func (s *Store) Delete(ctx context.Context, id int64) error {
+	s.erasing(ctx, id)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

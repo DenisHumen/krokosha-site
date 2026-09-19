@@ -13,6 +13,7 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/mail"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
@@ -131,31 +132,36 @@ func (m *Mailer) view(lead *Lead, lang string) view {
 		v.TelegramURL = m.TelegramURL(lead)
 	}
 
-	session := lead.Session
-	var source []string
+	v.Source, v.Sections, v.TimeOnSite = VisitSummary(lead.Session)
+	return v
+}
+
+// VisitSummary puts the visit a request came from into words: where from and on what, which
+// sections were looked at, for how long. The letter to the owner and the card in Telegram say
+// the same thing.
+func VisitSummary(session analytics.SessionSummary) (source, sections, timeOnSite string) {
+	var parts []string
 	if name := sourceNames[session.Source]; name != "" {
-		source = append(source, name)
+		parts = append(parts, name)
 	}
 	if session.ReferrerHost != "" {
-		source = append(source, session.ReferrerHost)
+		parts = append(parts, session.ReferrerHost)
 	}
 	if session.UTMCampaign != "" {
-		source = append(source, "utm_campaign="+session.UTMCampaign)
+		parts = append(parts, "utm_campaign="+session.UTMCampaign)
 	} else if session.UTMSource != "" {
-		source = append(source, "utm_source="+session.UTMSource)
+		parts = append(parts, "utm_source="+session.UTMSource)
 	}
 	if session.Country != "" {
-		source = append(source, session.Country)
+		parts = append(parts, session.Country)
 	}
 	if device := strings.TrimSpace(deviceNames[session.Device] + " " + session.Browser + " · " + session.OS); device != "·" {
-		source = append(source, device)
+		parts = append(parts, device)
 	}
-	v.Source = strings.Join(source, " · ")
-	v.Sections = session.SectionsPath()
 	if session.TimeOnSiteMs >= 1000 {
-		v.TimeOnSite = (time.Duration(session.TimeOnSiteMs) * time.Millisecond).Round(time.Second).String()
+		timeOnSite = (time.Duration(session.TimeOnSiteMs) * time.Millisecond).Round(time.Second).String()
 	}
-	return v
+	return strings.Join(parts, " · "), session.SectionsPath(), timeOnSite
 }
 
 var (

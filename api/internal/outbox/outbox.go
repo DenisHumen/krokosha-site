@@ -73,6 +73,27 @@ func IsPermanent(err error) bool {
 	return errors.As(err, &permanent)
 }
 
+type notReadyError struct{ err error }
+
+func (e notReadyError) Error() string { return e.err.Error() }
+func (e notReadyError) Unwrap() error { return e.err }
+
+// NotReady marks «there is nobody to deliver to yet»: the bot has no members so far, the client
+// has not opened the bot. Like a channel that is not configured, the task waits and no attempt
+// is used up — what it waits for depends on people, not on a server coming back.
+func NotReady(err error) error {
+	if err == nil {
+		return nil
+	}
+	return notReadyError{err}
+}
+
+// IsNotReady reports whether err was marked with NotReady.
+func IsNotReady(err error) bool {
+	var notReady notReadyError
+	return errors.As(err, &notReady)
+}
+
 // Pauses between attempts. After the last one the task is given up on: eight tries in two days.
 var backoff = []time.Duration{
 	30 * time.Second, 2 * time.Minute, 10 * time.Minute, 30 * time.Minute,
@@ -152,6 +173,17 @@ func (w *Worker) Kick() {
 	case w.wake <- struct{}{}:
 	default:
 	}
+}
+
+// Hurry makes the waiting tasks of a channel due right now. Tasks that found nobody to deliver
+// to look again only every ten minutes; when somebody appears — the first person joins the bot —
+// there is no reason to make them wait.
+func (w *Worker) Hurry(ctx context.Context, channel string) {
+	if _, err := w.db.ExecContext(ctx, `UPDATE outbox SET next_attempt_at = ? WHERE status = 'pending' AND channel = ? AND next_attempt_at > ?`,
+		w.now().UTC(), channel, w.now().UTC()); err != nil {
+		w.log.Error("outbox: cannot hurry the queue", "channel", channel, "error", err)
+	}
+	w.Kick()
 }
 
 // Run delivers tasks until ctx is cancelled.
@@ -254,6 +286,11 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 		return
 	}
 
+	if IsNotReady(err) {
+		_, _ = w.db.ExecContext(saveCtx, `UPDATE outbox SET status = 'pending', last_error = ?, next_attempt_at = ?, locked_until = NULL WHERE id = ?`,
+			truncate(err.Error(), 500), now.Add(unconfiguredIn), task.ID)
+		return
+	}
 	attempts := task.Attempts + 1
 	message := truncate(err.Error(), 500)
 	if IsPermanent(err) || attempts >= len(backoff) {

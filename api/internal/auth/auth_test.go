@@ -188,7 +188,13 @@ func TestLoginAndSessionLifetime(t *testing.T) {
 	if got, err := f.Authenticate(ctx, token); err != nil || got.CSRFToken != session.CSRFToken {
 		t.Fatalf("Authenticate: %v", err)
 	}
-	if _, err := f.Authenticate(ctx, token[:42]+"A"); !errors.Is(err, ErrNoSession) {
+	// One character is changed — really changed: the last one of such a token is «A» once in
+	// sixteen times, and replacing it with «A» would test nothing.
+	other := "A"
+	if token[42] == 'A' {
+		other = "B"
+	}
+	if _, err := f.Authenticate(ctx, token[:42]+other); !errors.Is(err, ErrNoSession) {
 		t.Error("a token that differs in one character was accepted")
 	}
 

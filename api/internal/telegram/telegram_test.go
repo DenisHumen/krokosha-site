@@ -33,14 +33,16 @@ var (
 )
 
 type fixture struct {
-	t      *testing.T
-	db     *sql.DB
-	api    *tgtest.Server
-	access *Access
-	bot    *Bot
-	now    time.Time
-	audit  []string
-	update int64
+	t       *testing.T
+	db      *sql.DB
+	api     *tgtest.Server
+	access  *Access
+	bot     *Bot
+	now     time.Time
+	audit   []string
+	update  int64
+	kicks   int // how many times the bot told the outbox there is something to send
+	hurried int // how many times it made waiting cards due at once
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -70,6 +72,7 @@ func newFixture(t *testing.T) *fixture {
 			f.audit = append(f.audit, strings.TrimSpace(actor+" "+action+" "+subject+" "+details))
 		},
 	})
+	f.bot.opts.Hurry = func(context.Context) { f.hurried++ }
 	me := User{ID: 123456, IsBot: true, Username: "krokosha_test_bot"}
 	f.bot.me.Store(&me)
 	return f
@@ -353,6 +356,10 @@ func TestJoiningAndManagingAccess(t *testing.T) {
 	welcome := oneText(t, f.says(olena, "/start "+code))
 	if !strings.Contains(welcome, "Доступ открыт, Олена") || strings.Contains(welcome, "/invite") {
 		t.Errorf("the welcome of a member: %q", welcome)
+	}
+	// Requests that came while nobody could receive them go out now, not at the queue's next look.
+	if f.hurried != 1 {
+		t.Errorf("waiting cards were hurried %d times, want once", f.hurried)
 	}
 	if text := oneText(t, f.says(olena, "/help@krokosha_test_bot")); strings.Contains(text, "/users") {
 		t.Errorf("a member is offered the owner's commands: %q", text)

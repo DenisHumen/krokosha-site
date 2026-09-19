@@ -6,11 +6,15 @@ JSON into a log the test reads. Nothing here ever runs on a real server.
 
     mock-telegram.py TOKEN LOG PORT
 """
+import itertools
 import json
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN, LOG, PORT = sys.argv[1], sys.argv[2], int(sys.argv[3])
+MESSAGE_IDS = itertools.count(1000)  # every message has an id of its own, as with the real thing
+LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -33,7 +37,9 @@ class Handler(BaseHTTPRequestHandler):
         if method == "getMe":
             result = {"id": 4242, "is_bot": True, "first_name": "CI", "username": "krokosha_ci_bot"}
         elif method == "sendMessage":
-            result = {"message_id": 1, "date": 0, "chat": {"id": params.get("chat_id", 0), "type": "private"}}
+            with LOCK:
+                message_id = next(MESSAGE_IDS)
+            result = {"message_id": message_id, "date": 0, "chat": {"id": params.get("chat_id", 0), "type": "private"}}
         elif method == "getUpdates":
             result = []
         self.answer(200, {"ok": True, "result": result})
