@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"os"
 	"os/signal"
@@ -22,7 +23,10 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	krokoshamail "github.com/DenisHumen/krokosha-site/api/internal/mail"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
@@ -89,6 +93,28 @@ func run() error {
 	})
 	stats.Register(srv.Mux())
 
+	// Requests from the contact form: stored together with the notifications to send, which a
+	// worker then delivers with retries (brief B10.1, B10.2).
+	form := config.WatchForm(env.ContentDir, log)
+	leadStore := leads.NewStore(pool, nil)
+	deliveries := outbox.NewWorker(pool, log)
+	if env.Mail.SMTPAddr != "" {
+		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
+		notifyTo, _ := mail.ParseAddress(env.Mail.NotifyTo)
+		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname()}
+		deliveries.Register(outbox.ChannelEmail, &leads.Mailer{
+			Store: leadStore, Deliver: smtp.Send, From: *from, NotifyTo: *notifyTo, SiteHost: siteURL.Hostname(),
+			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location,
+		})
+	} else {
+		log.Warn("SMTP_ADDR is not set: notifications about requests wait in the outbox until mail is configured")
+	}
+	leads.NewHandler(leads.Options{
+		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret),
+		Form: form.Current, WWWDir: env.WWWDir,
+		OnCreated: func(*leads.Lead) { deliveries.Kick() },
+	}).Register(srv.Mux())
+
 	// Everything nginx served, bots included: read from its access log (brief B6).
 	accessLog := nginxlog.New(nginxlog.Options{Path: env.AccessLog, DB: pool, Cache: store, Location: location, Log: log})
 	system := sysstatus.New(sysstatus.Options{
@@ -103,6 +129,7 @@ func run() error {
 		Version:    version(),
 		Started:    started,
 		LogPolled:  accessLog.LastPoll,
+		Outbox:     func(ctx context.Context) (outbox.Stats, error) { return outbox.ReadStats(ctx, pool, time.Now()) },
 	})
 
 	panel, err := admin.New(admin.Options{
@@ -128,10 +155,14 @@ func run() error {
 
 	// Background workers outlive the HTTP server by a moment: they flush what is still queued.
 	var workers sync.WaitGroup
-	workers.Add(2)
+	workers.Add(3)
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)
+	}()
+	go func() {
+		defer workers.Done()
+		deliveries.Run(ctx)
 	}()
 	go func() {
 		defer workers.Done()

@@ -21,6 +21,9 @@ type Site struct {
 		User string `yaml:"user"`
 	} `yaml:"github"`
 	Timezone string `yaml:"timezone"`
+	Contacts struct {
+		Form Form `yaml:"form"`
+	} `yaml:"contacts"`
 }
 
 // Projects mirrors content/projects.yaml (without private_projects, which only the site renders).

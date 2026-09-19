@@ -1,0 +1,64 @@
+---
+// «Thank you» — where a visitor lands after sending the contact form WITHOUT JavaScript
+// (with it, the form shows the same message in place). The API serves this very page with the
+// %%…%% marks filled in: the number of the request and the «continue in Telegram» link
+// (api/internal/leads/http.go). Opened directly, the marks stay hidden and the page says a
+// plain «request received».
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import { fill } from '../../i18n/localize.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const { form } = data.site.contacts;
+const { not_found } = data.site;
+
+function message(key: string): string {
+  const value = form.messages[key];
+  if (value === undefined)
+    throw new Error(`content/site.yaml: contacts.form.messages.${key} is missing`);
+  return value;
+}
+
+const generic = message('success_generic');
+const replyPromise =
+  form.reply_within_hours === null
+    ? ''
+    : fill(message('success_reply'), { hours: String(form.reply_within_hours) });
+---
+
+<Base
+  data={data}
+  page="thanks"
+  title={`${generic} — ${data.profile.nickname}`}
+  description={`${generic}. ${message('success_text')}`}
+  noindex
+>
+  <section class="section center" data-slot="thanks">
+    <h1>
+      <span class="thanks-generic %%GENERIC_CLASS%%" data-field="generic">
+        {generic}
+      </span>
+      <span class="thanks-numbered %%NUMBERED_CLASS%%" data-field="numbered">
+        {fill(message('success_title'), { id: '#%%LEAD_NUMBER%%' })}
+      </span>
+    </h1>
+    <p data-field="text">
+      {message('success_text')} {replyPromise}
+    </p>
+    <p class="thanks-telegram %%TELEGRAM_CLASS%%" data-field="telegram">
+      <a class="button button-primary" href="%%TELEGRAM_URL%%" rel="noopener">
+        {message('continue_telegram')}
+      </a>
+    </p>
+    <p>
+      <a class="button" href={localePath(lang)}>
+        {not_found.back}
+      </a>
+    </p>
+  </section>
+</Base>

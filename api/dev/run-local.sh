@@ -17,6 +17,7 @@ export MSYS2_ENV_CONV_EXCL='ADMIN_PATH'
 export KROKOSHA_LISTEN=127.0.0.1:8099 SITE_URL=http://localhost:8099 ADMIN_PATH=/_dev KROKOSHA_LOG_LEVEL=debug
 export MYSQL_ADDR=127.0.0.1:33306 MYSQL_DATABASE=krokosha_dev MYSQL_USER=root MYSQL_PASSWORD=krokosha-test
 export REDIS_URL=redis://127.0.0.1:36379/1 KROKOSHA_CONTENT_DIR=../content
+export APP_SECRET=local-development-secret-0123456789abcdef
 
 # A pretend server: state and release directories, a build report, an access log of two weeks.
 work=${TMPDIR:-/tmp}/krokosha-dev

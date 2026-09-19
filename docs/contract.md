@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.2** (2026-09-18). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]**.
+**Версия 1.3** (2026-09-19). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -8,6 +8,7 @@
 |---|---|
 | 1.1 | `tier` / `archived` / `stale` у проектов, `site.json`, `data-field`, новые секции и треки |
 | 1.2 | **Три языка** (§6): `mock/` разложен по локалям `mock/{en,uk,ru}/`. В `site.json` добавлены `i18n`, `ui`, `not_found`, `projects.labels`, подписи/ошибки/сообщения формы. Реальные Telegram и email |
+| 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
 
 ---
 
@@ -188,6 +189,7 @@
 | `project-<name>` | клик по карточке репозитория |
 | **[v1.1]** `projects-show-all` | раскрытие компактного списка |
 | **[v1.1]** `form-submit` | отправка формы |
+| **[v1.3]** `form-continue-telegram` | «Продолжить в Telegram» после отправки |
 | `egg-<id>` | найдена пасхалка: `egg-konami`, `egg-sudo`, `egg-croc`… |
 | `game-entry` | вход в мини-игру в футере |
 | **[v1.2]** `lang-<code>` | переключение языка: `lang-en`, `lang-uk`, `lang-ru` |
@@ -238,3 +240,51 @@
 - **Плейсхолдеры** в фигурных скобках остаются в строках мока и подставляются при сборке или в браузере: `{id}` (номер заявки `#K-0042`), `{hours}`, `{email}`, `{privacy_link}` (ссылка на `/privacy`), `{year}`. В превью дизайн подставляет примеры сам.
 - Якоря секций (`#networks`, `#servers`, `#devops`…) и `id` элементов **одинаковы на всех языках**.
 - Репозитории GitHub не переводятся: описание остаётся на языке оригинала.
+
+---
+
+## 7. [v1.3] Форма заявки
+
+Форма — единственное место сайта, где разметка связана с бэкендом напрямую: браузер без JavaScript отправляет её обычным POST, и API читает поля по именам. Дизайн свободен во всём, кроме перечисленного ниже. Рабочий пример — `web/src/components/ContactForm.astro` и `web/public/assets/form.js`; проверяется `web/scripts/check-dist.mjs` и `web/tests/e2e/form.spec.ts`.
+
+**Обёртка:** `data-slot="site.contacts.form"`, внутри — `<form method="post" action="/api/leads" data-form data-texts="…">`. Если `form.enabled: false`, блок не выводится совсем.
+
+**Поля** — атрибуты `name` менять нельзя:
+
+| `name` | Что это | Без JavaScript проверяет браузер |
+|---|---|---|
+| `name` | имя | `required`, `maxlength="100"` |
+| `contact_method` | радиокнопки: значения `id` из `form.contact_methods` (`email`, `telegram`, `phone`) | `required` |
+| `contact_value` | сам контакт; скрипт меняет `type` / `placeholder` под выбранный способ | `required` |
+| `direction` | `<select>`: значения — `id` из `form.directions` | `required` |
+| `description` | задача | `required`, `minlength="20"`, `maxlength="4000"` |
+| `budget`, `timeline` | необязательные `<select>`: значение — **порядковый номер** варианта (`0`, `1`…), пустое — «не выбрано» | — |
+| `consent` | чекбокс согласия со ссылкой на `/privacy`, значение `on` | `required` |
+| `lang` | скрытое: язык страницы (`en` / `uk` / `ru`) — на нём клиенту придёт письмо | — |
+| `altcha` | скрытое, пустое: сюда скрипт кладёт решение proof-of-work | — |
+| `website` | **ловушка для роботов**: текстовое поле, которое человек не видит и не достигает с клавиатуры (`tabindex="-1"`, вынесено за экран, **не** `display: none`). Заполнено → заявка молча уходит в спам | — |
+
+**Подписи и ошибки.** У каждого поля — `<label>` из `form.labels.*` (`data-field="labels.<ключ>"`). Рядом с полем — пустой элемент `data-error-for="<name>"` с `role="alert"`: скрипт пишет туда текст из `form.errors.*`. Коды ошибок: `required`, `invalid_email`, `invalid_telegram`, `invalid_phone`, `description_length`, `consent_required`.
+
+**Блоки сообщений** — рядом с формой, скрыты, пока у них нет класса `is-shown` **или** пока на них не указывает адрес (`:target`): посетителя без JavaScript API возвращает на `/<язык>/#form-error-…`, и блок показывается одним CSS.
+
+| `id` | Текст | Когда |
+|---|---|---|
+| `form-error-invalid` | `messages.invalid` | сервер не принял поля |
+| `form-error-rate` | `messages.rate_limited` (подставлен email) | больше 3 заявок в час с одного адреса |
+| `form-error-server` | `messages.server_error` (подставлен email) | всё остальное |
+| `form-success` | заголовок `data-field="title"` (`messages.success_generic`, скрипт заменяет на `messages.success_title` с номером), текст `data-field="text"`, кнопка `data-field="telegram"` (скрыта, пока API не прислал ссылку) | заявка принята; форма при этом скрывается |
+
+**Что делает скрипт** (`/assets/form.js`, подключается как есть — в нём нет ничего о внешнем виде): отключает проверку браузера (`novalidate`) и проверяет поля сам, на языке страницы; при первом касании формы берёт задачу `GET /api/leads/challenge` и решает её, пока человек пишет; отправляет `FormData` на `/api/leads` с `Accept: application/json`. Ответы: `201 {ok, id, reply_within_hours?, telegram_url?}`, `422 {errors: {<name>: <код>}}`, `429`, остальное — ошибка сервера. После успеха — событие `krokosha:lead` на `document` (`detail.id`), на него можно повесить анимацию.
+
+**Страница «спасибо»** — `/thanks/`, `/uk/thanks/`, `/ru/thanks/` (`noindex`). Посетитель без JavaScript попадает на неё после отправки: API берёт собранную страницу из релиза и заменяет метки. Метки обязательны, проверяются при сборке:
+
+| Метка | Где | На что заменяется |
+|---|---|---|
+| `%%LEAD_NUMBER%%` | в тексте `messages.success_title` | `K-0042` |
+| `%%TELEGRAM_URL%%` | `href` кнопки «Продолжить в Telegram» | ссылка на бота или пусто |
+| `%%GENERIC_CLASS%%` | класс заголовка без номера (`data-field="generic"`) | `is-hidden` |
+| `%%NUMBERED_CLASS%%` | класс заголовка с номером (`data-field="numbered"`) | `is-shown` |
+| `%%TELEGRAM_CLASS%%` | класс блока с кнопкой (`data-field="telegram"`) | `is-shown` или пусто |
+
+В собранном виде (без замены) страница должна выглядеть законченной: виден заголовок без номера, заголовок с номером и кнопка Telegram скрыты. CSS: `.thanks-numbered`, `.thanks-telegram` скрыты по умолчанию и показываются с `.is-shown`; `.thanks-generic.is-hidden` скрыт.

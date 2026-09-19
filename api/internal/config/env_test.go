@@ -17,6 +17,7 @@ func validEnv() map[string]string {
 		"SITE_URL":       "https://krokosha.xyz/",
 		"ADMIN_PATH":     "/_k7f3a9/",
 		"MYSQL_PASSWORD": "secret",
+		"APP_SECRET":     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}
 }
 
@@ -49,6 +50,9 @@ func TestLoadEnvRejects(t *testing.T) {
 		"no database password":           {"MYSQL_PASSWORD", " ", "MYSQL_PASSWORD"},
 		"redis url of another scheme":    {"REDIS_URL", "http://127.0.0.1:6379", "REDIS_URL"},
 		"unknown log level":              {"KROKOSHA_LOG_LEVEL", "verbose", "KROKOSHA_LOG_LEVEL"},
+		"a secret one could guess":       {"APP_SECRET", "changeme", "APP_SECRET"},
+		"smtp without a port":            {"SMTP_ADDR", "127.0.0.1", "SMTP_ADDR"},
+		"smtp without a sender":          {"SMTP_ADDR", "127.0.0.1:587", "MAIL_FROM"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -67,7 +71,7 @@ func TestLoadEnvReportsEveryProblemAtOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	for _, want := range []string{"SITE_URL", "ADMIN_PATH", "MYSQL_PASSWORD"} {
+	for _, want := range []string{"SITE_URL", "ADMIN_PATH", "MYSQL_PASSWORD", "APP_SECRET"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %s: %v", want, err)
 		}
@@ -81,5 +85,22 @@ func TestLoadEnvAcceptsLocalhostAndIPv6Loopback(t *testing.T) {
 		if _, err := LoadEnv(lookupFrom(values)); err != nil {
 			t.Errorf("%s: %v", listen, err)
 		}
+	}
+}
+
+func TestLoadEnvMail(t *testing.T) {
+	values := validEnv()
+	values["SMTP_ADDR"], values["SMTP_USER"], values["SMTP_PASSWORD"] = "127.0.0.1:587", "leads@krokosha.xyz", "pw"
+	values["MAIL_FROM"], values["MAIL_NOTIFY_TO"] = "Denis Humen <denis@krokosha.xyz>", "denis@krokosha.xyz"
+	env, err := LoadEnv(lookupFrom(values))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Mail.SMTPAddr != "127.0.0.1:587" || env.Mail.From != "Denis Humen <denis@krokosha.xyz>" || env.Mail.NotifyTo != "denis@krokosha.xyz" {
+		t.Errorf("mail: %+v", env.Mail)
+	}
+	// Mail is optional: without it notifications wait in the outbox.
+	if env, err := LoadEnv(lookupFrom(validEnv())); err != nil || env.Mail.SMTPAddr != "" {
+		t.Errorf("without mail: %+v, %v", env, err)
 	}
 }

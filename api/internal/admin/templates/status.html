@@ -83,6 +83,7 @@
           <div><dt>API</dt><dd><span class="dot dot-ok"></span>версия <span class="mono">{{$s.Version}}</span> · работает {{elapsed $s.Uptime}}</dd></div>
           <div><dt>MySQL</dt><dd>{{if $s.Database.OK}}<span class="dot dot-ok"></span>{{$s.Database.Version}} · {{bytes $s.Database.SizeBytes}} · {{plural $s.Database.Tables "таблица" "таблицы" "таблиц"}}{{else}}<span class="dot dot-error"></span>не отвечает{{end}}</dd></div>
           <div><dt>Redis</dt><dd>{{if eq $s.Redis "ok"}}<span class="dot dot-ok"></span>работает{{else if eq $s.Redis "off"}}<span class="dot"></span>не настроен — всё считается в памяти сервиса{{else}}<span class="dot dot-warn"></span>недоступен — лимиты в памяти сервиса{{end}}</dd></div>
+          <div><dt>Уведомления (outbox)</dt><dd>{{if $s.Outbox.Failed}}<span class="dot dot-error"></span>не доставлено: {{$s.Outbox.Failed}}{{else if $s.Outbox.Pending}}<span class="dot dot-warn"></span>в очереди: {{$s.Outbox.Pending}}{{else}}<span class="dot dot-ok"></span>очередь пуста{{end}}</dd></div>
           <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
         </dl>
         <p class="muted">Почта появится здесь вместе с почтовым сервером.</p>

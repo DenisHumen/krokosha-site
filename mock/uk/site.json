@@ -131,6 +131,8 @@
       "labels": {
         "name": "Ім'я",
         "contact_method": "Як зв'язатися",
+        "contact_value": "Пошта, @нікнейм або номер телефону",
+        "choose": "Оберіть…",
         "direction": "Напрям",
         "description": "Опис задачі",
         "description_hint": "20–4000 символів",
@@ -149,6 +151,9 @@
       },
       "messages": {
         "success_title": "Заявку {id} прийнято",
+        "success_generic": "Заявку прийнято",
+        "success_text": "Дякую! Заявку отримав, незабаром відповім.",
+        "invalid": "Деякі поля заповнено неправильно. Перевірте форму й надішліть ще раз.",
         "success_reply": "Відповім протягом {hours} год.",
         "continue_telegram": "Продовжити в Telegram",
         "server_error": "Не вдалося надіслати заявку. Напишіть на пошту: {email}",

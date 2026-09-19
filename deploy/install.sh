@@ -353,6 +353,8 @@ env_default MYSQL_DATABASE krokosha
 env_default MYSQL_USER krokosha
 env_default MYSQL_PASSWORD "$(openssl rand -hex 24)"
 env_default REDIS_PASSWORD "$(openssl rand -hex 24)"
+# Signs what must not be forged: proof-of-work challenges of the contact form, reply addresses.
+env_default APP_SECRET "$(openssl rand -hex 32)"
 env_set REDIS_URL "redis://:$(env_get REDIS_PASSWORD)@127.0.0.1:6379/0"
 # The admin area hides behind a secret path (brief B6); it is shown at the end of the installation.
 env_set ADMIN_PATH "$ADMIN_PATH"
