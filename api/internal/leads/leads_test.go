@@ -291,6 +291,10 @@ type fixture struct {
 	now     time.Time
 	www     string
 	created []*Lead
+	// Attachments: where they are written, and whether the form of content/site.yaml takes them.
+	files       *Files
+	filesDir    string
+	acceptFiles bool
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -310,12 +314,20 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 
-	f := &fixture{t: t, db: pool, now: noon, www: t.TempDir()}
+	f := &fixture{t: t, db: pool, now: noon, www: t.TempDir(), filesDir: filepath.Join(t.TempDir(), "attachments")}
+	f.files = NewFiles(f.filesDir)
 	clock := func() time.Time { return f.now }
 	store.SetClock(clock)
+	leadStore := NewStore(pool, clock)
+	leadStore.UseFiles(f.files)
+	form := func() config.Form {
+		form := testForm()
+		form.Attachments = f.acceptFiles
+		return form
+	}
 	handler := NewHandler(Options{
-		Store: NewStore(pool, clock), Cache: store, Sessions: noSessions{}, Log: quiet, Secret: secret,
-		Form: testForm, WWWDir: f.www, Now: clock,
+		Store: leadStore, Cache: store, Sessions: noSessions{}, Log: quiet, Secret: secret, Files: f.files,
+		Form: form, WWWDir: f.www, Now: clock,
 		TelegramURL: func(lead *Lead) string { return "https://t.me/krokosha_bot?start=c_" + lead.PublicToken },
 		OnCreated:   func(lead *Lead) { f.created = append(f.created, lead) },
 	})

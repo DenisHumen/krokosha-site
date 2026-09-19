@@ -54,6 +54,11 @@ type Submission struct {
 	// What the spam checks look at, besides the texts above.
 	Honeypot string // a field people never see; bots fill it in
 	Proof    string // the proof-of-work payload («altcha»)
+
+	// Files that came with the form, already checked and written to disk (files.go). A robot's
+	// files are not kept at all: FilesDropped says how many there were.
+	Files        []Upload
+	FilesDropped int
 }
 
 // FieldErrors maps a field of the form to an error code.

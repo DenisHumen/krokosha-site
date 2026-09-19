@@ -53,6 +53,9 @@ func TestLoadEnvRejects(t *testing.T) {
 		"a secret one could guess":       {"APP_SECRET", "changeme", "APP_SECRET"},
 		"smtp without a port":            {"SMTP_ADDR", "127.0.0.1", "SMTP_ADDR"},
 		"smtp without a sender":          {"SMTP_ADDR", "127.0.0.1:587", "MAIL_FROM"},
+		"months that are not a number":   {"LEADS_KEEP_MONTHS", "two years", "LEADS_KEEP_MONTHS"},
+		"a negative number of days":      {"LEADS_SPAM_DAYS", "-1", "LEADS_SPAM_DAYS"},
+		"an unknown rule for old data":   {"LEADS_EXPIRED", "archive", "LEADS_EXPIRED"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -102,5 +105,21 @@ func TestLoadEnvMail(t *testing.T) {
 	// Mail is optional: without it notifications wait in the outbox.
 	if env, err := LoadEnv(lookupFrom(validEnv())); err != nil || env.Mail.SMTPAddr != "" {
 		t.Errorf("without mail: %+v, %v", env, err)
+	}
+}
+
+// The privacy page promises 24 months; the service keeps that promise unless told otherwise.
+func TestLoadEnvRetention(t *testing.T) {
+	env, err := LoadEnv(lookupFrom(validEnv()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Retention != (Retention{KeepMonths: 24, SpamDays: 30}) {
+		t.Errorf("defaults: %+v", env.Retention)
+	}
+	values := validEnv()
+	values["LEADS_KEEP_MONTHS"], values["LEADS_SPAM_DAYS"], values["LEADS_EXPIRED"] = "12", "0", "Delete"
+	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Retention != (Retention{KeepMonths: 12, Delete: true}) {
+		t.Errorf("set by hand: %+v %v", env.Retention, err)
 	}
 }

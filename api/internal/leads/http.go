@@ -10,6 +10,7 @@ import (
 	"html"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -45,6 +46,8 @@ type Options struct {
 	// Form returns the current settings of the form (content/site.yaml is re-read by the caller
 	// when it changes).
 	Form func() config.Form
+	// Files is where attachments are written when the form accepts them; nil — never.
+	Files *Files
 	// WWWDir is where the built site lives: the «thank you» page of the release is filled in
 	// and served to visitors who sent the form without JavaScript.
 	WWWDir string
@@ -139,17 +142,33 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	// Files make a request big; without them a form is a few kilobytes, and no more is read.
+	acceptsFiles := form.Attachments && h.opts.Files != nil
+	limit := int64(maxFormBytes)
+	if acceptsFiles {
+		limit = maxUploadBytes
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	var parseErr error
 	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "multipart/form-data" {
-		parseErr = r.ParseMultipartForm(maxFormBytes) //nolint:gosec // the body is capped by MaxBytesReader above
+		// Files over a quarter of a megabyte wait in temporary files (the service has a /tmp of its own).
+		parseErr = r.ParseMultipartForm(256 << 10) //nolint:gosec // the body is capped by MaxBytesReader above
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 	} else {
 		parseErr = r.ParseForm()
 	}
 	if parseErr != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(parseErr, &tooLarge) {
-			fail(http.StatusRequestEntityTooLarge, "invalid", nil)
+			var fields FieldErrors
+			if acceptsFiles {
+				fields = FieldErrors{"files": ErrFileTooBig.Error()} // nothing else makes a form this big
+			}
+			fail(http.StatusRequestEntityTooLarge, "invalid", fields)
 			return
 		}
 		fail(http.StatusBadRequest, "invalid", nil)
@@ -160,6 +179,13 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sub, fieldErrors := Parse(r.PostFormValue, form)
+	files, fileErr := incomingFiles(r, acceptsFiles)
+	if fileErr != nil {
+		if fieldErrors == nil {
+			fieldErrors = FieldErrors{}
+		}
+		fieldErrors["files"] = fileErr.Error()
+	}
 	if fieldErrors != nil {
 		fail(http.StatusUnprocessableEntity, "invalid", fieldErrors)
 		return
@@ -199,8 +225,18 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		prefix = analytics.TruncateIP(ip)
 	}
 
+	// A robot's files are not worth the disk; everybody else's are written now, and belong to
+	// nobody until the request is stored.
+	if verdict.IsSpam() {
+		sub.FilesDropped = len(files)
+	} else if sub.Files, err = h.saveFiles(files); err != nil {
+		h.opts.Log.Error("cannot store the files of a request", "error", err)
+		fail(http.StatusInternalServerError, "server_error", nil)
+		return
+	}
 	lead, err := h.opts.Store.Create(r.Context(), sub, verdict, session, prefix)
 	if err != nil {
+		h.discard(sub.Files)
 		h.opts.Log.Error("cannot store a request", "error", err)
 		fail(http.StatusInternalServerError, "server_error", nil)
 		return
@@ -225,6 +261,81 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	// Post, redirect, get: reloading the «thank you» page must not send the form again.
 	http.Redirect(w, r, "/api/leads/thanks?t="+url.QueryEscape(lead.PublicToken), http.StatusSeeOther)
+}
+
+// incomingFile is a file of the form that passed the inspection.
+type incomingFile struct {
+	header *multipart.FileHeader
+	kind   string
+}
+
+// incomingFiles checks what came in the «files» field: how many, how big, and whether each is
+// what its name says (Inspect). Nothing is written yet — a request may still turn out to be
+// one too many this hour, or a robot's.
+func incomingFiles(r *http.Request, accepted bool) ([]incomingFile, error) {
+	if r.MultipartForm == nil {
+		return nil, nil
+	}
+	var files []incomingFile
+	for _, header := range r.MultipartForm.File["files"] {
+		if header.Filename == "" && header.Size == 0 {
+			continue // a file field nobody touched: browsers send it empty
+		}
+		files = append(files, incomingFile{header: header})
+	}
+	switch {
+	case len(files) == 0:
+		return nil, nil
+	case !accepted:
+		return nil, ErrNoFilesHere
+	case len(files) > MaxAttachments:
+		return nil, ErrTooManyFiles
+	}
+	for i, file := range files {
+		content, err := file.header.Open()
+		if err != nil {
+			return nil, ErrFileType
+		}
+		kind, err := Inspect(file.header.Filename, file.header.Size, content)
+		_ = content.Close()
+		switch {
+		case errors.Is(err, ErrFileTooBig), errors.Is(err, ErrFileType):
+			return nil, err
+		case err != nil:
+			return nil, ErrFileType // unreadable is as good as unacceptable
+		}
+		files[i].kind = kind
+	}
+	return files, nil
+}
+
+// saveFiles writes inspected files to the attachments directory — all of them or none.
+func (h *Handler) saveFiles(files []incomingFile) ([]Upload, error) {
+	var saved []Upload
+	for _, file := range files {
+		content, err := file.header.Open()
+		if err != nil {
+			h.discard(saved)
+			return nil, err
+		}
+		upload, err := h.opts.Files.Save(file.header.Filename, file.kind, content)
+		_ = content.Close()
+		if err != nil {
+			h.discard(saved)
+			return nil, err
+		}
+		saved = append(saved, upload)
+	}
+	return saved, nil
+}
+
+// discard removes files whose request was not stored after all.
+func (h *Handler) discard(files []Upload) {
+	for _, file := range files {
+		if err := h.opts.Files.Remove(file.StoredAs); err != nil {
+			h.opts.Log.Warn("cannot remove a file of a request that was not stored; the daily sweep will", "error", err)
+		}
+	}
 }
 
 func langPrefix(lang string) string {

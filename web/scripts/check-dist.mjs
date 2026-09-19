@@ -157,6 +157,12 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
     if (!new RegExp(`name="${field}"`).test(form))
       fail(file, `the contact form has no field "${field}"`);
   }
+  // Files travel only in a multipart form: a file field in a plain one sends just the file's name.
+  const fileField = /<input\b[^>]*type="file"[^>]*>/.exec(form)?.[0];
+  if (Boolean(fileField) !== /<form[^>]*enctype="multipart\/form-data"/.test(form))
+    fail(file, 'a file field and enctype="multipart/form-data" come together or not at all');
+  if (fileField && !/name="files"/.test(fileField))
+    fail(file, 'the file field must be called "files": that is what the API reads');
   if (
     !/<input[^>]*name="consent"[^>]*required/.test(form) &&
     !/<input[^>]*required[^>]*name="consent"/.test(form)

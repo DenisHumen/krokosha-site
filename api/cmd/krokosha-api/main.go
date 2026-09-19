@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"syscall"
@@ -98,6 +99,9 @@ func run() error {
 	// worker then delivers with retries (brief B10.1, B10.2).
 	form := config.WatchForm(env.ContentDir, log)
 	leadStore := leads.NewStore(pool, nil)
+	// Files that come with requests live in the data root, outside anything nginx serves.
+	attachments := leads.NewFiles(filepath.Join(env.DataDir, "attachments"))
+	leadStore.UseFiles(attachments)
 	deliveries := outbox.NewWorker(pool, log)
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
@@ -120,7 +124,7 @@ func run() error {
 		}
 	})
 	leads.NewHandler(leads.Options{
-		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret),
+		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret), Files: attachments,
 		Form: form.Current, WWWDir: env.WWWDir,
 		OnCreated: func(*leads.Lead) { deliveries.Kick() },
 	}).Register(srv.Mux())
@@ -168,7 +172,14 @@ func run() error {
 
 	// Background workers outlive the HTTP server by a moment: they flush what is still queued.
 	var workers sync.WaitGroup
-	workers.Add(3)
+	workers.Add(4)
+	go func() {
+		defer workers.Done()
+		leads.Retention{
+			Store: leadStore, Files: attachments, Log: log,
+			KeepMonths: env.Retention.KeepMonths, Delete: env.Retention.Delete, SpamDays: env.Retention.SpamDays,
+		}.Run(ctx)
+	}()
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)

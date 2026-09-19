@@ -7,6 +7,10 @@
     <a class="button button-ghost" href="{{path "/leads"}}">← К списку</a>
   </div>
 
+  {{if $d.Card.AnonymizedAt.Valid}}
+    <p class="notice notice-warn">Заявка обезличена {{time $d.Card.AnonymizedAt.Time}}: срок хранения истёк — имя, контакт, текст, переписка и файлы удалены. Остались дата, статус, направление и источник: из них складывается статистика.</p>
+  {{end}}
+
   <div class="dashboard lead-layout">
     {{/* Left (brief B10.6): who, what — and what can be done. On a phone: this, the conversation, the rest. */}}
     <div class="stack lead-facts">
@@ -15,7 +19,7 @@
         <div class="card-body">
           <dl class="facts">
             <div><dt>Имя</dt><dd>{{$lead.Name}}</dd></div>
-            <div><dt>Контакт ({{methodName $lead.ContactMethod}})</dt><dd><a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a></dd></div>
+            <div><dt>Контакт ({{methodName $lead.ContactMethod}})</dt><dd>{{if $lead.ContactValue}}<a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a>{{else}}—{{end}}</dd></div>
             <div><dt>Направление</dt><dd>{{$d.Direction}}</dd></div>
             <div><dt>Бюджет</dt><dd>{{if $lead.Budget}}{{$lead.Budget}}{{else}}—{{end}}</dd></div>
             <div><dt>Сроки</dt><dd>{{if $lead.Timeline}}{{$lead.Timeline}}{{else}}—{{end}}</dd></div>
@@ -106,6 +110,14 @@
                     <time>{{time .At}}</time>
                   </p>
                   <p class="chat-body">{{.Body}}</p>
+                  {{if .Files}}
+                    {{/* Downloads only: whatever is inside a file, the browser is told to save it, never to show it. */}}
+                    <ul class="chat-files">
+                      {{range .Files}}
+                        <li><a href="{{path "/leads/" (print .LeadID) "/files/" (print .ID)}}" download>{{.Filename}}</a> <span class="muted">{{.Kind}} · {{bytes .Size}}</span></li>
+                      {{end}}
+                    </ul>
+                  {{end}}
                   {{if eq .Delivery "queued"}}<p class="chat-delivery muted">ждёт отправки</p>
                   {{else if eq .Delivery "sent"}}<p class="chat-delivery muted">доставлено</p>
                   {{else if eq .Delivery "failed"}}<p class="chat-delivery chat-failed">не доставлено — см. «Статус системы»</p>{{end}}
@@ -185,7 +197,7 @@
         <h2 class="card-title">Удаление данных</h2>
         <form class="card-body" method="post" action="{{path "/leads/" (print $lead.ID) "/delete"}}">
           <input type="hidden" name="csrf" value="{{$csrf}}" />
-          <p class="muted">По запросу клиента: удаляются заявка, переписка, заметки и история. В журнале останется только запись «#{{$lead.Number}} удалена». Отменить нельзя.</p>
+          <p class="muted">По запросу клиента: удаляются заявка, переписка, файлы, заметки и история. В журнале останется только запись «#{{$lead.Number}} удалена». Отменить нельзя.</p>
           <label for="delete-confirm">Введите номер заявки для подтверждения</label>
           <input id="delete-confirm" name="confirm" autocomplete="off" placeholder="{{$lead.Number}}" required />
           <button class="button button-danger" type="submit">Удалить данные клиента</button>

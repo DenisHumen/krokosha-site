@@ -1091,6 +1091,17 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.chat-files {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px dashed var(--line);
+  font-size: 0.875rem;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
 .chat-delivery {
   margin: 0.3rem 0 0;
   font-size: 0.75rem;

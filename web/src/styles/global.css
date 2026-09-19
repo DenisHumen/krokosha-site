@@ -572,6 +572,18 @@ summary {
   resize: vertical;
 }
 
+/* Rendered only when content/site.yaml lets the form take files. */
+.field input[type='file'] {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
 .field [aria-invalid='true'] {
   border-color: var(--danger);
 }
