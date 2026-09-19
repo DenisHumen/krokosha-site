@@ -353,7 +353,8 @@ check "nobody got in that way" test -z "$(krokosha-cli bot users)"
 check "Telegram's own delivery is accepted" test "$(deliver "$webhook_secret" "$(start_update 2 "$owner_code" 7002 Denis)")" = 200
 owner_joined() { krokosha-cli bot users | grep -qP '^\d+\towner\tactive\tDenis\t'; }
 check "the owner is in — by the one-time invitation" wait_for 20 owner_joined
-check "…and was told so" grep -q 'Доступ открыт, Denis' "$BOT_CALLS"
+owner_welcomed() { grep -q 'Доступ открыт, Denis' "$BOT_CALLS"; }
+check "…and was told so" wait_for 10 owner_welcomed
 check "a second person comes with the same invitation" test "$(deliver "$webhook_secret" "$(start_update 3 "$owner_code" 7003 Mallory)")" = 200
 sleep 2
 check "…and is not let in" test "$(krokosha-cli bot users | wc -l)" = 1

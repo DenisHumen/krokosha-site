@@ -31,14 +31,21 @@ CREATE TABLE IF NOT EXISTS bot_invites (
     KEY idx_bot_invites_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Where the card of a request hangs: when its status changes, the card changes in every chat.
-CREATE TABLE IF NOT EXISTS bot_cards (
+-- Every message the bot sent to the people above about a request. The card — one per chat — is
+-- rewritten when the status changes. And all of them are wiped when the client's data is deleted
+-- or anonymised: what is erased on the server must not live on in Telegram chats. No foreign key,
+-- on purpose: these rows have to outlive their request until the wiping is done.
+CREATE TABLE IF NOT EXISTS bot_messages (
+    id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     lead_id    BIGINT UNSIGNED NOT NULL,
     chat_id    BIGINT          NOT NULL,
     message_id BIGINT          NOT NULL,
+    kind       VARCHAR(8)      NOT NULL,                        -- card | text
     created_at DATETIME(3)     NOT NULL,
-    PRIMARY KEY (lead_id, chat_id),
-    CONSTRAINT fk_bot_cards_lead FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE CASCADE
+    wipe_after DATETIME(3)     NULL,                            -- set when the request is erased; the wiper takes it from there
+    UNIQUE KEY uq_bot_messages (chat_id, message_id),
+    KEY idx_bot_messages_lead (lead_id, kind),
+    KEY idx_bot_messages_wipe (wipe_after)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Clients who pressed «continue in Telegram» (brief B10.5): the bot relays between them and the
