@@ -54,6 +54,11 @@ type Telegram struct {
 	Token string // TELEGRAM_BOT_TOKEN, from @BotFather; lives in /etc/krokosha/env and nowhere else
 	Mode  string // TELEGRAM_MODE: webhook (Telegram calls the site, the default) | polling (the site asks Telegram)
 	API   string // TELEGRAM_API_URL: where the Bot API is; only tests and staging point elsewhere
+	// RemindMinutes (TELEGRAM_REMIND_MINUTES): a new request nobody took for so long is pushed
+	// once more; 0 — never. DigestAt (TELEGRAM_DIGEST_AT): «09:00», the morning list of open
+	// requests by the owner's clock; «off» — never.
+	RemindMinutes int
+	DigestAt      string
 }
 
 // Retention holds the rule for old requests. The privacy page promises 24 months: a longer
@@ -80,6 +85,8 @@ type MySQL struct {
 	User     string
 	Password string
 }
+
+var reClock = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
 var reBotToken = regexp.MustCompile(`^[0-9]{5,}:[A-Za-z0-9_-]{30,}$`)
 
@@ -137,6 +144,14 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 		return value
 	}
 	env.Retention.KeepMonths = number("LEADS_KEEP_MONTHS", 24, 240)
+	env.Telegram.RemindMinutes = number("TELEGRAM_REMIND_MINUTES", 30, 10080)
+	switch digest := strings.ToLower(get("TELEGRAM_DIGEST_AT", "09:00")); {
+	case digest == "off":
+	case reClock.MatchString(digest):
+		env.Telegram.DigestAt = digest
+	default:
+		problems = append(problems, "TELEGRAM_DIGEST_AT must be a time like 09:00, or off")
+	}
 	env.Retention.SpamDays = number("LEADS_SPAM_DAYS", 30, 3650)
 	switch expired := strings.ToLower(get("LEADS_EXPIRED", "anonymize")); expired {
 	case "anonymize":

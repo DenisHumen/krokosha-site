@@ -147,7 +147,7 @@ func (b *Bot) cardButtons(card *leads.Card) Keyboard {
 		return Keyboard{last[1:]}
 	}
 	answer := "💬 Ответить"
-	if card.Lead.ContactMethod == leads.MethodPhone {
+	if card.ReplyVia == leads.MethodPhone {
 		answer = "📞 Итог звонка"
 	}
 	switch card.Lead.Status {
@@ -168,8 +168,14 @@ type sentMessage struct {
 
 // remember writes down a message about a request, so that it can be rewritten and, one day, wiped.
 func (b *Bot) remember(ctx context.Context, leadID, chatID, messageID int64, kind string) {
-	if _, err := b.opts.DB.ExecContext(ctx, `INSERT IGNORE INTO bot_messages (lead_id, chat_id, message_id, kind, created_at) VALUES (?, ?, ?, ?, ?)`,
-		leadID, chatID, messageID, kind, b.opts.Now().UTC()); err != nil {
+	b.rememberAs(ctx, leadID, chatID, messageID, kind, "")
+}
+
+// rememberAs also notes what the message was about («in:17» — the push about the client's message
+// 17), so that a push retried after a failure skips the chats it has reached.
+func (b *Bot) rememberAs(ctx context.Context, leadID, chatID, messageID int64, kind, ref string) {
+	if _, err := b.opts.DB.ExecContext(ctx, `INSERT IGNORE INTO bot_messages (lead_id, chat_id, message_id, kind, ref, created_at) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?)`,
+		leadID, chatID, messageID, kind, ref, b.opts.Now().UTC()); err != nil {
 		b.opts.Log.Error("telegram: cannot remember a sent message — it will not be wiped with the request", "lead", leads.Number(leadID), "error", err)
 	}
 }
@@ -215,8 +221,9 @@ func (b *Bot) Send(ctx context.Context, task outbox.Task) error {
 	case leads.TaskNotify:
 		return b.announce(ctx, payload.LeadID)
 	case leads.TaskReply:
-		// Answers to clients who continued in Telegram: the relay is the next part of the bot.
-		return outbox.NotReady(errors.New("the client has not opened the bot yet"))
+		return b.answerClient(ctx, payload.LeadID, payload.MessageID)
+	case leads.TaskClientMessage:
+		return b.clientWrote(ctx, payload.LeadID, payload.MessageID)
 	default:
 		return outbox.Permanent(fmt.Errorf("the bot does not know the task %q", task.Kind))
 	}

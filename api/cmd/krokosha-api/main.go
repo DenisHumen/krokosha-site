@@ -104,13 +104,22 @@ func run() error {
 	attachments := leads.NewFiles(filepath.Join(env.DataDir, "attachments"))
 	leadStore.UseFiles(attachments)
 	deliveries := outbox.NewWorker(pool, log)
+	// «Continue in Telegram» on the «thank you» page and in the confirmation letter: the link of
+	// the request's own token (brief B10.5). There is one only while the bot is connected.
+	var bot *telegram.Bot
+	telegramURL := func(lead *leads.Lead) string {
+		if bot == nil || bot.Username() == "" {
+			return ""
+		}
+		return "https://t.me/" + bot.Username() + "?start=" + telegram.ClientPrefix + lead.PublicToken
+	}
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
 		notifyTo, _ := mail.ParseAddress(env.Mail.NotifyTo)
 		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname()}
 		deliveries.Register(outbox.ChannelEmail, &leads.Mailer{
 			Store: leadStore, Deliver: smtp.Send, From: *from, NotifyTo: *notifyTo, SiteHost: siteURL.Hostname(),
-			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location,
+			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location, TelegramURL: telegramURL,
 		})
 	} else {
 		log.Warn("SMTP_ADDR is not set: notifications about requests wait in the outbox until mail is configured")
@@ -126,7 +135,7 @@ func run() error {
 	})
 	leads.NewHandler(leads.Options{
 		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret), Files: attachments,
-		Form: form.Current, WWWDir: env.WWWDir,
+		Form: form.Current, WWWDir: env.WWWDir, TelegramURL: telegramURL,
 		OnCreated: func(*leads.Lead) { deliveries.Kick() },
 	}).Register(srv.Mux())
 
@@ -153,12 +162,12 @@ func run() error {
 	// invitations can be prepared first. Without a token nothing talks to Telegram.
 	botAccess := telegram.NewAccess(pool, nil)
 	var botRunner *telegram.Runner
-	var bot *telegram.Bot
 	if env.Telegram.Token != "" {
 		bot = telegram.New(telegram.Options{
 			API: telegram.NewClient(env.Telegram.Token, env.Telegram.API), Access: botAccess, Cache: store, Log: log, SiteURL: env.SiteURL,
 			DB: pool, Leads: leadStore, Form: form.Current, Location: location, AdminURL: env.SiteURL + env.AdminPath, Kick: deliveries.Kick,
-			Hurry: func(ctx context.Context) { deliveries.Hurry(ctx, outbox.ChannelTelegram) },
+			Hurry:       func(ctx context.Context) { deliveries.Hurry(ctx, outbox.ChannelTelegram) },
+			RemindAfter: time.Duration(env.Telegram.RemindMinutes) * time.Minute, DigestAt: env.Telegram.DigestAt,
 			Audit: func(ctx context.Context, actor, action, subject, details string) {
 				accounts.Audit(ctx, actor, action, subject, details, "telegram")
 			},
@@ -224,6 +233,11 @@ func run() error {
 		go func() {
 			defer workers.Done()
 			bot.RunCards(ctx)
+		}()
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			bot.RunReminders(ctx)
 		}()
 	}
 	go func() {

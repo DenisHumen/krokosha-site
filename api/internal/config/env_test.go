@@ -55,6 +55,8 @@ func TestLoadEnvRejects(t *testing.T) {
 		"smtp without a sender":          {"SMTP_ADDR", "127.0.0.1:587", "MAIL_FROM"},
 		"months that are not a number":   {"LEADS_KEEP_MONTHS", "two years", "LEADS_KEEP_MONTHS"},
 		"a bot token that is not one":    {"TELEGRAM_BOT_TOKEN", "my-bot", "TELEGRAM_BOT_TOKEN"},
+		"a digest at no time":            {"TELEGRAM_DIGEST_AT", "9 утра", "TELEGRAM_DIGEST_AT"},
+		"a reminder in minus minutes":    {"TELEGRAM_REMIND_MINUTES", "-5", "TELEGRAM_REMIND_MINUTES"},
 		"a negative number of days":      {"LEADS_SPAM_DAYS", "-1", "LEADS_SPAM_DAYS"},
 		"an unknown rule for old data":   {"LEADS_EXPIRED", "archive", "LEADS_EXPIRED"},
 	}
@@ -132,8 +134,13 @@ func TestLoadEnvTelegram(t *testing.T) {
 		t.Fatalf("without a token there is no bot: %+v %v", env.Telegram, err)
 	}
 	values["TELEGRAM_BOT_TOKEN"] = "123456789:AAH-abcdefghijklmnopqrstuvwxyz_0123456"
-	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Telegram.Mode != "webhook" || env.Telegram.API != "" {
+	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Telegram.Mode != "webhook" || env.Telegram.API != "" ||
+		env.Telegram.RemindMinutes != 30 || env.Telegram.DigestAt != "09:00" {
 		t.Fatalf("defaults: %+v %v", env.Telegram, err)
+	}
+	values["TELEGRAM_REMIND_MINUTES"], values["TELEGRAM_DIGEST_AT"] = "0", "OFF"
+	if env, err = LoadEnv(lookupFrom(values)); err != nil || env.Telegram.RemindMinutes != 0 || env.Telegram.DigestAt != "" {
+		t.Fatalf("reminders switched off: %+v %v", env.Telegram, err)
 	}
 	for name, change := range map[string][2]string{
 		"an unknown mode":            {"TELEGRAM_MODE", "push"},

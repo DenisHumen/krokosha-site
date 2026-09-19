@@ -150,7 +150,7 @@
               <button class="button" type="submit">{{if $d.ByPhone}}Записать{{else}}Отправить{{end}}</button>
               <p class="muted">
                 {{if $d.ByPhone}}Клиент оставил телефон: ответ — это звонок, а сюда записывается его итог.
-                {{else if eq $lead.ContactMethod "telegram"}}Ответ уйдёт клиенту через бота, когда клиент подключится к нему по ссылке «Продолжить в Telegram».
+                {{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram через бота{{if ne $lead.ContactMethod "telegram"}}: последнее сообщение клиент написал там{{end}}. Если клиент бота ещё не открывал, ответ подождёт, пока он перейдёт по ссылке «Продолжить в Telegram».
                 {{else}}Ответ уйдёт письмом на {{$lead.ContactValue}}, заявка перейдёт в «Ждём клиента».{{end}}
               </p>
             </form>

@@ -134,6 +134,9 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 			return
 		}
 		answer(number+": "+strings.ToLower(statusNames[status]), false)
+	case "card":
+		answer("", false)
+		b.sendCard(ctx, chatID, leadID)
 	case "full":
 		answer("", false)
 		b.sendFull(ctx, chatID, card)
@@ -151,7 +154,7 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 		answer("", false)
 		done("✍️ " + number + ": жду текст.")
 		prompt, placeholder := "Напишите ответ клиенту по "+number+" следующим сообщением. Перед отправкой покажу, как он выглядит.", "Ответ клиенту…"
-		if card.Lead.ContactMethod == leads.MethodPhone {
+		if card.ReplyVia == leads.MethodPhone {
 			prompt, placeholder = "Клиент оставил телефон: сюда записывается итог звонка по "+number+".", "Позвонил — итог: …"
 		}
 		b.ask(ctx, member, &Dialog{Kind: dialogReply, LeadID: leadID}, chatID, prompt, placeholder)
@@ -276,20 +279,32 @@ func (b *Bot) sendHistory(ctx context.Context, chatID int64, card *leads.Card) {
 
 // --- answering ------------------------------------------------------------------------------------
 
-func channelName(lead *leads.Lead) string {
-	switch lead.ContactMethod {
+// channelName says how the next answer reaches the client (leads.Card.ReplyVia): the way the
+// client wrote last, and the contact of the form before they wrote anything.
+func (b *Bot) channelName(ctx context.Context, card *leads.Card) string {
+	switch card.ReplyVia {
 	case leads.MethodEmail:
-		return "письмом на " + lead.ContactValue
+		return "письмом на " + card.Lead.ContactValue
 	case leads.MethodTelegram:
+		if leadID, _ := b.clientLeadExists(ctx, card.Lead.ID); leadID {
+			return "клиенту в Telegram, через бота"
+		}
 		return "через бота, когда клиент откроет его по ссылке «Продолжить в Telegram»"
 	default:
 		return ""
 	}
 }
 
+// clientLeadExists reports whether the client of a request has opened the bot.
+func (b *Bot) clientLeadExists(ctx context.Context, leadID int64) (bool, error) {
+	var found int
+	err := b.opts.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_clients WHERE lead_id = ?`, leadID).Scan(&found)
+	return found > 0, err
+}
+
 func (b *Bot) offerReply(ctx context.Context, member *Member, chatID int64, card *leads.Card) {
 	lead := card.Lead
-	if lead.ContactMethod == leads.MethodPhone {
+	if card.ReplyVia == leads.MethodPhone {
 		// There is nothing to send to a phone number: the «answer» is the record of the call.
 		b.ask(ctx, member, &Dialog{Kind: dialogReply, LeadID: lead.ID}, chatID,
 			"📞 Клиент оставил телефон: "+lead.ContactValue+". Позвоните и запишите итог по #"+lead.Number()+" следующим сообщением.", "Позвонил — итог: …")
@@ -301,7 +316,7 @@ func (b *Bot) offerReply(ctx context.Context, member *Member, chatID int64, card
 	}
 	buttons = append(buttons, []Button{{Text: "✍️ Свой текст", Data: leadButtonData("own", lead.ID, "")}, {Text: "Отмена", Data: leadButtonData("cancel", lead.ID, "")}})
 	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Buttons: buttons,
-		Text: "💬 Ответ клиенту по <b>#" + lead.Number() + "</b> (" + Escape(lead.Name) + ") — уйдёт " + Escape(channelName(lead)) + ".\nВыберите шаблон или напишите свой текст."})
+		Text: "💬 Ответ клиенту по <b>#" + lead.Number() + "</b> (" + Escape(lead.Name) + ") — уйдёт " + Escape(b.channelName(ctx, card)) + ".\nВыберите шаблон или напишите свой текст."})
 }
 
 func (b *Bot) useTemplate(ctx context.Context, member *Member, query *CallbackQuery, card *leads.Card, rawID string) {
@@ -319,7 +334,7 @@ func (b *Bot) useTemplate(ctx context.Context, member *Member, query *CallbackQu
 				dialog.Kind, dialog.Reason = dialogRejectLetter, previous.Reason
 			}
 			_ = b.opts.API.Edit(ctx, query.Message.MessageID, Outgoing{ChatID: query.Message.Chat.ID, Text: "Шаблон: " + Escape(item.Title)})
-			b.preview(ctx, member, query.Message.Chat.ID, card.Lead, dialog)
+			b.preview(ctx, member, query.Message.Chat.ID, card, dialog)
 			return
 		}
 	}
@@ -327,19 +342,20 @@ func (b *Bot) useTemplate(ctx context.Context, member *Member, query *CallbackQu
 }
 
 // preview shows a text the way the client will get it, with «send», «change» and «cancel».
-func (b *Bot) preview(ctx context.Context, member *Member, chatID int64, lead *leads.Lead, dialog *Dialog) {
+func (b *Bot) preview(ctx context.Context, member *Member, chatID int64, card *leads.Card, dialog *Dialog) {
+	lead := card.Lead
 	if err := b.opts.Access.SetDialog(ctx, member.TelegramID, dialog); err != nil {
 		b.opts.Log.Error("telegram: cannot remember a draft", "error", err)
 		return
 	}
-	title, send := "Предпросмотр ответа по <b>#"+lead.Number()+"</b> — уйдёт "+Escape(channelName(lead))+":", "✅ Отправить"
+	title, send := "Предпросмотр ответа по <b>#"+lead.Number()+"</b> — уйдёт "+Escape(b.channelName(ctx, card))+":", "✅ Отправить"
 	buttons := Keyboard{{{Text: send, Data: leadButtonData("send", lead.ID, "")}, {Text: "✏️ Изменить", Data: leadButtonData("own", lead.ID, "")}}}
 	switch {
-	case lead.ContactMethod == leads.MethodPhone:
+	case card.ReplyVia == leads.MethodPhone:
 		title = "Итог звонка по <b>#" + lead.Number() + "</b> — клиенту ничего не отправляется:"
 		buttons[0][0].Text = "✅ Записать"
 	case dialog.Kind == dialogRejectLetter:
-		title = "Письмо с отказом по <b>#" + lead.Number() + "</b> (причина: " + Escape(dialog.Reason) + ") — уйдёт " + Escape(channelName(lead)) + ":"
+		title = "Письмо с отказом по <b>#" + lead.Number() + "</b> (причина: " + Escape(dialog.Reason) + ") — уйдёт " + Escape(b.channelName(ctx, card)) + ":"
 		buttons[0][0].Text = "✅ Отправить и отклонить"
 		buttons = append(buttons, []Button{{Text: "Закрыть молча", Data: leadButtonData("silent", lead.ID, "")}})
 	}
@@ -366,7 +382,7 @@ func (b *Bot) sendDraft(ctx context.Context, member *Member, card *leads.Card, a
 	_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 	b.opts.Kick()
 	b.opts.Audit(ctx, "bot:"+member.Actor(), "lead.reply", card.Lead.Number(), "")
-	if card.Lead.ContactMethod == leads.MethodPhone {
+	if card.ReplyVia == leads.MethodPhone {
 		answer("Записано.", false)
 		done("📞 Итог звонка по " + number + " записан.")
 		return
@@ -414,25 +430,26 @@ func (b *Bot) reasonChosen(ctx context.Context, member *Member, query *CallbackQ
 		}
 		answer("", false)
 		done("❌ " + number + ": " + rejectReasons[index])
-		b.offerLetter(ctx, member, query.Message.Chat.ID, lead, rejectReasons[index])
+		b.offerLetter(ctx, member, query.Message.Chat.ID, card, rejectReasons[index])
 	}
 }
 
 // offerLetter asks whether the client should get a polite refusal (brief B10.4) or none at all.
-func (b *Bot) offerLetter(ctx context.Context, member *Member, chatID int64, lead *leads.Lead, reason string) {
+func (b *Bot) offerLetter(ctx context.Context, member *Member, chatID int64, card *leads.Card, reason string) {
+	lead := card.Lead
 	if err := b.opts.Access.SetDialog(ctx, member.TelegramID, &Dialog{Kind: dialogRejectLetter, LeadID: lead.ID, Reason: reason}); err != nil {
 		b.opts.Log.Error("telegram: cannot remember a dialog", "error", err)
 		return
 	}
 	buttons := Keyboard{}
-	if lead.ContactMethod != leads.MethodPhone {
+	if card.ReplyVia != leads.MethodPhone {
 		for _, item := range b.templates(ctx, "reject", lead) {
 			buttons = append(buttons, []Button{{Text: "✉️ " + item.Title, Data: leadButtonData("tpl", lead.ID, strconv.FormatInt(item.ID, 10))}})
 		}
 	}
 	buttons = append(buttons, []Button{{Text: "Закрыть молча", Data: leadButtonData("silent", lead.ID, "")}, {Text: "Отмена", Data: leadButtonData("cancel", lead.ID, "")}})
 	text := "Отправить клиенту вежливый отказ по <b>#" + lead.Number() + "</b>? Письмо можно будет посмотреть перед отправкой."
-	if lead.ContactMethod == leads.MethodPhone {
+	if card.ReplyVia == leads.MethodPhone {
 		text = "Клиент оставил только телефон — письма не будет. Отклонить <b>#" + lead.Number() + "</b>?"
 	}
 	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Text: text, Buttons: buttons})
@@ -504,10 +521,10 @@ func (b *Bot) dialogText(ctx context.Context, message *Message, member *Member) 
 		b.sayAbout(ctx, dialog.LeadID, Outgoing{ChatID: chatID, Text: "📝 Заметка к " + number + " сохранена."})
 	case dialogReply, dialogRejectLetter:
 		dialog.Draft = text
-		b.preview(ctx, member, chatID, card.Lead, dialog)
+		b.preview(ctx, member, chatID, card, dialog)
 	case dialogRejectReason:
 		reason, _ := cut(text, 200)
-		b.offerLetter(ctx, member, chatID, card.Lead, reason)
+		b.offerLetter(ctx, member, chatID, card, reason)
 	default:
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		return false

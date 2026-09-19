@@ -196,7 +196,7 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	}
 	lead := card.Lead
 	data := leadData{Card: card, Direction: h.directionName(lead.Direction), Next: leads.NextStatuses(lead.Status), Draft: draft,
-		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: lead.ContactMethod == leads.MethodPhone}
+		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: card.ReplyVia == leads.MethodPhone}
 	switch lead.ContactMethod {
 	case leads.MethodEmail:
 		data.Contact = "mailto:" + lead.ContactValue

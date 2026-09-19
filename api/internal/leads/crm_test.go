@@ -446,3 +446,131 @@ func TestTemplates(t *testing.T) {
 		t.Errorf("after deleting: %d templates, want %d", len(after), len(replies)-1)
 	}
 }
+
+// A client writes again after the form — through the bot or by answering a letter (brief B10.5).
+func TestTheClientWritesAgain(t *testing.T) {
+	f := newFixture(t)
+	store := NewStore(f.db, func() time.Time { return f.now })
+	ctx := context.Background()
+	var changed []int64
+	store.OnChange(func(id int64) { changed = append(changed, id) })
+	lead := f.seed(nil) // the contact of the form is an email address
+
+	// Before the client writes anything, an answer goes where the form said.
+	if card, err := store.Card(ctx, lead); err != nil || card.ReplyVia != MethodEmail {
+		t.Fatalf("the way of the first answer: %+v %v", card, err)
+	}
+	if _, err := store.Take(ctx, lead, "denis"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Reply(ctx, lead, "denis", "Сколько коммутаторов уже есть?"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The client continues in Telegram: the request is ours again, and everybody is told.
+	f.now = f.now.Add(time.Hour)
+	messageID, err := store.ClientMessage(ctx, lead, ChannelTelegram, "  Два, оба старые.\x00  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := store.Card(ctx, lead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Lead.Status != StatusInProgress || card.ReplyVia != ChannelTelegram {
+		t.Errorf("after the client's message: %s, answers go by %s", card.Lead.Status, card.ReplyVia)
+	}
+	if body, channel, err := store.IncomingMessage(ctx, lead, messageID); err != nil || body != "Два, оба старые." || channel != ChannelTelegram {
+		t.Errorf("the stored message: %q %q %v", body, channel, err)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM outbox WHERE lead_id = %d AND kind = 'lead.client_message' AND status = 'pending'`, lead)); n != 2 {
+		t.Errorf("notices queued: %d, want one for Telegram and one for mail", n)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM lead_events WHERE lead_id = %d AND action = 'client_replied' AND from_status = 'waiting_client' AND to_status = 'in_progress'`, lead)); n != 1 {
+		t.Error("the history does not say that the client answered")
+	}
+	if len(changed) == 0 || changed[len(changed)-1] != lead {
+		t.Errorf("listeners were not told: %v", changed)
+	}
+
+	// The next answer follows the client into Telegram.
+	if _, err := store.Reply(ctx, lead, "denis", "Тогда меняем оба."); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM outbox WHERE lead_id = %d AND kind = 'lead.reply' AND channel = 'telegram'`, lead)); n != 1 {
+		t.Errorf("answers queued for Telegram: %d", n)
+	}
+	all, _, _ := store.List(ctx, Filter{})
+	if len(all) != 1 || all[0].LastFromUser {
+		t.Errorf("after our answer nobody is waiting: %+v", all)
+	}
+
+	// A closed request stays closed — the people decide —, but they do hear about the message.
+	_ = store.SetStatus(ctx, lead, "denis", StatusDone, "")
+	if _, err := store.ClientMessage(ctx, lead, ChannelTelegram, "Спасибо!"); err != nil {
+		t.Fatal(err)
+	}
+	if card, _ = store.Card(ctx, lead); card.Lead.Status != StatusDone {
+		t.Errorf("a message reopened a finished request: %s", card.Lead.Status)
+	}
+	// Nothing, from nobody, to nowhere.
+	if _, err := store.ClientMessage(ctx, lead, ChannelTelegram, " \n "); !errors.Is(err, ErrEmptyText) {
+		t.Errorf("an empty message: %v", err)
+	}
+	if _, err := store.ClientMessage(ctx, 999, ChannelTelegram, "hello"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a message for a request that is not: %v", err)
+	}
+	// What a robot «adds» to its request is stored with it and announced to nobody.
+	robot := f.seed(func(v map[string]string) { v["website"] = "x" })
+	if _, err := store.ClientMessage(ctx, robot, ChannelTelegram, "buy backlinks"); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM outbox WHERE lead_id = %d`, robot)); n != 0 {
+		t.Errorf("a robot's message was announced: %d tasks", n)
+	}
+}
+
+func TestOpenMineAndUnclaimed(t *testing.T) {
+	f := newFixture(t)
+	store := NewStore(f.db, func() time.Time { return f.now })
+	ctx := context.Background()
+	untouched, mine, hers, finished := f.seed(nil), f.seed(nil), f.seed(nil), f.seed(nil)
+	_ = f.seed(func(v map[string]string) { v["website"] = "x" }) // spam is nobody's business
+	for id, who := range map[int64]string{mine: "Денис", hers: "Олена", finished: "Денис"} {
+		if _, err := store.Take(ctx, id, who); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = store.SetStatus(ctx, finished, "Денис", StatusDone, "")
+
+	ids := func(filter Filter) string {
+		found, _, err := store.List(ctx, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []int64
+		for _, item := range found {
+			out = append(out, item.ID)
+		}
+		return fmt.Sprint(out)
+	}
+	if got := ids(Filter{Status: "open"}); got != fmt.Sprint([]int64{hers, mine, untouched}) {
+		t.Errorf("open: %s", got)
+	}
+	if got := ids(Filter{Status: "open", Assignee: "Денис"}); got != fmt.Sprint([]int64{mine}) {
+		t.Errorf("mine: %s", got)
+	}
+
+	// Half an hour and nobody took it: one reminder, never a second one.
+	f.now = f.now.Add(31 * time.Minute)
+	due, err := store.Unclaimed(ctx, f.now.Add(-30*time.Minute))
+	if err != nil || fmt.Sprint(due) != fmt.Sprint([]int64{untouched}) {
+		t.Fatalf("unclaimed: %v %v", due, err)
+	}
+	if err := store.MarkReminded(ctx, untouched); err != nil {
+		t.Fatal(err)
+	}
+	if due, _ = store.Unclaimed(ctx, f.now); len(due) != 0 {
+		t.Errorf("reminded twice: %v", due)
+	}
+}
