@@ -170,7 +170,9 @@ check "…and no marks left over" bash -c "! grep -q '%%' <<<\"\$1\"" _ "$thanks
 check "a made-up link shows nobody's request" test "$(header "https://$DOMAIN/api/leads/thanks?t=AAAAAAAAAAAAAAAAAAAAAA" location)" = /thanks/
 check "the request is stored" test "$(sql "SELECT CONCAT(status, ' ', lang, ' ', contact_value) FROM leads WHERE id = 1")" = "new ru ivan@company.test"
 check "with the truncated address only" bash -c "docker exec krokosha-mysql-1 sh -c 'mysql -N -uroot -p\"\$MYSQL_ROOT_PASSWORD\" krokosha -e \"SELECT ip_prefix FROM leads\"' 2>/dev/null | grep -qE '/(24|48)$'"
-check "notifications are queued in the same transaction" test "$(sql "SELECT COUNT(*) FROM outbox WHERE lead_id = 1 AND status = 'pending'")" = 3
+# Three of them: a letter to the owner, a confirmation to the client, a card in Telegram. With the
+# mail server running they start leaving at once, so the state of each is not asked about here.
+check "notifications are queued in the same transaction" test "$(sql "SELECT COUNT(*) FROM outbox WHERE lead_id = 1")" = 3
 lead_json() { # lead_json NAME METHOD CONTACT DESCRIPTION [curl options…] → the JSON answer
   local name=$1 method=$2 contact=$3 description=$4
   shift 4
@@ -270,7 +272,8 @@ check "taking a request" test "$(admin_post /leads/1/status --data-urlencode "cs
 check "…is recorded with the name of who took it" test "$(sql "SELECT CONCAT(status, ' ', assignee) FROM leads WHERE id = 1")" = "in_progress ci-admin"
 check "a forbidden change of status is refused" test "$(admin_post /leads/1/status --data-urlencode "csrf=$(csrf)" --data-urlencode 'status=spam')" = 409
 check "an answer to the client" test "$(admin_post /leads/1/reply --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Спасибо, изучу и отвечу до конца дня.')" = 303
-check "…waits in the outbox until the mail server is set up" test "$(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOIN outbox o ON o.lead_id = l.id AND o.kind = 'lead.reply' WHERE l.id = 1")" = "waiting_client pending"
+reply_left() { [[ $(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOIN outbox o ON o.lead_id = l.id AND o.kind = 'lead.reply' WHERE l.id = 1") == "waiting_client sent" ]]; }
+check "…leaves through the site's own mail server" wait_for 30 reply_left
 check "a note for colleagues" test "$(admin_post /leads/1/note --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Клиент из теста установки.')" = 303
 check "the status screen shows the queue of notifications" grep -q 'в очереди: ' <(admin_get "$ADMIN/status")
 check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates")
