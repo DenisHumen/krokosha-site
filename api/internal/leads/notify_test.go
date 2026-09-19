@@ -383,3 +383,55 @@ func TestTheOwnerIsToldWhenTheClientWritesAgain(t *testing.T) {
 		t.Errorf("the HTML letter:\n%s", html)
 	}
 }
+
+// Letters to a client ask for the answer to come back to the service mailbox, with the request's
+// number signed into the address — and leave the server under the service's own envelope.
+func TestAnswersComeBackToTheServiceMailbox(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz", Envelope: "leads@krokosha.xyz"}
+	store := NewStore(f.db, func() time.Time { return f.now })
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form:     formWithLabels, Location: time.UTC, Inbox: "leads@krokosha.xyz", Secret: secret,
+	})
+	lead := f.seed(nil)
+	if _, err := store.Reply(context.Background(), lead, "denis", "Спасибо, изучу и отвечу сегодня."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.Deliver(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()
+	if len(received) != 3 {
+		t.Fatalf("letters received: %d, want 3", len(received))
+	}
+	want := ReplyAddress(secret, "leads@krokosha.xyz", lead)
+	for _, letter := range received {
+		header, _, _ := parts(t, letter)
+		if letter.From != "leads@krokosha.xyz" {
+			t.Errorf("the envelope sender of the letter to %v: %q", letter.To, letter.From)
+		}
+		if from, _ := header.AddressList("From"); len(from) != 1 || from[0].Address != "denis@krokosha.xyz" {
+			t.Errorf("the From header of the letter to %v: %v", letter.To, from)
+		}
+		replyTo, _ := header.AddressList("Reply-To")
+		switch letter.To[0] {
+		case "owner@krokosha.xyz": // «reply» in the owner's mail program goes to the client
+			if len(replyTo) != 1 || replyTo[0].Address != "Ivan.Petrov@company.com" {
+				t.Errorf("Reply-To of the notification: %v", replyTo)
+			}
+		default: // the confirmation and the answer: back to the request
+			if len(replyTo) != 1 || replyTo[0].Address != want {
+				t.Errorf("Reply-To of a letter to the client: %v, want %s", replyTo, want)
+			}
+			if id, ok := ParseReplyAddress(secret, replyTo[0].Address); !ok || id != lead {
+				t.Errorf("the address does not lead back to the request: %d %v", id, ok)
+			}
+		}
+	}
+}

@@ -34,6 +34,20 @@ type Mailer struct {
 	// TelegramURL returns the «continue in Telegram» link, or "" without a bot.
 	TelegramURL func(lead *Lead) string
 	Location    *time.Location
+	// Inbox is the service mailbox client answers come back to («leads@domain»), Secret signs the
+	// request's number into the address (ReplyAddress). Without an inbox letters carry no
+	// Reply-To, and an answer goes to From — the owner's own mailbox.
+	Inbox  string
+	Secret []byte
+}
+
+// replyTo is where the client's mail program sends an answer to a letter about a request.
+func (m *Mailer) replyTo(lead *Lead) *netmail.Address {
+	address := ReplyAddress(m.Secret, m.Inbox, lead.ID)
+	if address == "" || len(m.Secret) == 0 {
+		return nil
+	}
+	return &netmail.Address{Name: m.From.Name, Address: address}
 }
 
 // Send implements outbox.Sender for the email channel.
@@ -215,6 +229,7 @@ func (m *Mailer) autoReply(lead *Lead, files []Attachment) (mail.Message, error)
 		Text:      text,
 		HTML:      html,
 		MessageID: m.messageID(lead.ID, "autoreply"),
+		ReplyTo:   m.replyTo(lead),
 		// RFC 3834: tells other robots not to answer this one — no loops of automatic replies.
 		Headers: map[string]string{"Auto-Submitted": "auto-replied", "X-Auto-Response-Suppress": "All", "X-Krokosha-Lead": v.Number},
 	}, nil
@@ -293,6 +308,7 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 		Text:      text,
 		HTML:      html,
 		MessageID: id, InReplyTo: references[len(references)-1], References: references,
+		ReplyTo: m.replyTo(lead),
 		Headers: map[string]string{"X-Krokosha-Lead": v.Number},
 	}
 	err = m.Deliver(ctx, message)
