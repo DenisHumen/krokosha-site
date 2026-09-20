@@ -50,6 +50,13 @@ type Error struct {
 
 func (e *Error) Error() string { return "imap: the server said " + e.Status + " " + e.Text }
 
+// WrongPassword reports whether the server refused the user name or the password — as opposed
+// to being busy or broken, which may pass.
+func WrongPassword(err error) bool {
+	var refused *Error
+	return errors.As(err, &refused) && refused.Status == "NO" && strings.Contains(strings.ToUpper(refused.Text), "AUTHENTICATIONFAILED")
+}
+
 // TooBigError: the letter is larger than the caller is ready to take; it was not downloaded.
 type TooBigError struct{ Size int64 }
 

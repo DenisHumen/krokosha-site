@@ -591,3 +591,35 @@ func TestTheServiceListens(t *testing.T) {
 	}
 	waitFor("connected again", func() bool { return f.service.Status(ctx).Connected })
 }
+
+// A wrong password is tried once: a mail server bans whoever keeps guessing, and the ban would
+// stop the site's outgoing mail too.
+func TestAWrongPasswordIsNotTriedAgain(t *testing.T) {
+	f := newFixture(t)
+	f.service = New(Options{
+		Dial: func(ctx context.Context) (*imap.Client, error) {
+			return imap.Dial(ctx, imap.Options{Addr: f.server.Addr, User: f.server.User, Password: "what the password used to be", Timeout: 5 * time.Second})
+		},
+		DB: f.db, Leads: f.store, Secret: secret, Inbox: mailbox, Log: quiet, retry: 20 * time.Millisecond,
+	})
+	done := make(chan struct{})
+	go func() {
+		f.service.Run(context.Background())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the service keeps trying")
+	}
+	attempts := 0
+	for _, command := range f.server.Commands() {
+		if strings.HasPrefix(command, "AUTHENTICATE") || strings.HasPrefix(command, "LOGIN") {
+			attempts++
+		}
+	}
+	status := f.service.Status(context.Background())
+	if attempts != 1 || status.Connected || !strings.Contains(status.LastError, "не принял пароль") {
+		t.Fatalf("attempts = %d, status = %+v", attempts, status)
+	}
+}

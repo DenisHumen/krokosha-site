@@ -117,6 +117,16 @@ func (s *Service) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if imap.WrongPassword(err) {
+			// Trying again cannot help, and a few more attempts make the mail server's fail2ban
+			// ban this machine — which would stop the site's outgoing mail as well.
+			s.note(func(status *Status) {
+				status.Connected = false
+				status.LastError, status.LastErrorAt = "почтовый сервер не принял пароль ящика (IMAP_PASSWORD); чтение остановлено до перезапуска сервиса", s.opts.Now()
+			})
+			s.opts.Log.Error("inbox: the mail server refused the password of the mailbox; not trying again until the service is restarted", "mailbox", s.opts.Inbox)
+			return
+		}
 		s.note(func(status *Status) {
 			status.Connected = false
 			status.LastError, status.LastErrorAt = err.Error(), s.opts.Now()
