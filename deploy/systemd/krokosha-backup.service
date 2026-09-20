@@ -1,0 +1,14 @@
+[Unit]
+Description=krokosha site: backup of the database, mail, files of requests and settings
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/krokosha/repo/deploy/backup.sh
+TimeoutStartSec=2h
+
+# A backup must never starve the rest of a small VPS.
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,10 @@
+[Unit]
+Description=krokosha site: look at the certificates that are really served, renew what is about to expire
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=network-online.target nginx.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/krokosha/repo/deploy/bin/krokosha-certwatch
+TimeoutStartSec=15min

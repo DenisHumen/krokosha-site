@@ -75,6 +75,31 @@ func TestCollectReadsWhatTheBuildLeft(t *testing.T) {
 	}
 }
 
+// The nightly backup and the daily look at the certificates leave their reports next to the
+// build's; the status screen reads them.
+func TestCollectReadsWhatTheWatchdogsLeft(t *testing.T) {
+	s := newServer(t)
+	s.file(filepath.Join(s.state, "status", "backup.json"),
+		`{"started_at":"2026-09-19T03:31:00Z","finished_at":"2026-09-19T03:31:40Z","ok":true,"name":"20260919-033100","bytes":52428800,"copied_to":"backup@nas:/krokosha","error":""}`)
+	s.file(filepath.Join(s.state, "status", "certwatch.json"),
+		`{"checked_at":"2026-09-19T04:50:00Z","ok":false,"renewed":false,"certificates":[{"name":"site","host":"krokosha.xyz","days_left":9,"not_after":"2026-09-28T00:00:00Z"},{"name":"mail","host":"mail.krokosha.xyz","days_left":null,"not_after":""}],"error":"Сертификат krokosha.xyz истекает через 9 дн. и не продлевается"}`)
+	status := s.service(Options{}).Collect(context.Background())
+	if backup := status.Backup; !backup.Known || !backup.OK || backup.Name != "20260919-033100" || backup.Bytes != 50<<20 || backup.CopiedTo != "backup@nas:/krokosha" {
+		t.Errorf("backup: %+v", backup)
+	}
+	watch := status.CertWatch
+	if !watch.Known || watch.OK || len(watch.Certificates) != 2 || watch.Certificates[0].DaysLeft == nil || *watch.Certificates[0].DaysLeft != 9 || watch.Certificates[1].DaysLeft != nil {
+		t.Errorf("certwatch: %+v", watch)
+	}
+	found := false
+	for _, problem := range status.Problems {
+		found = found || (problem.Level == "error" && strings.Contains(problem.Text, "истекает через 9 дн. и не продлевается. Подробности: journalctl -u krokosha-certwatch"))
+	}
+	if !found {
+		t.Errorf("problems: %+v", status.Problems)
+	}
+}
+
 func TestANewServerIsDescribedNotFailed(t *testing.T) {
 	s := newServer(t)
 	s.file(filepath.Join(s.state, "status", "sync.json"), `{"started_at": broken`)
@@ -160,6 +185,9 @@ func TestProblems(t *testing.T) {
 			Host: Host{Supported: true, CPUs: 2, Load: [3]float64{0.2, 0.3, 0.1}, MemoryTotal: 2 << 30, MemoryFree: 1 << 30,
 				Disks: []Disk{{Path: "/", UsedPercent: 41}}},
 			LogReadAt: now.Add(-8 * time.Second),
+			Backup:    Backup{Known: true, OK: true, FinishedAt: now.Add(-9 * time.Hour)},
+			CertWatch: CertWatch{Known: true, OK: true, CheckedAt: now.Add(-8 * time.Hour)},
+			Uptime:    72 * time.Hour,
 		}
 	}
 	if got := problems(healthy(), now); len(got) != 0 {
@@ -191,6 +219,16 @@ func TestProblems(t *testing.T) {
 			s.Mailbox, s.Inbox = "leads@krokosha.xyz", &inbox.Status{LastError: "connection refused", LastErrorAt: now.Add(-time.Minute)}
 		}, "error", "leads@krokosha.xyz не читается"},
 		"letters wait": {func(s *Status) { s.Inbox = &inbox.Status{Connected: true, Unmatched: 3} }, "warn", "Писем без заявки: 3"},
+		"backup failed": {func(s *Status) {
+			s.Backup = Backup{Known: true, OK: false, Error: "backup.sh stopped at line 102"}
+		}, "error", "резервная копия не сделана: backup.sh stopped at line 102"},
+		"backup is old": {func(s *Status) {
+			s.Backup = Backup{Known: true, OK: true, FinishedAt: now.Add(-60 * time.Hour)}
+		}, "warn", "не делалась больше двух суток"},
+		"never backed up": {func(s *Status) { s.Backup, s.Uptime = Backup{}, 48*time.Hour }, "warn", "ни разу не делались"},
+		"certificates unwatched": {func(s *Status) {
+			s.CertWatch = CertWatch{Known: true, OK: true, CheckedAt: now.Add(-100 * time.Hour)}
+		}, "warn", "не проверялись больше трёх суток"},
 	} {
 		status := healthy()
 		tc.breakIt(status)

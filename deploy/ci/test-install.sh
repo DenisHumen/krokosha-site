@@ -546,6 +546,29 @@ if [[ $HAVE_WG == yes ]]; then
   check "packet forwarding is still on" test "$(sysctl -n net.ipv4.ip_forward)" = 1
 fi
 
+echo "Backups and the certificate watch"
+check "the nightly backup and the daily look at the certificates are scheduled" bash -c "systemctl is-enabled --quiet krokosha-backup.timer && systemctl is-enabled --quiet krokosha-certwatch.timer"
+check "a backup by hand" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+first_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
+check "…has the database, the settings, the mail and the files of requests" bash -c "gzip -t '$first_backup/mysql.sql.gz' && zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .leads.' && tar -tzf '$first_backup/config.tar.gz' | grep -qx config/env && test -s '$first_backup/mail/config/postfix-accounts.cf' && test -d '$first_backup/attachments' && test -s '$first_backup/MANIFEST'"
+check "…for root's eyes only: the secrets are in it" test "$(stat -c '%U %a' /srv/krokosha/backups) $(stat -c '%a' "$first_backup/config.tar.gz")" = "root 700 600"
+check "…and reports to the status screen" grep -q '"ok":true' /var/lib/krokosha/status/backup.json
+sleep 1
+check "a second backup" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+second_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
+a_letter=$(cd "$first_backup" && find mail/data -type f -path '*/cur/*' -o -type f -path '*/new/*' | head -n 1)
+check "…shares the letters that did not change with the first: a month of backups takes the room of one" bash -c "[[ -n '$a_letter' && '$first_backup' != '$second_backup' && \$(stat -c %i '$first_backup/$a_letter') == \$(stat -c %i '$second_backup/$a_letter') ]]"
+check "…without being the same file as the live letter" bash -c "[[ \$(stat -c %i '/srv/krokosha/$a_letter') != \$(stat -c %i '$second_backup/$a_letter') ]]"
+check "old backups go: --keep-daily 1 leaves one" bash -c "sleep 1; '$SOURCE/deploy/backup.sh' --keep-daily 1 --keep-weekly 0 >/dev/null 2>&1 && [[ \$(find /srv/krokosha/backups -mindepth 1 -maxdepth 1 -type d | wc -l) == 1 ]]"
+check "the certificate watch finds what the site and the mail server really serve" bash -c "'$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"name\":\"site\",\"host\":\"$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"name\":\"mail\",\"host\":\"mail.$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"ok\":true' /var/lib/krokosha/status/certwatch.json"
+# A certificate «about to expire» that nothing renews (this one is self-signed): the watch
+# fails, says so on the status screen, and the owner hears about it — once.
+check "a certificate that expires and does not renew makes the watch fail" bash -c "! CERTWATCH_RENEW_BELOW_DAYS=100000 '$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"ok\":false' /var/lib/krokosha/status/certwatch.json"
+CERTWATCH_RENEW_BELOW_DAYS=100000 "$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
+check "…the owner is told by mail and in Telegram, once a day" test "$(sql "SELECT COUNT(*) FROM outbox WHERE kind = 'system.alert'")" = 2
+check "…the letter arrives" mailcheck find "owner@$DOMAIN" "$MAILBOX_PASSWORD" 'certbot renew --dry-run'
+"$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
+
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
 secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)
@@ -577,6 +600,37 @@ check "rollback switched to an older release" test "$(readlink -f /var/www/kroko
 check "site answers after the rollback" test "$(status "https://$DOMAIN/")" = 200
 check "rollback paused the timer" bash -c "! systemctl is-active --quiet krokosha-sync.timer"
 check "at most three releases are kept" test "$(find /var/www/krokosha/releases -mindepth 1 -maxdepth 1 -type d | wc -l)" -le 3
+
+# The worst day: the server is gone. A backup that was copied elsewhere, a new installation, restore.sh.
+echo "::group::A lost server: backup elsewhere, a new installation, restore"
+elsewhere=$(mktemp -d)
+"$SOURCE/deploy/backup.sh" --to "$elsewhere"
+saved=$elsewhere/$(readlink "$elsewhere/latest")
+facts() { sql "SELECT CONCAT((SELECT COUNT(*) FROM leads), ' requests, ', (SELECT COUNT(*) FROM lead_messages), ' messages, ', (SELECT COUNT(*) FROM lead_attachments), ' files, ', (SELECT COUNT(*) FROM admin_users), ' administrators, ', (SELECT COUNT(*) FROM bot_users), ' in the bot, ', (SELECT COUNT(*) FROM analytics_pageviews), ' page views')"; }
+facts_before=$(facts)
+kept_before=$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)
+mail_before=$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)
+files_before=$(find /srv/krokosha/attachments -type f | wc -l)
+/opt/krokosha/repo/deploy/uninstall.sh --yes --purge
+install_site
+database_password=$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)
+echo "::endgroup::"
+echo "Restore"
+check "a new installation knows nothing of the old one" test "$(sql 'SELECT COUNT(*) FROM leads')" = 0
+check "…and has secrets of its own" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" != "$kept_before"
+check "restore.sh puts the backup back" bash -c "'$SOURCE/deploy/restore.sh' --from '$saved' --yes >'$elsewhere/restore.log' 2>&1 || { tail -n 30 '$elsewhere/restore.log'; exit 1; }"
+check "requests, conversations, files, administrators, the bot's people and the statistics are back" test "$(facts)" = "$facts_before"
+check "…with the secret that signs addresses and links, the path of the admin area, the password of the service mailbox" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" = "$kept_before"
+check "…while the database password stays the new installation's own" test "$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)" = "$database_password"
+check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)" = "$mail_before"
+check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
+check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
+check "the administrator signs in with the old password" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
+check "…and finds the requests" grep -q '#K-0001' <(admin_get "$ADMIN/leads?status=all")
+check "the mail server is healthy, and the client's mailbox opens with its old password" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && python3 '$SOURCE/deploy/ci/mailcheck.py' login 'client@$DOMAIN' '$CLIENT_PASSWORD'"
+mailbox_read() { grep -q 'на связи' <(admin_get "$ADMIN/status"); }
+check "the service reads its mailbox again" wait_for 60 mailbox_read
+rm -rf "$elsewhere"
 
 echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge

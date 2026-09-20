@@ -40,9 +40,12 @@ main() {
   data_dir=$(env_get KROKOSHA_DATA)
 
   step "Stopping services"
-  systemctl disable --now krokosha-sync.timer krokosha-rebuild.path krokosha-api.service 2>/dev/null || true
-  systemctl stop krokosha-sync.service 2>/dev/null || true
+  systemctl disable --now krokosha-sync.timer krokosha-rebuild.path krokosha-api.service \
+    krokosha-backup.timer krokosha-certwatch.timer 2>/dev/null || true
+  systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service 2>/dev/null || true
   rm -rf /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer \
+    /etc/systemd/system/krokosha-backup.service /etc/systemd/system/krokosha-backup.timer \
+    /etc/systemd/system/krokosha-certwatch.service /etc/systemd/system/krokosha-certwatch.timer \
     /etc/systemd/system/krokosha-rebuild.path \
     /etc/systemd/system/krokosha-api.service /etc/systemd/system/krokosha-api.service.d
   systemctl daemon-reload

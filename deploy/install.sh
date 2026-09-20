@@ -515,7 +515,8 @@ api_changed=$ENV_CHANGED
 install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
-for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path; do
+for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
+  krokosha-backup.service krokosha-backup.timer krokosha-certwatch.service krokosha-certwatch.timer; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
 done
 # Where the API leaves requests for a rebuild and the build leaves its report (both run as the
@@ -865,6 +866,18 @@ systemctl enable --quiet --now krokosha-rebuild.path
 ok "next run: $(systemctl show krokosha-sync.timer --property=NextElapseUSecRealtime --value)"
 
 # ---------------------------------------------------------------------------------------------
+step "Backups and the certificate watch"
+# ---------------------------------------------------------------------------------------------
+
+# Every night: the database, the mail, the files of requests, the settings (deploy/backup.sh).
+# Every day: a look at the certificates that are really served; what is about to expire is renewed
+# at once, and the owner is told when that fails (deploy/bin/krokosha-certwatch).
+systemctl enable --quiet --now krokosha-backup.timer krokosha-certwatch.timer
+[[ -n $(env_get BACKUP_RSYNC_TO) ]] ||
+  warn "backups stay on this disk ($DATA_DIR/backups): to copy every one elsewhere, set BACKUP_RSYNC_TO=user@host:/path in $KROKOSHA_ENV"
+ok "backup: $(systemctl show krokosha-backup.timer --property=NextElapseUSecRealtime --value); certificates: $(systemctl show krokosha-certwatch.timer --property=NextElapseUSecRealtime --value)"
+
+# ---------------------------------------------------------------------------------------------
 step "Firewall"
 # ---------------------------------------------------------------------------------------------
 
@@ -956,6 +969,7 @@ cat >&2 <<EOF
   Rebuild:    sudo systemctl start krokosha-sync.service     (runs by itself every 6 hours)
   Update:     sudo $KROKOSHA_REPO/deploy/update.sh
   Roll back:  sudo $KROKOSHA_REPO/deploy/rollback.sh
+  Backups:    $DATA_DIR/backups, every night   (now: sudo $KROKOSHA_REPO/deploy/backup.sh; back: sudo $KROKOSHA_REPO/deploy/restore.sh --from DIR)
   Logs:       journalctl -u krokosha-sync.service, /var/log/krokosha/
   Settings:   $KROKOSHA_ENV
   Data:       $DATA_DIR   (database, cache, settings — copy this directory to move the site)

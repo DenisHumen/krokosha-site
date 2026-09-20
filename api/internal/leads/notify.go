@@ -52,6 +52,9 @@ func (m *Mailer) replyTo(lead *Lead) *netmail.Address {
 
 // Send implements outbox.Sender for the email channel.
 func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
+	if task.Kind == outbox.KindAlert {
+		return m.sendAlert(ctx, task)
+	}
 	var payload TaskPayload
 	if err := json.Unmarshal(task.Payload, &payload); err != nil || payload.LeadID <= 0 {
 		return outbox.Permanent(fmt.Errorf("unreadable task payload: %s", task.Payload))
@@ -96,6 +99,34 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		return outbox.Permanent(err)
 	}
 	err = m.Deliver(ctx, message)
+	var permanent mail.PermanentError
+	if errors.As(err, &permanent) {
+		return outbox.Permanent(err)
+	}
+	return err
+}
+
+// sendAlert tells the owner that the server needs a look (a certificate, a backup): the letter
+// goes to the owner's mailbox on this very server, so whatever keeps mail from leaving does not
+// keep this one from arriving.
+func (m *Mailer) sendAlert(ctx context.Context, task outbox.Task) error {
+	alert, err := outbox.ReadAlert(task)
+	if err != nil {
+		return err
+	}
+	v := view{Host: m.SiteHost, Body: alert.Text, Author: alert.Subject, AdminURL: strings.TrimRight(m.AdminURL, "/") + "/status"}
+	text, html, err := render(alertText, alertHTML, v)
+	if err != nil {
+		return outbox.Permanent(err)
+	}
+	err = m.Deliver(ctx, mail.Message{
+		From: m.From, To: m.NotifyTo,
+		Subject:   fmt.Sprintf("[%s] %s", m.SiteHost, alert.Subject),
+		Text:      text,
+		HTML:      html,
+		MessageID: fmt.Sprintf("alert-%d@%s", task.ID, m.SiteHost),
+		Headers:   map[string]string{"Auto-Submitted": "auto-generated", "X-Auto-Response-Suppress": "All"},
+	})
 	var permanent mail.PermanentError
 	if errors.As(err, &permanent) {
 		return outbox.Permanent(err)
@@ -532,6 +563,21 @@ var undeliveredHTML = htmltemplate.Must(htmltemplate.New("undelivered.html").Par
 <p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">Открыть в админке</a></p>
 {{end}}
 {{define "foot"}}Сообщил почтовый сервер. История переписки — в админке.{{end}}`))
+
+var alertText = texttemplate.Must(texttemplate.New("alert.txt").Parse(`{{.Author}}
+
+{{.Body}}
+
+Статус системы: {{.AdminURL}}
+`))
+
+var alertHTML = htmltemplate.Must(htmltemplate.New("alert.html").Parse(mailFrame + `
+{{define "body"}}
+<h1 style="margin:0 0 12px;font-size:18px;color:#b3261e;">{{.Author}}</h1>
+<p style="margin:0;padding:12px 14px;background:#fbf3f2;border-left:3px solid #b3261e;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+<p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">Статус системы</a></p>
+{{end}}
+{{define "foot"}}Сообщение сервера {{.Host}}. Повторяется не чаще раза в сутки, пока причина не устранена.{{end}}`))
 
 var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
 

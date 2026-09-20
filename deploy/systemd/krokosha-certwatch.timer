@@ -1,0 +1,10 @@
+[Unit]
+Description=krokosha site: certificate watch once a day
+
+[Timer]
+OnCalendar=*-*-* 04:40:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
