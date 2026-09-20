@@ -212,13 +212,15 @@ func run() error {
 		log.Warn("TELEGRAM_BOT_TOKEN is not set: there is no bot; notifications for Telegram wait in the outbox")
 	}
 
+	reports := analytics.NewReports(pool, location, nil)
+	reports.KeepRaw(env.AnalyticsKeepMonths)
 	panel, err := admin.New(admin.Options{
 		Prefix:   env.AdminPath,
 		SiteHost: siteURL.Hostname(),
 		Auth:     accounts,
 		Log:      log,
 		Version:  version(),
-		Reports:  analytics.NewReports(pool, location, nil),
+		Reports:  reports,
 		Location: location,
 		Feed:     stats.Subscribe,
 		Active: func(ctx context.Context, window time.Duration) int {
@@ -279,6 +281,12 @@ func run() error {
 			letters.Run(ctx)
 		}()
 	}
+	// Finished days are summed up for good; raw page views older than the storage period go (brief B5).
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		analytics.Rollup{DB: pool, Location: location, Log: log, KeepMonths: env.AnalyticsKeepMonths}.Run(ctx)
+	}()
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)

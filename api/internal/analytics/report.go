@@ -17,6 +17,8 @@ type Reports struct {
 	db       *sql.DB
 	location *time.Location
 	now      func() time.Time
+	// keepMonths: how long raw page views are kept (KeepRaw); older periods are read from daily sums.
+	keepMonths int
 }
 
 // NewReports builds the reader. Days are the owner's days (location), like everywhere in reports.
@@ -154,8 +156,11 @@ type Conversion struct {
 
 // Overview is everything the main dashboard shows about a period.
 type Overview struct {
-	Period      Period
-	Hourly      bool // buckets are hours (a single day) rather than days
+	Period Period
+	Hourly bool // buckets are hours (a single day) rather than days
+	// Aggregated: the period reaches back past the raw data, so the numbers are the sums of its
+	// days (overviewFromDaily) — without the hours of visits, without the day that is not over.
+	Aggregated  bool
 	Totals      Totals
 	Timeline    []Bucket
 	Sections    []Section
@@ -177,6 +182,9 @@ type Overview struct {
 
 // Overview computes the dashboard for a period.
 func (r *Reports) Overview(ctx context.Context, period Period) (*Overview, error) {
+	if r.rawGone(period) {
+		return r.overviewFromDaily(ctx, period)
+	}
 	out := &Overview{Period: period, Hourly: period.Days() == 1}
 	from, to := period.fromDay(), period.toDay()
 
