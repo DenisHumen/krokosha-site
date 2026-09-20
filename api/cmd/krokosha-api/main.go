@@ -25,6 +25,8 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/imap"
+	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	krokoshamail "github.com/DenisHumen/krokosha-site/api/internal/mail"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
@@ -140,6 +142,24 @@ func run() error {
 		OnCreated: func(*leads.Lead) { deliveries.Kick() },
 	}).Register(srv.Mux())
 
+	// Answers by mail (brief B10.5): the service mailbox is read over IMAP, and a letter joins the
+	// conversation of the request whose number is signed into the address it was sent to.
+	var letters *inbox.Service
+	var lettersPanel admin.Inbox // stays a nil interface without a mailbox: a nil pointer inside one is not nil
+	var lettersStatus func(ctx context.Context) inbox.Status
+	if env.Mail.IMAPAddr != "" {
+		letters = inbox.New(inbox.Options{
+			Dial: func(ctx context.Context) (*imap.Client, error) {
+				return imap.Dial(ctx, imap.Options{Addr: env.Mail.IMAPAddr, User: env.Mail.IMAPUser, Password: env.Mail.IMAPPassword})
+			},
+			DB: pool, Leads: leadStore, Files: attachments, Secret: []byte(env.Secret), Inbox: env.Mail.Inbox, Log: log,
+			KeepDays: env.Retention.SpamDays, Kick: deliveries.Kick,
+		})
+		lettersPanel, lettersStatus = letters, letters.Status
+	} else {
+		log.Warn("IMAP_ADDR is not set: answers of clients by mail are not read")
+	}
+
 	// Everything nginx served, bots included: read from its access log (brief B6).
 	accessLog := nginxlog.New(nginxlog.Options{Path: env.AccessLog, DB: pool, Cache: store, Location: location, Log: log})
 	system := sysstatus.New(sysstatus.Options{
@@ -155,6 +175,8 @@ func run() error {
 		Started:    started,
 		LogPolled:  accessLog.LastPoll,
 		Outbox:     func(ctx context.Context) (outbox.Stats, error) { return outbox.ReadStats(ctx, pool, time.Now()) },
+		Inbox:      lettersStatus,
+		Mailbox:    env.Mail.Inbox,
 	})
 
 	accounts := auth.New(pool, store, log)
@@ -209,6 +231,9 @@ func run() error {
 			}
 			return botRunner.Status(), true
 		},
+		Inbox:           lettersPanel,
+		Mailbox:         env.Mail.Inbox,
+		KeepLettersDays: env.Retention.SpamDays,
 	})
 	if err != nil {
 		return err
@@ -239,6 +264,13 @@ func run() error {
 		go func() {
 			defer workers.Done()
 			bot.RunReminders(ctx)
+		}()
+	}
+	if letters != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			letters.Run(ctx)
 		}()
 	}
 	go func() {

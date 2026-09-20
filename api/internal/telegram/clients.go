@@ -215,6 +215,46 @@ func (b *Bot) clientWrote(ctx context.Context, leadID, messageID int64) error {
 	if err != nil {
 		return err
 	}
+	files, err := b.opts.Leads.MessageFiles(ctx, leadID, messageID)
+	if err != nil {
+		return err
+	}
+
+	via := map[string]string{leads.ChannelTelegram: "в Telegram", leads.ChannelEmail: "письмом"}[channel]
+	shown, shortened := cut(body, 3000)
+	if shortened {
+		shown += "…"
+	}
+	text := "💬 <b>#" + lead.Number() + "</b> · " + Escape(lead.Name) + " пишет " + via + ":\n\n" + Escape(shown)
+	if len(files) > 0 {
+		// The files stay on the server (brief B10.7): they are downloaded from the admin area.
+		text += fmt.Sprintf("\n\n📎 файлов: %d — в админке", len(files))
+	}
+	buttons := Keyboard{{{Text: "💬 Ответить", Data: leadButtonData("reply", leadID, "")}, {Text: "📇 Карточка", Data: leadButtonData("card", leadID, "")}}}
+	return b.tellStaff(ctx, leadID, "in:"+strconv.FormatInt(messageID, 10), text, buttons)
+}
+
+// undelivered tells everybody that a letter to the client came back: the client is still
+// waiting for an answer that never arrived.
+func (b *Bot) undelivered(ctx context.Context, leadID int64, taskID int64, reason string) error {
+	lead, err := b.opts.Leads.Get(ctx, leadID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return outbox.Permanent(errors.New("the request is gone"))
+	}
+	if err != nil {
+		return err
+	}
+	shown, _ := cut(reason, 300)
+	text := "⚠️ <b>#" + lead.Number() + "</b> · письмо клиенту не доставлено\n\n" + Escape(shown) +
+		"\n\n" + Escape(lead.Name) + " ответа не получил(а). Проверьте адрес в карточке или свяжитесь другим способом."
+	buttons := Keyboard{{{Text: "📇 Карточка", Data: leadButtonData("card", leadID, "")}}}
+	return b.tellStaff(ctx, leadID, "undelivered:"+strconv.FormatInt(taskID, 10), text, buttons)
+}
+
+// tellStaff sends a text about a request to everybody with access, as a reply to the card of the
+// request in each chat. ref names the occasion: run again after a failure, the text reaches only
+// those it missed. What is sent is remembered — and wiped with the request.
+func (b *Bot) tellStaff(ctx context.Context, leadID int64, ref, text string, buttons Keyboard) error {
 	recipients, err := b.opts.Access.Recipients(ctx)
 	if err != nil {
 		return err
@@ -222,7 +262,6 @@ func (b *Bot) clientWrote(ctx context.Context, leadID, messageID int64) error {
 	if len(recipients) == 0 {
 		return outbox.NotReady(errors.New("nobody has access to the bot yet"))
 	}
-	ref := "in:" + strconv.FormatInt(messageID, 10)
 	reached, err := b.sentMessages(ctx, `SELECT id, lead_id, chat_id, message_id FROM bot_messages WHERE lead_id = ? AND ref = ?`, leadID, ref)
 	if err != nil {
 		return err
@@ -239,13 +278,6 @@ func (b *Bot) clientWrote(ctx context.Context, leadID, messageID int64) error {
 		card[message.ChatID] = message.MessageID // the latest card of the chat
 	}
 
-	via := map[string]string{leads.ChannelTelegram: "в Telegram", leads.ChannelEmail: "письмом"}[channel]
-	shown, shortened := cut(body, 3000)
-	if shortened {
-		shown += "…"
-	}
-	text := "💬 <b>#" + lead.Number() + "</b> · " + Escape(lead.Name) + " пишет " + via + ":\n\n" + Escape(shown)
-	buttons := Keyboard{{{Text: "💬 Ответить", Data: leadButtonData("reply", leadID, "")}, {Text: "📇 Карточка", Data: leadButtonData("card", leadID, "")}}}
 	now := b.opts.Now()
 	var failed error
 	for _, member := range recipients {

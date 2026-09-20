@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 )
 
 var now = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
@@ -185,12 +187,25 @@ func TestProblems(t *testing.T) {
 		"memory":                {func(s *Status) { s.Host.MemoryFree = 100 << 20 }, "warn", "памяти осталось 5%"},
 		"load":                  {func(s *Status) { s.Host.Load[1] = 4.2 }, "warn", "4.20 при 2 ядрах"},
 		"log reader stuck":      {func(s *Status) { s.LogReadAt = now.Add(-time.Hour) }, "warn", "Лог nginx не читается"},
+		"mailbox unreachable": {func(s *Status) {
+			s.Mailbox, s.Inbox = "leads@krokosha.xyz", &inbox.Status{LastError: "connection refused", LastErrorAt: now.Add(-time.Minute)}
+		}, "error", "leads@krokosha.xyz не читается"},
+		"letters wait": {func(s *Status) { s.Inbox = &inbox.Status{Connected: true, Unmatched: 3} }, "warn", "Писем без заявки: 3"},
 	} {
 		status := healthy()
 		tc.breakIt(status)
 		got := problems(status, now)
 		if len(got) != 1 || got[0].Level != tc.level || !strings.Contains(got[0].Text, tc.text) {
 			t.Errorf("%s: %+v, want one %q about %q", name, got, tc.level, tc.text)
+		}
+	}
+
+	// A mailbox that is read and has nothing to decide about is no news; nor is one that is only connecting.
+	for _, mail := range []*inbox.Status{{Connected: true}, {}, {Connected: true, LastError: "an old story", LastErrorAt: now.Add(-time.Hour)}} {
+		quiet := healthy()
+		quiet.Inbox = mail
+		if got := problems(quiet, now); len(got) != 0 {
+			t.Errorf("incoming mail %+v: %+v", mail, got)
 		}
 	}
 

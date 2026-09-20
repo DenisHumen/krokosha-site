@@ -465,11 +465,39 @@ const (
 	ChannelEmail    = "email"
 )
 
-// ClientMessage stores what a client wrote after sending the form — in Telegram through the bot,
-// or by answering a letter (brief B10.5). A request that was waiting for the client goes back to
-// work, and everybody is told, through the same outbox as everything else.
+// Incoming is something a client sent after the form: a message in Telegram, a letter.
+type Incoming struct {
+	Channel string // ChannelTelegram | ChannelEmail
+	Text    string
+	// Files are on disk already (Files.Save). When the message cannot be stored, removing them
+	// is the caller's job — it put them there.
+	Files []Upload
+	// EmailMessageID of a letter: the next answer by mail refers to it, and the client's mail
+	// program keeps the conversation in one thread.
+	EmailMessageID string
+	// Automatic: an out-of-office note or the like. It is kept in the conversation, but the
+	// request does not come back to work for it and nobody is woken up.
+	Automatic bool
+	// Note goes into the history: «привязано по адресу отправителя», «не сохранено: video.mp4».
+	Note string
+	// InTx, when set, runs inside the transaction that stores the message: whoever keeps a
+	// record of having handled a letter writes it here — both are stored, or neither.
+	InTx func(ctx context.Context, tx *sql.Tx, messageID int64) error
+}
+
+// ClientMessage stores what a client wrote in Telegram through the bot.
 func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text string) (messageID int64, err error) {
-	text = clean(text, true)
+	return s.ClientWrote(ctx, id, Incoming{Channel: channel, Text: text})
+}
+
+// ClientWrote stores what a client sent after the form — in Telegram through the bot, or by
+// answering a letter (brief B10.5). A request that was waiting for the client goes back to
+// work, and everybody is told, through the same outbox as everything else.
+func (s *Store) ClientWrote(ctx context.Context, id int64, in Incoming) (messageID int64, err error) {
+	text := clean(in.Text, true)
+	if text == "" && len(in.Files) > 0 {
+		text = "(без текста — только файлы)"
+	}
 	if text == "" {
 		return 0, ErrEmptyText
 	}
@@ -487,26 +515,37 @@ func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text strin
 		}
 		return 0, err
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', ?, ?)`,
-		id, now, channel, cut(text, 8000))
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body, email_message_id) VALUES (?, ?, 'in', ?, ?, NULLIF(?, ''))`,
+		id, now, in.Channel, cut(text, 8000), cut(in.EmailMessageID, 255))
 	if err != nil {
 		return 0, err
 	}
 	if messageID, err = result.LastInsertId(); err != nil {
 		return 0, err
 	}
+	for _, file := range in.Files {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lead_attachments (lead_id, message_id, created_at, filename, kind, size, sha256, stored_as) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, messageID, now, cut(file.Filename, 255), file.Kind, file.Size, file.SHA256, file.StoredAs); err != nil {
+			return 0, err
+		}
+	}
 	next := status
-	if status == StatusWaitingClient {
+	if status == StatusWaitingClient && !in.Automatic {
 		next = StatusInProgress // the client answered: the ball is ours again (brief B10.4)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE leads SET status = ?, updated_at = ? WHERE id = ?`, next, now, id); err != nil {
 		return 0, err
 	}
-	if err := event(ctx, tx, id, now, "client", "client_replied", status, next, ""); err != nil {
+	action := "client_replied"
+	if in.Automatic {
+		action = "auto_reply"
+	}
+	if err := event(ctx, tx, id, now, "client", action, status, next, cut(in.Note, 255)); err != nil {
 		return 0, err
 	}
 	// What robots sent is not announced, whatever they write afterwards.
-	if status != StatusSpam {
+	if status != StatusSpam && !in.Automatic {
 		for _, outboxChannel := range []string{outbox.ChannelTelegram, outbox.ChannelEmail} {
 			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskClientMessage, LeadID: id,
 				DedupeKey: fmt.Sprintf("lead:%d:client:%d:%s", id, messageID, outboxChannel), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
@@ -514,11 +553,78 @@ func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text strin
 			}
 		}
 	}
+	if in.InTx != nil {
+		if err := in.InTx(ctx, tx, messageID); err != nil {
+			return 0, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	s.changed(id)
 	return messageID, nil
+}
+
+// ByEmail finds the latest request of a client by the address they left in the form — for a
+// letter that names no request (brief B10.5). Spam and anonymised requests have no client.
+func (s *Store) ByEmail(ctx context.Context, address string) (id int64, err error) {
+	err = s.db.QueryRowContext(ctx, `
+		SELECT id FROM leads
+		 WHERE contact_method = 'email' AND LOWER(contact_value) = LOWER(?) AND anonymized_at IS NULL AND status <> 'spam'
+		 ORDER BY id DESC LIMIT 1`, address).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
+// Undelivered records that a mail server returned a letter of ours (brief B10.5): the answer it
+// carried is marked as failed, the history says why, and the staff hears about it — a client
+// who never got the answer keeps waiting for it. emailMessageID may be empty: then the letter
+// was the automatic confirmation, or the report did not say.
+func (s *Store) Undelivered(ctx context.Context, id int64, emailMessageID, reason string, inTx func(ctx context.Context, tx *sql.Tx) error) error {
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM leads WHERE id = ? AND anonymized_at IS NULL FOR UPDATE`, id).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if emailMessageID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE lead_messages SET delivery = 'failed' WHERE lead_id = ? AND direction = 'out' AND email_message_id = ?`, id, emailMessageID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id); err != nil {
+		return err
+	}
+	if err := event(ctx, tx, id, now, "system", "undelivered", "", "", cut(reason, 255)); err != nil {
+		return err
+	}
+	if status != StatusSpam {
+		for _, outboxChannel := range []string{outbox.ChannelTelegram, outbox.ChannelEmail} {
+			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskUndelivered, LeadID: id,
+				DedupeKey: fmt.Sprintf("lead:%d:undelivered:%d:%s", id, now.UnixMilli(), outboxChannel), Payload: TaskPayload{LeadID: id, Note: cut(reason, 255)}}); err != nil {
+				return err
+			}
+		}
+	}
+	if inTx != nil {
+		if err := inTx(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed(id)
+	return nil
 }
 
 // ClientLinked writes into the history that the client opened the bot by the link of the «thank

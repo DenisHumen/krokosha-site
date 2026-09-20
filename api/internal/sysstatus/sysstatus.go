@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
@@ -40,6 +41,9 @@ type Options struct {
 	LogPolled func() time.Time
 	// Outbox counts the notifications that wait or were given up on.
 	Outbox func(ctx context.Context) (outbox.Stats, error)
+	// Inbox tells how reading the service mailbox goes; nil — it is not read. Mailbox is its address.
+	Inbox   func(ctx context.Context) inbox.Status
+	Mailbox string
 }
 
 // Service collects the status.
@@ -144,6 +148,8 @@ type Status struct {
 	Redis            string // ok | degraded | off
 	LogReadAt        time.Time
 	Outbox           outbox.Stats
+	Inbox            *inbox.Status // nil — answers by mail are not read
+	Mailbox          string
 	Version          string
 	Uptime           time.Duration
 }
@@ -176,6 +182,10 @@ func (s *Service) Collect(ctx context.Context) *Status {
 		if stats, err := s.opts.Outbox(ctx); err == nil {
 			out.Outbox = stats
 		}
+	}
+	if s.opts.Inbox != nil {
+		status := s.opts.Inbox(ctx)
+		out.Inbox, out.Mailbox = &status, s.opts.Mailbox
 	}
 	out.Problems = problems(out, now)
 	return out
@@ -239,6 +249,12 @@ func problems(status *Status, now time.Time) []Problem {
 	}
 	if !status.Outbox.OldestPending.IsZero() && now.Sub(status.Outbox.OldestPending) > 15*time.Minute {
 		add("warn", "Уведомления ждут отправки дольше 15 минут (%d в очереди): %s", status.Outbox.Pending, status.Outbox.LastError)
+	}
+	if mail := status.Inbox; mail != nil && !mail.Connected && mail.LastError != "" && now.Sub(mail.LastErrorAt) < 24*time.Hour {
+		add("error", "Почтовый ящик %s не читается: ответы клиентов письмом не попадают в заявки. Сервис пробует снова сам. Ошибка: %s", status.Mailbox, mail.LastError)
+	}
+	if mail := status.Inbox; mail != nil && mail.Unmatched > 0 {
+		add("warn", "Писем без заявки: %d — посмотрите раздел «Входящие».", mail.Unmatched)
 	}
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")

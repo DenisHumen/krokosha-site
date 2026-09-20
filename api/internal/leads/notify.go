@@ -87,6 +87,8 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return outbox.Permanent(errors.New("the client's message is gone"))
 		}
+	case TaskUndelivered:
+		message, err = m.undelivered(lead, task.ID, payload.Note)
 	default:
 		return outbox.Permanent(fmt.Errorf("the mailer does not know the task %q", task.Kind))
 	}
@@ -242,8 +244,13 @@ func (m *Mailer) clientWrote(ctx context.Context, lead *Lead, messageID int64) (
 	if err != nil {
 		return mail.Message{}, err
 	}
+	files, err := m.Store.MessageFiles(ctx, lead.ID, messageID)
+	if err != nil {
+		return mail.Message{}, err
+	}
 	v := m.view(lead, "ru")
 	v.Body, v.Author = body, map[string]string{ChannelTelegram: "в Telegram", ChannelEmail: "письмом"}[channel]
+	v.Files = fileList(files)
 	text, html, err := render(clientWroteText, clientWroteHTML, v)
 	if err != nil {
 		return mail.Message{}, err
@@ -261,6 +268,26 @@ func (m *Mailer) clientWrote(ctx context.Context, lead *Lead, messageID int64) (
 		message.ReplyTo = &netmail.Address{Name: lead.Name, Address: lead.ContactValue}
 	}
 	return message, nil
+}
+
+// undelivered tells the owner that a letter to the client came back (brief B10.5). It goes to the
+// owner's own mailbox on the same server: whatever stops mail from leaving does not stop this.
+func (m *Mailer) undelivered(lead *Lead, taskID int64, reason string) (mail.Message, error) {
+	v := m.view(lead, "ru")
+	v.Body = reason
+	text, html, err := render(undeliveredText, undeliveredHTML, v)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	notification := m.messageID(lead.ID, "notify")
+	return mail.Message{
+		From: m.From, To: m.NotifyTo,
+		Subject:   fmt.Sprintf("Не доставлено: заявка #%s · %s", v.Number, lead.Name),
+		Text:      text,
+		HTML:      html,
+		MessageID: m.messageID(lead.ID, fmt.Sprintf("undelivered-%d", taskID)), InReplyTo: notification, References: []string{notification},
+		Headers: map[string]string{"X-Krokosha-Lead": v.Number},
+	}, nil
 }
 
 // messageID is the same for every attempt to deliver the same letter: a mail server that got it
@@ -473,7 +500,9 @@ var autoReplyHTML = htmltemplate.Must(htmltemplate.New("autoreply.html").Parse(m
 var clientWroteText = texttemplate.Must(texttemplate.New("client.txt").Parse(`{{.Lead.Name}} пишет по заявке #{{.Number}} ({{.Author}}):
 
 {{.Body}}
-
+{{if .Files}}
+Файлы (в админке): {{.Files}}
+{{end}}
 Открыть в админке: {{.AdminURL}}
 `))
 
@@ -481,9 +510,28 @@ var clientWroteHTML = htmltemplate.Must(htmltemplate.New("client.html").Parse(ma
 {{define "body"}}
 <p style="margin:0 0 12px;"><b>{{.Lead.Name}}</b> пишет по заявке <b>#{{.Number}}</b> <span style="color:#6b6f7e;">({{.Author}})</span>:</p>
 <p style="margin:0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+{{if .Files}}<p style="margin:12px 0 0;font-size:14px;">Файлы <span style="color:#6b6f7e;">(скачать — в админке)</span>: {{.Files}}</p>{{end}}
 <p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">Открыть в админке</a></p>
 {{end}}
 {{define "foot"}}Заявка вернулась в работу, если ждала ответа клиента. История переписки — в админке.{{end}}`))
+
+var undeliveredText = texttemplate.Must(texttemplate.New("undelivered.txt").Parse(`Письмо клиенту по заявке #{{.Number}} не доставлено.
+
+{{.Body}}
+
+{{.Lead.Name}} ({{.Lead.ContactValue}}) ответа не получил(а). Проверьте адрес или свяжитесь другим способом.
+
+Открыть в админке: {{.AdminURL}}
+`))
+
+var undeliveredHTML = htmltemplate.Must(htmltemplate.New("undelivered.html").Parse(mailFrame + `
+{{define "body"}}
+<p style="margin:0 0 12px;">Письмо клиенту по заявке <b>#{{.Number}}</b> <b style="color:#b3261e;">не доставлено</b>.</p>
+<p style="margin:0;padding:12px 14px;background:#fbf3f2;border-left:3px solid #b3261e;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+<p style="margin:12px 0 0;">{{.Lead.Name}} ({{.Lead.ContactValue}}) ответа не получил(а). Проверьте адрес или свяжитесь другим способом.</p>
+<p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">Открыть в админке</a></p>
+{{end}}
+{{define "foot"}}Сообщил почтовый сервер. История переписки — в админке.{{end}}`))
 
 var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
 
