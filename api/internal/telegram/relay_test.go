@@ -369,6 +369,15 @@ func TestReminderAndMorningDigest(t *testing.T) {
 	if got := f.api.Calls("sendMessage"); len(got) != 0 {
 		t.Errorf("messages on a quiet morning and with everything switched off: %+v", got)
 	}
+
+	// Letters nobody could place are worth a line — a number only, and even on a morning without requests.
+	_ = store.SetStatus(ctx, 3, "denis", leads.StatusRejected, "")
+	f.bot.opts.DigestAt, f.bot.opts.Letters = "09:00", func(context.Context) int { return 2 }
+	f.now = time.Date(2026, 9, 25, 9, 0, 0, 0, kyiv)
+	f.bot.digest(ctx)
+	if got := f.api.Sent(denis.ID); len(got) != 1 || !strings.Contains(got[0].Text(), "📥 писем без заявки: 2 — раздел «Входящие» в админке") {
+		t.Errorf("the digest about letters: %+v", got)
+	}
 }
 
 // TestLettersInTelegram: brief B10.5 — a client's letter reaches the staff as a reply to the card;

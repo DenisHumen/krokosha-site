@@ -135,15 +135,27 @@ func (b *Bot) digest(ctx context.Context) {
 		return
 	}
 	open := counts[leads.StatusNew] + counts[leads.StatusInProgress] + counts[leads.StatusWaitingClient]
-	if open == 0 {
+	letters := 0
+	if b.opts.Letters != nil {
+		letters = b.opts.Letters(ctx)
+	}
+	if open == 0 && letters == 0 {
 		return // a quiet morning needs no message
+	}
+	head := fmt.Sprintf("☀️ Доброе утро! 🟡 новых: %d · 🟢 в работе: %d · 🔵 ждём клиента: %d",
+		counts[leads.StatusNew], counts[leads.StatusInProgress], counts[leads.StatusWaitingClient])
+	if letters > 0 {
+		// Only a number: whose letters they are is for the admin area, not for a chat.
+		head += fmt.Sprintf("\n📥 писем без заявки: %d — раздел «Входящие» в админке", letters)
+	}
+	if open == 0 {
+		b.broadcast(ctx, 0, "", head, nil)
+		return
 	}
 	list, buttons, err := b.listView(ctx, "Открытые заявки", leads.Filter{Status: "open", Limit: listLimit}, "")
 	if err != nil {
 		b.opts.Log.Error("telegram: cannot list the requests", "error", err)
 		return
 	}
-	head := fmt.Sprintf("☀️ Доброе утро! 🟡 новых: %d · 🟢 в работе: %d · 🔵 ждём клиента: %d",
-		counts[leads.StatusNew], counts[leads.StatusInProgress], counts[leads.StatusWaitingClient])
 	b.broadcast(ctx, 0, "", strings.Join([]string{head, "", list}, "\n"), buttons)
 }

@@ -38,11 +38,9 @@ type Server struct {
 	User     string
 	Password string
 
-	// NoIdle and NoPlain take capabilities away, to test what the client does without them.
-	NoIdle  bool
-	NoPlain bool
-
 	mu          sync.Mutex
+	noIdle      bool
+	noPlain     bool
 	listener    net.Listener
 	uidValidity uint32
 	nextUID     uint32
@@ -73,6 +71,32 @@ func New(t testing.TB, user, password string) *Server {
 	go server.accept()
 	t.Cleanup(server.Close)
 	return server
+}
+
+// Without takes capabilities away — «IDLE», «AUTH=PLAIN» — to test what a client does without them.
+func (s *Server) Without(capabilities ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, capability := range capabilities {
+		switch strings.ToUpper(capability) {
+		case "IDLE":
+			s.noIdle = true
+		case "AUTH=PLAIN":
+			s.noPlain = true
+		}
+	}
+}
+
+func (s *Server) offers(capability string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch capability {
+	case "IDLE":
+		return !s.noIdle
+	case "AUTH=PLAIN":
+		return !s.noPlain
+	}
+	return true
 }
 
 // Close stops the server and hangs up on everybody.
@@ -176,11 +200,10 @@ func (s *Server) accept() {
 
 func (s *Server) capabilities() string {
 	caps := "IMAP4rev1 UIDPLUS"
-	if !s.NoIdle {
-		caps += " IDLE"
-	}
-	if !s.NoPlain {
-		caps += " AUTH=PLAIN"
+	for _, capability := range []string{"IDLE", "AUTH=PLAIN"} {
+		if s.offers(capability) {
+			caps += " " + capability
+		}
 	}
 	return caps
 }
@@ -247,7 +270,7 @@ func (s *Server) serve(sess *session) {
 			return
 		case name == "NOOP":
 			sess.say("%s OK done", tag)
-		case name == "AUTHENTICATE" && strings.EqualFold(args, "PLAIN") && !s.NoPlain:
+		case name == "AUTHENTICATE" && strings.EqualFold(args, "PLAIN") && s.offers("AUTH=PLAIN"):
 			sess.say("+ ")
 			answer, err := reader.ReadString('\n')
 			if err != nil {
@@ -288,7 +311,7 @@ func (s *Server) serve(sess *session) {
 			sess.say("%s OK [READ-WRITE] Select completed", tag)
 		case !selected:
 			sess.say("%s BAD select a mailbox first", tag)
-		case name == "IDLE" && !s.NoIdle:
+		case name == "IDLE" && s.offers("IDLE"):
 			sess.mu.Lock()
 			sess.idling, sess.idleTag = true, tag
 			sess.mu.Unlock()

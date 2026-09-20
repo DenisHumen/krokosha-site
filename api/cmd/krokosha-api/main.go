@@ -191,6 +191,12 @@ func run() error {
 			DB: pool, Leads: leadStore, Form: form.Current, Location: location, AdminURL: env.SiteURL + env.AdminPath, Kick: deliveries.Kick,
 			Hurry:       func(ctx context.Context) { deliveries.Hurry(ctx, outbox.ChannelTelegram) },
 			RemindAfter: time.Duration(env.Telegram.RemindMinutes) * time.Minute, DigestAt: env.Telegram.DigestAt,
+			Letters: func(ctx context.Context) int {
+				if letters == nil {
+					return 0
+				}
+				return letters.Status(ctx).Unmatched
+			},
 			Audit: func(ctx context.Context, actor, action, subject, details string) {
 				accounts.Audit(ctx, actor, action, subject, details, "telegram")
 			},

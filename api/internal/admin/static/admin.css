@@ -1299,6 +1299,12 @@ details summary {
   margin-left: auto;
 }
 
+.letter-actions input:not([type='hidden']) {
+  width: 9rem;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--mono);
+}
+
 .letter-actions .button {
   margin-top: 0;
 }

@@ -135,7 +135,7 @@ func TestWrongPassword(t *testing.T) {
 
 func TestLoginWhenPlainIsNotOffered(t *testing.T) {
 	server := imaptest.New(t, user, password)
-	server.NoPlain = true
+	server.Without("AUTH=PLAIN")
 	client := dial(t, server) // the password has quotes and a backslash: they must survive quoting
 	if _, err := client.Select("INBOX"); err != nil {
 		t.Fatal(err)
@@ -216,7 +216,7 @@ func TestIdleNoticesAServerThatWentAway(t *testing.T) {
 
 func TestWithoutIdleTheServerIsAskedAgain(t *testing.T) {
 	server := imaptest.New(t, user, password)
-	server.NoIdle = true
+	server.Without("IDLE")
 	client := dial(t, server)
 	if _, err := client.Select("INBOX"); err != nil {
 		t.Fatal(err)
