@@ -24,11 +24,11 @@ import (
 //	echo "certbot renew failed: …" | krokosha-cli alert --key cert:2026-09-20 --subject "Сертификат не продлевается"
 func runAlert(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("alert", flag.ContinueOnError)
-	envFile := flags.String("env-file", "/etc/krokosha/env", "settings of the installed site")
+	envFile := flags.String("env-file", config.DefaultEnvFile, "settings of the installed site")
 	key := flags.String("key", "", "names the occasion: an alert with the same key is sent once (default: the subject and today's date)")
 	subject := flags.String("subject", "", "one line: what is wrong")
 	flags.Usage = func() {
-		fmt.Fprint(flags.Output(), "Usage: krokosha-cli alert --subject TEXT [--key KEY] < details\n\nQueues a message for the owner of the site: mail to MAIL_NOTIFY_TO, Telegram to the owners of the bot.\n\n")
+		_, _ = fmt.Fprint(flags.Output(), "Usage: krokosha-cli alert --subject TEXT [--key KEY] < details\n\nQueues a message for the owner of the site: mail to MAIL_NOTIFY_TO, Telegram to the owners of the bot.\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

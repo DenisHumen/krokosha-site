@@ -187,7 +187,10 @@ func (b *Bot) alert(ctx context.Context, task outbox.Task) error {
 		owners++
 		_, err := b.opts.API.Send(ctx, Outgoing{ChatID: member.TelegramID, Text: text})
 		var refused *APIError
-		if err != nil && !(errors.As(err, &refused) && refused.Gone()) {
+		if errors.As(err, &refused) && refused.Gone() {
+			continue // this owner blocked the bot: nobody to tell
+		}
+		if err != nil {
 			failed = errors.Join(failed, err)
 		}
 	}
