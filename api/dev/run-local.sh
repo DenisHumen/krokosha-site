@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The API with the admin area on this machine, for looking at the dashboards while developing:
 # throw-away MySQL and Redis (compose.test.yaml), an administrator «dev», two weeks of demo visits,
-# a dozen made-up requests.
+# a dozen made-up requests, a few letters without a request.
 #
 #   api/dev/run-local.sh            → http://localhost:8099/_dev/   login: dev   password: local-dev-password
 #
@@ -19,6 +19,9 @@ export KROKOSHA_LISTEN=127.0.0.1:8099 SITE_URL=http://localhost:8099 ADMIN_PATH=
 export MYSQL_ADDR=127.0.0.1:33306 MYSQL_DATABASE=krokosha_dev MYSQL_USER=root MYSQL_PASSWORD=krokosha-test
 export REDIS_URL=redis://127.0.0.1:36379/1 KROKOSHA_CONTENT_DIR=../content
 export APP_SECRET=local-development-secret-0123456789abcdef
+# There is no mail server here: the «Входящие» screen shows made-up letters, and the status screen
+# a mailbox that does not answer.
+export MAIL_INBOX=leads@krokosha.localhost IMAP_ADDR=127.0.0.1:9 IMAP_USER=leads@krokosha.localhost IMAP_PASSWORD=none
 
 # A pretend server: state and release directories, a build report, an access log of two weeks.
 work=${TMPDIR:-/tmp}/krokosha-dev
@@ -36,5 +39,6 @@ export KROKOSHA_STATE="$work/state" KROKOSHA_WWW="$work/www" KROKOSHA_ACCESS_LOG
 printf 'local-dev-password\n' | go run ./cmd/krokosha-cli admin create dev --password-stdin || true
 mysql krokosha_dev <dev/seed-demo.sql
 mysql krokosha_dev <dev/seed-demo-leads.sql
+mysql krokosha_dev <dev/seed-demo-inbox.sql
 echo "Admin area: http://localhost:8099/_dev/   login: dev   password: local-dev-password"
 exec go run ./cmd/krokosha-api

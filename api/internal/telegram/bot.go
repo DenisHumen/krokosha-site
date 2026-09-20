@@ -42,6 +42,9 @@ type Options struct {
 	// DigestAt: «09:00» — when the morning list of open requests goes out, by the owner's clock; "" — never.
 	RemindAfter time.Duration
 	DigestAt    string
+	// Letters counts the letters that wait in the admin area for somebody to say whose they are;
+	// nil — mail is not read. The morning digest mentions them.
+	Letters func(ctx context.Context) int
 	// Audit writes into the journal of the admin area: who let whom in, who switched whom off.
 	Audit func(ctx context.Context, actor, action, subject, details string)
 	// SiteURL is the public address of the site, for the greeting of strangers.

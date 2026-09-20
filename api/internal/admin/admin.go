@@ -66,6 +66,12 @@ type Options struct {
 	// false when there is no token (invitations can be prepared before there is a bot).
 	BotAccess *telegram.Access
 	BotStatus func() (telegram.Status, bool)
+
+	// Inbox reads the service mailbox; nil — answers by mail are not read (no IMAP_ADDR).
+	// Mailbox is its address, KeepLettersDays how long a letter without a request waits.
+	Inbox           Inbox
+	Mailbox         string
+	KeepLettersDays int
 }
 
 // Handler serves the admin area.
@@ -131,7 +137,7 @@ func New(opts Options) (*Handler, error) {
 			return [...]string{"accent", "cyan", "pink"}[index%3]
 		},
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "templates", "bot", "account", "error"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -169,6 +175,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/leads/{id}/note", h.private(h.leadNote))
 	mux.Handle("POST "+p+"/leads/{id}/reply", h.private(h.leadReply))
 	mux.Handle("POST "+p+"/leads/{id}/delete", h.private(h.leadDelete))
+	mux.Handle("GET "+p+"/inbox", h.private(h.inboxPage))
+	mux.Handle("POST "+p+"/inbox/{id}/attach", h.private(h.inboxAttach))
+	mux.Handle("POST "+p+"/inbox/{id}/discard", h.private(h.inboxDiscard))
 	mux.Handle("GET "+p+"/templates", h.private(h.templatesPage))
 	mux.Handle("POST "+p+"/templates", h.private(h.templateSave))
 	mux.Handle("GET "+p+"/bot", h.private(h.botPage))
@@ -286,6 +295,9 @@ type view struct {
 	Title    string
 	Nav      string
 	NewLeads int // requests nobody has taken yet: the number next to «Заявки» in the menu
+	// HasInbox: the service reads a mailbox; Letters — how many letters wait for a decision.
+	HasInbox bool
+	Letters  int
 	Session  *auth.Session
 	Version  string
 	Flash    string // a message about what just happened
@@ -300,6 +312,9 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 		if counts, err := h.opts.Leads.Counts(r.Context()); err == nil {
 			v.NewLeads = counts[leads.StatusNew]
 		}
+	}
+	if v.Session != nil && h.opts.Inbox != nil {
+		v.HasInbox, v.Letters = true, h.opts.Inbox.Status(r.Context()).Unmatched
 	}
 	if v.Flash == "" {
 		v.Flash = flashText[r.URL.Query().Get("ok")]
@@ -324,6 +339,8 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"lead-note":        "Заметка сохранена.",
 	"lead-reply":       "Ответ сохранён и поставлен в очередь на отправку.",
 	"lead-deleted":     "Данные клиента удалены. В журнале осталась только запись об удалении.",
+	"letter-attached":  "Письмо перенесено в переписку заявки.",
+	"letter-discarded": "Письмо удалено.",
 	"template-saved":   "Шаблон сохранён.",
 	"template-deleted": "Шаблон удалён.",
 

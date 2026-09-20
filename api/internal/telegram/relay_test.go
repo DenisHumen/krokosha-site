@@ -369,4 +369,64 @@ func TestReminderAndMorningDigest(t *testing.T) {
 	if got := f.api.Calls("sendMessage"); len(got) != 0 {
 		t.Errorf("messages on a quiet morning and with everything switched off: %+v", got)
 	}
+
+	// Letters nobody could place are worth a line — a number only, and even on a morning without requests.
+	_ = store.SetStatus(ctx, 3, "denis", leads.StatusRejected, "")
+	f.bot.opts.DigestAt, f.bot.opts.Letters = "09:00", func(context.Context) int { return 2 }
+	f.now = time.Date(2026, 9, 25, 9, 0, 0, 0, kyiv)
+	f.bot.digest(ctx)
+	if got := f.api.Sent(denis.ID); len(got) != 1 || !strings.Contains(got[0].Text(), "📥 писем без заявки: 2 — раздел «Входящие» в админке") {
+		t.Errorf("the digest about letters: %+v", got)
+	}
+}
+
+// TestLettersInTelegram: brief B10.5 — a client's letter reaches the staff as a reply to the card;
+// its files stay on the server. And a letter of ours that came back is not kept a secret.
+func TestLettersInTelegram(t *testing.T) {
+	f := newFixture(t)
+	store := f.withLeads()
+	ctx := context.Background()
+	f.join(denis, RoleOwner)
+	lead := f.addLead(store, nil)
+	f.announce(lead.ID)
+
+	files := leads.NewFiles(t.TempDir())
+	store.UseFiles(files)
+	upload, err := files.Save("схема <сети>.pdf", leads.KindPDF, strings.NewReader("%PDF-1.7 the scheme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	messageID, err := store.ClientWrote(ctx, lead.ID, leads.Incoming{Channel: leads.ChannelEmail, Text: "Схема <во вложении>.", Files: []leads.Upload{upload}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.api.Forget()
+	if err := f.bot.Send(ctx, task(leads.TaskClientMessage, lead.ID, messageID)); err != nil {
+		t.Fatal(err)
+	}
+	push := lastCall(t, f.api.Sent(denis.ID))
+	if !strings.Contains(push.Text(), "пишет письмом:") || !strings.Contains(push.Text(), "Схема &lt;во вложении&gt;.") ||
+		!strings.Contains(push.Text(), "📎 файлов: 1 — в админке") || strings.Contains(push.Text(), "схема") || replyTo(push) == 0 {
+		t.Errorf("the push about a letter: %q reply_to=%d", push.Text(), replyTo(push))
+	}
+
+	// A mail server returned our answer.
+	payload, _ := json.Marshal(leads.TaskPayload{LeadID: lead.ID, Note: "ivan@compny.test 5.4.4 Host <not> found"})
+	returned := outbox.Task{ID: 77, Channel: outbox.ChannelTelegram, Kind: leads.TaskUndelivered, LeadID: lead.ID, Payload: payload}
+	f.api.Forget()
+	if err := f.bot.Send(ctx, returned); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.bot.Send(ctx, returned) // delivered again after a restart: nobody hears it twice
+	sent := f.api.Sent(denis.ID)
+	if len(sent) != 1 {
+		t.Fatalf("messages about the returned letter: %d", len(sent))
+	}
+	if text := sent[0].Text(); !strings.Contains(text, "⚠️ <b>#K-0001</b> · письмо клиенту не доставлено") || !strings.Contains(text, "5.4.4 Host &lt;not&gt; found") || replyTo(sent[0]) == 0 {
+		t.Errorf("the message: %q reply_to=%d", text, replyTo(sent[0]))
+	}
+	// It is about a person: remembered, to be wiped with the request.
+	if f.count(`SELECT COUNT(*) FROM bot_messages WHERE lead_id = 1 AND ref = 'undelivered:77'`) != 1 {
+		t.Error("the message about the returned letter is not remembered")
+	}
 }

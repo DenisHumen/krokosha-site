@@ -224,6 +224,8 @@ func (b *Bot) Send(ctx context.Context, task outbox.Task) error {
 		return b.answerClient(ctx, payload.LeadID, payload.MessageID)
 	case leads.TaskClientMessage:
 		return b.clientWrote(ctx, payload.LeadID, payload.MessageID)
+	case leads.TaskUndelivered:
+		return b.undelivered(ctx, payload.LeadID, task.ID, payload.Note)
 	default:
 		return outbox.Permanent(fmt.Errorf("the bot does not know the task %q", task.Kind))
 	}

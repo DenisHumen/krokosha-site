@@ -275,7 +275,7 @@ check "an answer to the client" test "$(admin_post /leads/1/reply --data-urlenco
 reply_left() { [[ $(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOIN outbox o ON o.lead_id = l.id AND o.kind = 'lead.reply' WHERE l.id = 1") == "waiting_client sent" ]]; }
 check "…leaves through the site's own mail server" wait_for 30 reply_left
 check "a note for colleagues" test "$(admin_post /leads/1/note --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Клиент из теста установки.')" = 303
-check "the status screen shows the queue of notifications" grep -q 'в очереди: ' <(admin_get "$ADMIN/status")
+check "the status screen shows the queue of notifications" grep -q 'Уведомления (outbox)' <(admin_get "$ADMIN/status")
 check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates")
 check "requests as CSV" grep -q '^K-0002,' <(admin_get "$ADMIN/leads/export.csv")
 check "deleting a client's data needs the number typed in" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0001')" = 400
@@ -424,6 +424,58 @@ check "the webhook's address stays out of the traffic log" bash -c "! grep -q '/
 check "CLI: an invitation for a colleague" grep -qE '^/start i_[a-z2-7]{20}$' <(krokosha-cli bot invite 2>/dev/null)
 check "the bot's page in the admin area" grep -q '@krokosha_ci_bot' <(admin_get "$ADMIN/bot")
 
+# Answers by mail (brief B10.5), on the real mail server and while the admin session of this test
+# is still open. The client's mailbox is on this very server: what the site sends them can be
+# read, and they can answer it.
+echo "Answers by mail"
+mailcheck() { python3 "$SOURCE/deploy/ci/mailcheck.py" "$@"; }
+SERVICE_PASSWORD=$(sed -n 's/^MAIL_SERVICE_PASSWORD=//p' /etc/krokosha/env)
+CLIENT_PASSWORD='ci: the password of a client'
+check "the service reads its mailbox" grep -q "ящик <span class=\"mono\">leads@$DOMAIN</span> на связи" <(admin_get "$ADMIN/status")
+check "a mailbox for the client of this test" bash -c "printf '%s\n' '$CLIENT_PASSWORD' | krokosha-mailbox add client@$DOMAIN --password-stdin 2>/dev/null"
+# Asked inside the container, not by signing in: failed logins would get this machine banned by
+# the mail server's own fail2ban.
+client_known() { docker exec krokosha-mail-1 doveadm user "client@$DOMAIN" >/dev/null 2>&1 && docker exec krokosha-mail-1 postmap -q "client@$DOMAIN" texthash:/etc/postfix/vmailbox >/dev/null 2>&1; }
+check "…which the mail server learns about by itself" wait_for 120 client_known
+mail_lead=$(curl --silent --max-time 30 --header 'Accept: application/json' --header "Host: $DOMAIN" --header 'X-Real-IP: 198.51.100.41' \
+  --data-urlencode 'name=Почтовый клиент' --data-urlencode 'contact_method=email' --data-urlencode "contact_value=client@$DOMAIN" \
+  --data-urlencode 'direction=devops' --data-urlencode 'description=Нужна настройка почтового сервера для небольшого офиса.' \
+  --data-urlencode 'consent=on' --data-urlencode 'lang=ru' http://127.0.0.1:8080/api/leads | grep -oE '"id":"K-[0-9]+"' | grep -oE '[0-9]+' | sed 's/^0*//')
+check "a request of a client with a mailbox" test -n "$mail_lead"
+mail_number=$(printf 'K-%04d' "${mail_lead:-0}")
+reply_to=$(mailcheck header "client@$DOMAIN" "$CLIENT_PASSWORD" "$mail_number" Reply-To)
+check "the confirmation asks for answers at the signed address of the request" grep -qE "<leads\+k-[0-9]{4}\.[a-z2-7]{16}@$DOMAIN>" <<<"$reply_to"
+signed=$(grep -oE "leads\+k-[0-9]+\.[a-z2-7]{16}@[a-z0-9.-]+" <<<"$reply_to" | head -n 1)
+answer_pdf=$(mktemp --suffix=.pdf)
+printf '%%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%%%EOF\n' >"$answer_pdf"
+check "the client answers the letter, with a file" mailcheck send "client@$DOMAIN" "$CLIENT_PASSWORD" "client@$DOMAIN" "$signed" \
+  "$(printf 'Да, два VLAN: офис и гости.\n\nOn Mon, 1 Sep 2026 at 10:04, CI Owner <owner@%s> wrote:\n> ЭТО СТАРОЕ ПИСЬМО\n> его в переписке быть не должно' "$DOMAIN")" "$answer_pdf"
+letters_in() { [[ $(sql "SELECT COUNT(*) FROM lead_messages WHERE lead_id = $mail_lead AND channel = 'email' AND direction = 'in'") == "$1" ]]; }
+check "…and the answer joins the conversation of the request" wait_for 90 letters_in 1
+card=$(admin_get "$ADMIN/leads/$mail_lead")
+check "…the client's own words" grep -q 'Да, два VLAN: офис и гости.' <<<"$card"
+check "…without the conversation quoted below them" bash -c "! grep -q 'СТАРОЕ ПИСЬМО' <<<\"\$1\"" _ "$card"
+check "…with the file, inspected like the files of the form" test "$(sql "SELECT CONCAT(kind, ' ', size) FROM lead_attachments WHERE lead_id = $mail_lead")" = "pdf $(stat -c %s "$answer_pdf")"
+check "…and the letter left the mailbox" mailcheck absent "leads@$DOMAIN" "$SERVICE_PASSWORD" 'VLAN'
+staff_heard() { [[ $(said_to 7002 'пишет письмом') -ge 1 ]]; }
+check "the staff hears about the letter in Telegram" wait_for 30 staff_heard
+check "a known client writes to the bare address" mailcheck send "client@$DOMAIN" "$CLIENT_PASSWORD" "client@$DOMAIN" "leads@$DOMAIN" 'Забыл спросить про сроки.'
+check "…the letter goes to their latest request" wait_for 90 letters_in 2
+# Anybody can type a number into an address; the signature is what opens a request.
+check "a letter with a made-up signature" mailcheck send "owner@$DOMAIN" "$MAILBOX_PASSWORD" "owner@$DOMAIN" "leads+k-0001.aaaaaaaaaaaaaaaa@$DOMAIN" 'Письмо с подделанным номером заявки. FORGED-NUMBER'
+letter_waits() { grep -q 'подделанным номером' <(admin_get "$ADMIN/inbox"); }
+check "…waits for a person on the «Входящие» screen" wait_for 90 letter_waits
+check "…and is in nobody's conversation" test "$(sql "SELECT COUNT(*) FROM lead_messages WHERE lead_id = 1 AND channel = 'email' AND direction = 'in'")" = 0
+waiting_id=$(sql "SELECT MAX(id) FROM inbox_letters WHERE outcome = 'unmatched'")
+check "a person puts it into a request" test "$(admin_post "/inbox/$waiting_id/attach" --data-urlencode "csrf=$(csrf)" --data-urlencode "lead=$mail_number")" = 303
+check "…where it then is" grep -q 'подделанным номером' <(admin_get "$ADMIN/leads/$mail_lead")
+check "…and nowhere else" mailcheck absent "leads@$DOMAIN" "$SERVICE_PASSWORD" 'FORGED-NUMBER'
+# The first request of this test came from an address at a domain that does not exist: the mail
+# server returned the confirmation, and the report found its request by the signed address.
+came_back() { [[ $(sql "SELECT COUNT(*) FROM lead_events WHERE lead_id = 1 AND action = 'undelivered'") -ge 1 ]]; }
+check "a letter that could not be delivered is reported in its request" wait_for 120 came_back
+rm -f "$answer_pdf"
+
 check "a form without the CSRF token is refused" test "$(admin_post /account/totp/begin)" = 403
 check "a form posted by another site is refused" test "$(admin_post /account/totp/begin --header 'Origin: https://evil.example' --data-urlencode "csrf=$(csrf)")" = 403
 check "the genuine form works" test "$(admin_post /account/totp/begin --header "Origin: https://$DOMAIN" --data-urlencode "csrf=$(csrf)")" = 303
@@ -456,12 +508,10 @@ check "fail2ban watches the admin area" bash -c "fail2ban-client status krokosha
 check "fail2ban recognises the failed logins" bash -c "fail2ban-regex /var/log/krokosha/nginx-admin.json.log /etc/fail2ban/filter.d/krokosha-admin.conf | grep -qE '^Failregex: [1-9][0-9]* total'"
 
 echo "Mail server"
-mailcheck() { python3 "$SOURCE/deploy/ci/mailcheck.py" "$@"; }
-SERVICE_PASSWORD=$(sed -n 's/^MAIL_SERVICE_PASSWORD=//p' /etc/krokosha/env)
 check "the mail server runs and says it is healthy" test "$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1)" = healthy
 check "its letters, state and keys live in the data root" test -d /srv/krokosha/mail/data -a -d /srv/krokosha/mail/state -a -s /srv/krokosha/mail/config/postfix-accounts.cf
-check "mailboxes: the site's own and the owner's" test "$(krokosha-mailbox list | sort | paste -sd ' ')" = "leads@$DOMAIN owner@$DOMAIN"
-check "passwords are kept as hashes" bash -c "! grep -qF -e '$MAILBOX_PASSWORD' -e '$SERVICE_PASSWORD' /srv/krokosha/mail/config/postfix-accounts.cf && [[ \$(grep -c '|{SHA512-CRYPT}\\\$6\\\$' /srv/krokosha/mail/config/postfix-accounts.cf) == 2 ]]"
+check "mailboxes: the site's own, the owner's and the test's client" test "$(krokosha-mailbox list | sort | paste -sd ' ')" = "client@$DOMAIN leads@$DOMAIN owner@$DOMAIN"
+check "passwords are kept as hashes" bash -c "! grep -qF -e '$MAILBOX_PASSWORD' -e '$SERVICE_PASSWORD' /srv/krokosha/mail/config/postfix-accounts.cf && [[ \$(grep -c '|{SHA512-CRYPT}\\\$6\\\$' /srv/krokosha/mail/config/postfix-accounts.cf) == 3 ]]"
 check "the site is told how to send and how to read" bash -c "grep -q '^SMTP_ADDR=127.0.0.1:587\$' /etc/krokosha/env && grep -q '^IMAP_ADDR=127.0.0.1:993\$' /etc/krokosha/env && grep -q '^MAIL_FROM=CI Owner <owner@$DOMAIN>\$' /etc/krokosha/env && grep -q '^MAIL_INBOX=leads@$DOMAIN\$' /etc/krokosha/env"
 check "a DKIM key was made" test -s "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt"
 check "the installation ends with the DNS records to enter" bash -c "grep -q 'MX .*10 mail.$DOMAIN\\.' '$INSTALL_LOG' && grep -q 'v=spf1 mx -all' '$INSTALL_LOG' && grep -q 'mail._domainkey .*v=DKIM1' '$INSTALL_LOG' && grep -q '_dmarc' '$INSTALL_LOG' && grep -q 'PTR ' '$INSTALL_LOG'"

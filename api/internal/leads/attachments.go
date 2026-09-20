@@ -50,6 +50,21 @@ func (s *Store) Attachments(ctx context.Context, leadID int64) ([]Attachment, er
 	return out, rows.Err()
 }
 
+// MessageFiles lists the files that came with one message of a request.
+func (s *Store) MessageFiles(ctx context.Context, leadID, messageID int64) ([]Attachment, error) {
+	files, err := s.Attachments(ctx, leadID)
+	if err != nil {
+		return nil, err
+	}
+	var out []Attachment
+	for _, file := range files {
+		if file.MessageID == messageID {
+			out = append(out, file)
+		}
+	}
+	return out, nil
+}
+
 // OpenAttachment finds a file of this very request and opens it. Asking for a file through
 // another request's address finds nothing.
 func (s *Store) OpenAttachment(ctx context.Context, leadID, id int64) (*Attachment, *os.File, error) {

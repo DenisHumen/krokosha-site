@@ -23,6 +23,9 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/imap"
+	"github.com/DenisHumen/krokosha-site/api/internal/imap/imaptest"
+	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
@@ -35,8 +38,9 @@ import (
 var quiet = slog.New(slog.DiscardHandler)
 
 const (
-	prefix   = "/_test1234"
-	password = "correct horse battery staple"
+	prefix      = "/_test1234"
+	password    = "correct horse battery staple"
+	testMailbox = "leads@krokosha.xyz"
 )
 
 type site struct {
@@ -48,12 +52,18 @@ type site struct {
 	state   string              // the server's state directory: build report, rebuild requests
 	leads   *leads.Store
 	bot     telegram.Status // what the bot reports; the zero value — no token, no bot
+	// With mail: the service mailbox (a test IMAP server) and what reads it.
+	mailbox *imaptest.Server
+	letters *inbox.Service
 }
 
 // The dashboards are tested on a fixed day, so that the numbers on the page are known.
 var reportDay = time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
 
-func newSite(t *testing.T) *site {
+func newSite(t *testing.T) *site { return newSiteWith(t, false) }
+
+// newSiteWith builds the admin area; withMail adds a service mailbox that is read over IMAP.
+func newSiteWith(t *testing.T, withMail bool) *site {
 	t.Helper()
 	cfg := testenv.MySQL(t)
 	ctx := context.Background()
@@ -78,10 +88,26 @@ func newSite(t *testing.T) *site {
 	if err := os.MkdirAll(filepath.Join(s.state, "requests"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	system := sysstatus.New(sysstatus.Options{StateDir: s.state, WWWDir: t.TempDir(), ContentDir: t.TempDir(), DB: pool, Cache: store,
-		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay }})
+	systemOptions := sysstatus.Options{StateDir: s.state, WWWDir: t.TempDir(), ContentDir: t.TempDir(), DB: pool, Cache: store,
+		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay }}
+	var letters Inbox
+	if withMail {
+		files := leads.NewFiles(filepath.Join(t.TempDir(), "attachments"))
+		s.leads.UseFiles(files)
+		s.mailbox = imaptest.New(t, testMailbox, "the password of the mailbox")
+		s.letters = inbox.New(inbox.Options{
+			Dial: func(ctx context.Context) (*imap.Client, error) {
+				return imap.Dial(ctx, imap.Options{Addr: s.mailbox.Addr, User: s.mailbox.User, Password: s.mailbox.Password, Timeout: 5 * time.Second})
+			},
+			DB: pool, Leads: s.leads, Files: files, Secret: []byte("a secret of the test, long enough"), Inbox: testMailbox, Log: quiet,
+		})
+		letters = s.letters
+		systemOptions.Inbox, systemOptions.Mailbox = s.letters.Status, testMailbox
+	}
+	system := sysstatus.New(systemOptions)
 	srv := server.New(server.Deps{Env: &config.Env{Listen: "127.0.0.1:0"}, DB: pool, Cache: store, Log: quiet, Started: time.Now()})
 	panel, err := New(Options{
+		Inbox: letters, Mailbox: testMailbox, KeepLettersDays: 30,
 		Prefix: prefix, SiteHost: "krokosha.xyz", Auth: accounts, Log: quiet, Version: "test",
 		Reports: analytics.NewReports(pool, time.UTC, func() time.Time { return reportDay }),
 		Feed:    func() (<-chan analytics.Live, func()) { return s.feed, func() {} },

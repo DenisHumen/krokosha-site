@@ -31,6 +31,8 @@ const (
 	TaskReply     = "lead.reply"     // an answer written in the admin area or in the bot
 	// TaskClientMessage: the client wrote again — in Telegram or by mail; everybody is told.
 	TaskClientMessage = "lead.client_message"
+	// TaskUndelivered: a mail server returned a letter to the client — the staff must know.
+	TaskUndelivered = "lead.undelivered"
 )
 
 // Lead is a stored request.
@@ -59,6 +61,8 @@ func (l *Lead) Number() string { return Number(l.ID) }
 type TaskPayload struct {
 	LeadID    int64 `json:"lead_id"`
 	MessageID int64 `json:"message_id,omitempty"`
+	// Note is for tasks about something that is not a row anywhere: why a letter came back.
+	Note string `json:"note,omitempty"`
 }
 
 // Store keeps requests.

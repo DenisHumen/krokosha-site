@@ -435,3 +435,92 @@ func TestAnswersComeBackToTheServiceMailbox(t *testing.T) {
 		}
 	}
 }
+
+// A client's letter with a file, a robot's note, a letter of ours that came back (brief B10.5):
+// what the owner hears about, and what stays quiet.
+func TestLettersOfAClientAndLettersThatCameBack(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	store := NewStore(f.db, func() time.Time { return f.now })
+	store.UseFiles(f.files)
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form:     formWithLabels, Location: time.UTC,
+	})
+	ctx := context.Background()
+	lead := f.seed(nil)
+	if _, err := store.Take(ctx, lead, "denis"); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := store.Reply(ctx, lead, "denis", "Сколько коммутаторов уже есть?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.Deliver(ctx); err != nil { // the notification, the confirmation, the answer
+		t.Fatal(err)
+	}
+	before := len(smtp.Messages())
+
+	// A robot's note: kept, and nothing else happens.
+	if _, err := store.ClientWrote(ctx, lead, Incoming{Channel: ChannelEmail, Text: "[автоответ] Я в отпуске.", Automatic: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.text(`SELECT status FROM leads WHERE id = ?`, lead); got != StatusWaitingClient {
+		t.Errorf("a robot's note moved the request to %s", got)
+	}
+
+	// The client's own letter, with a file.
+	upload, err := f.files.Save("схема.pdf", KindPDF, strings.NewReader("%PDF-1.7 the scheme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClientWrote(ctx, lead, Incoming{Channel: ChannelEmail, Text: "Два, схема во вложении.", Files: []Upload{upload}, EmailMessageID: "abc@company.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.text(`SELECT status FROM leads WHERE id = ?`, lead); got != StatusInProgress {
+		t.Errorf("the client answered, the request is %s", got)
+	}
+	// …and the answer that did not arrive.
+	sentAs := f.text(`SELECT email_message_id FROM lead_messages WHERE id = ?`, answer)
+	if err := store.Undelivered(ctx, lead, sentAs, "ivan@compny.test 5.4.4 Host or domain name <not> found", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.text(`SELECT delivery FROM lead_messages WHERE id = ?`, answer); got != "failed" {
+		t.Errorf("the returned answer is marked %q", got)
+	}
+	if err := store.Undelivered(ctx, 4242, "", "whatever", nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a report about a request that does not exist: %v", err)
+	}
+
+	if _, err := worker.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()[before:]
+	if len(received) != 2 {
+		t.Fatalf("letters to the owner: %d, want 2 (the robot's note is not announced)", len(received))
+	}
+	_, text, html := parts(t, received[0])
+	if !strings.Contains(text, "пишет по заявке #K-0001 (письмом)") || !strings.Contains(text, "Файлы (в админке): схема.pdf (19 Б)") || !strings.Contains(html, "схема.pdf") {
+		t.Errorf("the letter about the client's letter:\n%s", text)
+	}
+	header, text, html := parts(t, received[1])
+	if subject(t, header) != "Не доставлено: заявка #K-0001 · Иван Петров" || header.Get("In-Reply-To") != "<lead-1.notify@krokosha.xyz>" {
+		t.Errorf("the letter about the returned letter: %q, In-Reply-To %q", subject(t, header), header.Get("In-Reply-To"))
+	}
+	if !strings.Contains(text, "5.4.4 Host or domain name <not> found") || !strings.Contains(html, "name &lt;not&gt; found") {
+		t.Errorf("the reason:\n%s\n%s", text, html)
+	}
+
+	// A letter from an address nobody left: no request to put it to.
+	if _, err := store.ByEmail(ctx, "stranger@else.test"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a stranger's address: %v", err)
+	}
+	if id, err := store.ByEmail(ctx, "IVAN.PETROV@company.com"); err != nil || id != lead {
+		t.Errorf("the client's address in another case: %d, %v", id, err)
+	}
+}

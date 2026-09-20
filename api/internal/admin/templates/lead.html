@@ -99,6 +99,11 @@
                   {{else if eq .Action "assigned"}}{{.Author}} взял(а) в работу
                   {{else if eq .Action "replied"}}{{.Author}} ответил(а) клиенту
                   {{else if eq .Action "status"}}{{.Author}}: {{statusName .From}} → {{statusName .To}}{{if .Body}} — {{.Body}}{{end}}
+                  {{else if eq .Action "client_replied"}}клиент написал{{if ne .From .To}}: {{statusName .From}} → {{statusName .To}}{{end}}{{if .Body}} — {{.Body}}{{end}}
+                  {{else if eq .Action "auto_reply"}}автоматический ответ почты клиента{{if .Body}} — {{.Body}}{{end}}
+                  {{else if eq .Action "client_linked"}}клиент открыл бота{{if .Body}} — {{.Body}}{{end}}
+                  {{else if eq .Action "reminded"}}напоминание в Telegram: заявку никто не взял
+                  {{else if eq .Action "undelivered"}}<span class="chat-failed">письмо клиенту не доставлено</span>{{if .Body}} — {{.Body}}{{end}}
                   {{else}}{{.Author}}: {{.Action}}{{end}}
                 </li>
               {{else}}
@@ -120,7 +125,7 @@
                   {{end}}
                   {{if eq .Delivery "queued"}}<p class="chat-delivery muted">ждёт отправки</p>
                   {{else if eq .Delivery "sent"}}<p class="chat-delivery muted">доставлено</p>
-                  {{else if eq .Delivery "failed"}}<p class="chat-delivery chat-failed">не доставлено — см. «Статус системы»</p>{{end}}
+                  {{else if eq .Delivery "failed"}}<p class="chat-delivery chat-failed">не доставлено — причина в истории заявки или на экране «Статус системы»</p>{{end}}
                 </li>
               {{end}}
             {{end}}

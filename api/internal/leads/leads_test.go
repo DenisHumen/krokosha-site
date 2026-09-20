@@ -390,6 +390,16 @@ func (f *fixture) count(query string) int {
 	return n
 }
 
+// text reads one value as text; a missing row or a NULL is "".
+func (f *fixture) text(query string, args ...any) string {
+	f.t.Helper()
+	var value sql.NullString
+	if err := f.db.QueryRow(query, args...).Scan(&value); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		f.t.Fatal(err)
+	}
+	return value.String
+}
+
 func TestARequestIsStoredWithItsNotifications(t *testing.T) {
 	f := newFixture(t)
 	values := validValues()

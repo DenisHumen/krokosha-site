@@ -40,6 +40,8 @@ Anonymous information about the visit is attached to the request: where you came
 
 The request is available only to Denis and to people Denis has personally given access to work with requests. Notifications about it are delivered to Telegram and email.
 
+If the conversation continues — you reply to an email or write to the bot in Telegram — your messages and the files you attach are stored with the request. An email that cannot be matched to any request is kept for no longer than 30 days.
+
 Requests and correspondence are kept for 24 months, then deleted or anonymized.
 
 ## Advertising
