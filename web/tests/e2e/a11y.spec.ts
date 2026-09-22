@@ -13,6 +13,17 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await page.evaluate(() => {
         for (const details of document.querySelectorAll('details')) details.open = true;
       });
+      // Text fades in on arrival: contrast is measured once the entrance animations are over
+      // (the endless ones — blinking dots, running packets — carry no text).
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .every(
+            (animation) =>
+              animation.playState !== 'running' ||
+              animation.effect?.getComputedTiming().iterations === Infinity,
+          ),
+      );
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
         .analyze();

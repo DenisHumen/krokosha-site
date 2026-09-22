@@ -7,9 +7,11 @@ interface Props {
   size: number;
   /** The hero avatar is part of the first screen: load it eagerly. */
   eager?: boolean;
+  /** Next to the name already (the core of the skills topology): no text for screen readers. */
+  decorative?: boolean;
 }
 
-const { data, size, eager = false } = Astro.props;
+const { data, size, eager = false, decorative = false } = Astro.props;
 const { avif, webp } = data.avatarImages;
 ---
 
@@ -22,9 +24,8 @@ const { avif, webp } = data.avatarImages;
     sizes={`${size}px`}
     width={size}
     height={size}
-    alt={data.profile.avatar.alt}
+    alt={decorative ? '' : data.profile.avatar.alt}
     loading={eager ? 'eager' : 'lazy'}
-    fetchpriority={eager ? 'high' : undefined}
     decoding="async"
   />
 </picture>

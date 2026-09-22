@@ -238,18 +238,45 @@
     "theme_toggle": "Toggle theme",
     "language": "Language",
     "skills_search": "Search skills",
-    "skills_no_results": "Nothing found"
+    "skills_no_results": "Nothing found",
+    "skills_headline": "skills, one topology",
+    "menu": "Menu",
+    "socials": "Social links",
+    "contents": "Contents",
+    "draft": "draft"
   },
   "not_found": {
     "title": "Packet lost",
     "text": "The page you were looking for never reached its destination.",
     "game_hint": "Find the packet",
-    "back": "Back to home"
+    "back": "Back to home",
+    "game": {
+      "prompt": "ping the ports",
+      "warm": "warm",
+      "cold": "cold",
+      "found": "packet found · 200 OK · route restored",
+      "port": "port"
+    }
   },
   "footer": {
     "copyright": "© {year} Krokosha",
     "game_entry": "Do not press",
-    "play_stub": "Something is coming here soon."
+    "play_stub": "Something is coming here soon.",
+    "play_status": "HATCH SEALED · ACCESS LATER"
+  },
+  "eggs": {
+    "found": "Easter egg found",
+    "all": "All easter eggs found. Achievement: root@krokosha",
+    "night": "server room · 03:14 · all green",
+    "croc": "Crocodile",
+    "croc5": "crock-crock. You found the real Krokosha",
+    "console": "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA",
+    "terminal": {
+      "whoami": "guest (but curious). Denis is root here.",
+      "uptime": "up 9 years, 0 incidents caused by coffee",
+      "ping": "he answers fast",
+      "rm": "nice try. Snapshot restored in 0.2 s"
+    }
   },
   "flags": {
     "skills": {

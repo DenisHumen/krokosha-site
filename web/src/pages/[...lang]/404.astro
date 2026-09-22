@@ -1,5 +1,7 @@
 ---
 // «Packet lost». Built as /404.html, /uk/404/ and /ru/404/; Nginx picks one by the URL prefix.
+// The design (design/pages/404.dc.html) adds a small game: the packet hides behind one of the
+// 24 ports of a switch, a ping says «warm» or «cold» (easter egg lost_packet_404).
 import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import Base from '../../layouts/Base.astro';
 import { getPageData } from '../../lib/page-data.ts';
@@ -9,7 +11,13 @@ export const getStaticPaths = localeStaticPaths;
 
 const lang = localeFromParam(Astro.params.lang);
 const data = await getPageData(lang);
-const { not_found } = data.site;
+const { not_found, flags } = data.site;
+const game = flags.easter_eggs.enabled && flags.easter_eggs.lost_packet_404;
+const words = {
+  warm: not_found.game.warm,
+  cold: not_found.game.cold,
+  found: not_found.game.found,
+};
 ---
 
 <Base
@@ -19,14 +27,277 @@ const { not_found } = data.site;
   description={not_found.text}
   noindex
 >
-  <section class="section center" data-section="not-found">
-    <p class="mono muted">404</p>
-    <h1 data-slot="site.not_found.title">{not_found.title}</h1>
-    <p data-slot="site.not_found.text">{not_found.text}</p>
-    <p>
-      <a class="button button-primary" href={localePath(lang)} data-slot="site.not_found.back">
-        {not_found.back}
-      </a>
-    </p>
+  <section class="lost" data-section="not-found">
+    <div class="text">
+      <p class="code mono">
+        <i aria-hidden="true"></i>404 · ICMP TIME EXCEEDED
+      </p>
+      <h1 data-slot="site.not_found.title">{not_found.title}</h1>
+      <p class="about" data-slot="site.not_found.text">
+        {not_found.text}
+      </p>
+    </div>
+
+    {game && (
+      <div class="game needs-js" data-game data-words={JSON.stringify(words)}>
+        <p class="hint mono" data-slot="site.not_found.game_hint">
+          {not_found.game_hint} — {not_found.game.prompt}
+        </p>
+        <div class="switch">
+          <div class="switch-head mono">
+            <span>SW-CORE-01 · 24 × 10G</span>
+            <span>
+              tries <span data-game-tries>0</span> · <span data-game-status>SEARCHING</span>
+            </span>
+          </div>
+          <div class="ports">
+            {Array.from({ length: 24 }, (_, i) => (
+              <button
+                class="port"
+                type="button"
+                aria-label={`${not_found.game.port} ${i + 1}`}
+                data-port={i}
+              >
+                <i></i>
+              </button>
+            ))}
+          </div>
+        </div>
+        <p class="log mono" aria-live="polite" data-game-log></p>
+      </div>
+    )}
+
+    <a class="pill pill-inverse back" href={localePath(lang)} data-slot="site.not_found.back">
+      <span aria-hidden="true">←</span>
+      {not_found.back}
+    </a>
   </section>
 </Base>
+
+<script>
+  // The packet hides behind a random port; the ports around it are «warm». A found packet is an
+  // easter egg: it goes into the same list as the others (design/components/eggs/eggs.js).
+  const board = document.querySelector<HTMLElement>('[data-game]');
+  if (board) {
+    const words = JSON.parse(board.dataset['words'] ?? '{}') as Record<string, string>;
+    const ports = [...board.querySelectorAll<HTMLButtonElement>('[data-port]')];
+    const log = board.querySelector<HTMLElement>('[data-game-log]');
+    const tries = board.querySelector<HTMLElement>('[data-game-tries]');
+    const status = board.querySelector<HTMLElement>('[data-game-status]');
+    const target = Math.floor(Math.random() * ports.length);
+    // Ports are 8 in a row: the distance counts rows and columns.
+    const distance = (i: number) =>
+      Math.abs((i % 8) - (target % 8)) + Math.abs(Math.floor(i / 8) - Math.floor(target / 8));
+    let count = 0;
+
+    for (const port of ports) {
+      port.addEventListener('click', () => {
+        const i = Number(port.dataset['port']);
+        count += 1;
+        if (tries) tries.textContent = String(count);
+        port.disabled = true;
+        if (i !== target) {
+          port.classList.add('tried');
+          if (log) {
+            log.classList.remove('found');
+            log.textContent = `ping port ${i + 1} … timeout · ${distance(i) <= 2 ? words['warm'] : words['cold']}`;
+          }
+          return;
+        }
+        port.classList.add('hit');
+        for (const other of ports) other.disabled = true;
+        if (status) status.textContent = 'LINK UP';
+        if (log) {
+          log.classList.add('found');
+          log.textContent = words['found'] ?? '';
+        }
+        try {
+          const key = 'krokosha:eggs';
+          const list = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
+          if (!list.includes('lost_packet')) {
+            list.push('lost_packet');
+            localStorage.setItem(key, JSON.stringify(list));
+          }
+        } catch {
+          // Storage is blocked: the packet is found all the same.
+        }
+        document.dispatchEvent(new CustomEvent('krokosha:egg', { detail: 'lost_packet' }));
+      });
+    }
+  }
+</script>
+
+<style>
+  .lost {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 2rem;
+    min-height: 100%;
+    padding: 4rem var(--gutter);
+    text-align: center;
+  }
+
+  .text {
+    display: grid;
+    gap: 1rem;
+    justify-items: center;
+    max-width: 40rem;
+    animation: kro-up var(--dur-4) var(--ease-out) both;
+  }
+
+  .code {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+
+  .code i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: kro-blink 1.2s infinite;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 6vw, 4.5rem);
+    line-height: 1;
+    letter-spacing: -0.035em;
+    font-weight: 500;
+  }
+
+  .about {
+    max-width: 30rem;
+    color: var(--fg-2);
+    text-wrap: pretty;
+  }
+
+  .game {
+    display: grid;
+    gap: 1rem;
+    justify-items: center;
+    max-width: 100%;
+    animation: kro-up var(--dur-4) var(--ease-out) 0.3s both;
+  }
+
+  .hint {
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
+
+  .switch {
+    max-width: 100%;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  .switch-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    margin: 0 0.25rem 0.75rem;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .ports {
+    display: grid;
+    grid-template-columns: repeat(8, 2.2rem);
+    gap: 0.4rem;
+  }
+
+  .port {
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-s);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: all var(--dur-2);
+  }
+
+  .port i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--line-strong);
+    animation: kro-blink 1.2s infinite;
+  }
+
+  .port:nth-child(5n + 2) i {
+    animation-duration: 1.5s;
+  }
+  .port:nth-child(5n + 3) i {
+    animation-duration: 1.8s;
+  }
+  .port:nth-child(5n + 4) i {
+    animation-duration: 2.1s;
+  }
+  .port:nth-child(5n + 5) i {
+    animation-duration: 2.4s;
+  }
+
+  .port:disabled {
+    cursor: default;
+  }
+
+  .port:global(.tried) {
+    border-color: var(--line);
+    background: var(--bg);
+  }
+
+  .port:global(.tried) i {
+    background: var(--danger);
+    animation: none;
+  }
+
+  .port:global(.hit) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .port:global(.hit) i {
+    background: var(--accent);
+    animation: kro-blink 0.6s 3;
+  }
+
+  .log {
+    min-height: 1.5rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .log:global(.found) {
+    color: var(--ok);
+  }
+
+  .back {
+    height: 3rem;
+    padding: 0 1.4rem;
+  }
+
+  @media (max-width: 420px) {
+    .ports {
+      grid-template-columns: repeat(8, 1.9rem);
+      gap: 0.3rem;
+    }
+
+    .port {
+      width: 1.9rem;
+      height: 1.9rem;
+    }
+  }
+</style>

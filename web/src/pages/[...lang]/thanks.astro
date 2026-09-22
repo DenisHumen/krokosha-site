@@ -3,7 +3,7 @@
 // (with it, the form shows the same message in place). The API serves this very page with the
 // %%…%% marks filled in: the number of the request and the «continue in Telegram» link
 // (api/internal/leads/http.go). Opened directly, the marks stay hidden and the page says a
-// plain «request received».
+// plain «request received». Design: design/pages/thanks.dc.html.
 import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import { fill } from '../../i18n/localize.ts';
 import Base from '../../layouts/Base.astro';
@@ -38,27 +38,114 @@ const replyPromise =
   description={`${generic}. ${message('success_text')}`}
   noindex
 >
-  <section class="section center" data-slot="thanks">
-    <h1>
-      <span class="thanks-generic %%GENERIC_CLASS%%" data-field="generic">
-        {generic}
-      </span>
-      <span class="thanks-numbered %%NUMBERED_CLASS%%" data-field="numbered">
-        {fill(message('success_title'), { id: '#%%LEAD_NUMBER%%' })}
-      </span>
-    </h1>
-    <p data-field="text">
-      {message('success_text')} {replyPromise}
-    </p>
-    <p class="thanks-telegram %%TELEGRAM_CLASS%%" data-field="telegram">
-      <a class="button button-primary" href="%%TELEGRAM_URL%%" rel="noopener">
-        {message('continue_telegram')}
-      </a>
-    </p>
-    <p>
-      <a class="button" href={localePath(lang)}>
-        {not_found.back}
-      </a>
-    </p>
-  </section>
+  <div class="thanks">
+    <section class="card" data-slot="thanks">
+      {/* Two nodes linked by a line that draws itself: the request has arrived. */}
+      <svg class="link" width="120" height="40" viewBox="0 0 120 40" aria-hidden="true">
+        <path d="M0 20 C 30 20, 30 20, 60 20 S 90 20, 120 20"></path>
+        <circle class="from" cx="0" cy="20" r="4"></circle>
+        <circle class="to" cx="120" cy="20" r="4"></circle>
+      </svg>
+      <p class="ack mono">ACK · 201 CREATED</p>
+      <h1>
+        <span class="thanks-generic %%GENERIC_CLASS%%" data-field="generic">
+          {generic}
+        </span>
+        <span class="thanks-numbered %%NUMBERED_CLASS%%" data-field="numbered">
+          {fill(message('success_title'), { id: '#%%LEAD_NUMBER%%' })}
+        </span>
+      </h1>
+      <p class="text" data-field="text">
+        {message('success_text')} {replyPromise}
+      </p>
+      <p class="thanks-telegram %%TELEGRAM_CLASS%%" data-field="telegram">
+        <a class="pill pill-inverse telegram" href="%%TELEGRAM_URL%%" rel="noopener">
+          {message('continue_telegram')}{' '}
+          <span class="arrow" aria-hidden="true">
+            →
+          </span>
+        </a>
+      </p>
+      <p>
+        <a class="pill pill-line home" href={localePath(lang)}>
+          <span aria-hidden="true">←</span>
+          {not_found.back}
+        </a>
+      </p>
+    </section>
+  </div>
 </Base>
+
+<style>
+  .thanks {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    min-height: 100%;
+    padding: 4rem var(--gutter);
+    text-align: center;
+  }
+
+  .card {
+    display: grid;
+    gap: 1.25rem;
+    justify-items: center;
+    max-width: 36rem;
+    padding: clamp(1.5rem, 4vw, 3rem);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+    animation: kro-up var(--dur-4) var(--ease-out) both;
+  }
+
+  .link {
+    overflow: visible;
+  }
+
+  .link path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 140;
+    stroke-dashoffset: 140;
+    animation: kro-dash 1.2s var(--ease-out) 0.2s forwards;
+  }
+
+  .link .from {
+    fill: var(--fg);
+  }
+
+  .link .to {
+    fill: var(--accent);
+  }
+
+  .ack {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .text {
+    color: var(--fg-2);
+  }
+
+  .telegram {
+    height: 3rem;
+    padding: 0 1.4rem;
+  }
+
+  .home {
+    height: 2.6rem;
+    padding: 0 1.1rem;
+    font-weight: 400;
+  }
+</style>

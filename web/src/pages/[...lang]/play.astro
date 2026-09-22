@@ -1,7 +1,9 @@
 ---
-// Reserved route of the mini-game (brief part D — concept only). For now: a «coming soon» stub.
+// Reserved route of the mini-game (brief part D — concept only). For now a «coming soon» stub in the
+// design of design/pages/play.dc.html: an inverted page with a sealed dot-matrix hatch.
 import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import Base from '../../layouts/Base.astro';
+import { HATCH } from '../../lib/dots.ts';
 import { getPageData } from '../../lib/page-data.ts';
 import { localeStaticPaths } from '../../lib/routes.ts';
 
@@ -18,13 +20,98 @@ const { footer, not_found } = data.site;
   title={`${footer.game_entry} — ${data.profile.nickname}`}
   description={footer.play_stub}
   noindex
+  variant="play"
 >
-  <section class="section center">
+  <i class="scan" aria-hidden="true"></i>
+  <div class="play">
+    <div class="hatch" aria-hidden="true">
+      {HATCH.map((cell) => (
+        <i class:list={{ wall: cell === '#', lock: cell === 'o' }}></i>
+      ))}
+    </div>
+    <p class="status mono">{footer.play_status}</p>
     <h1 data-slot="site.footer.play_stub">{footer.play_stub}</h1>
-    <p>
-      <a class="button" href={localePath(lang)}>
-        {not_found.back}
-      </a>
-    </p>
-  </section>
+    <a class="pill back" href={localePath(lang)}>
+      <span aria-hidden="true">←</span>
+      {not_found.back}
+    </a>
+  </div>
 </Base>
+
+<style>
+  /* A scan line running down the screen, as on an old monitor. */
+  .scan {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -2px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.6;
+    animation: kro-scan 6s linear infinite;
+    pointer-events: none;
+  }
+
+  .play {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 1.5rem;
+    min-height: 100%;
+    padding: 4rem var(--gutter);
+    text-align: center;
+  }
+
+  .hatch {
+    display: grid;
+    grid-template-columns: repeat(9, 10px);
+    gap: 6px;
+    animation: kro-up var(--dur-4) var(--ease-out) both;
+  }
+
+  .hatch i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--inverse-fg);
+    opacity: 0.12;
+  }
+
+  .hatch i.wall {
+    opacity: 0.9;
+  }
+
+  .hatch i.lock {
+    background: var(--accent);
+    opacity: 1;
+    animation: kro-blink 1.4s infinite;
+  }
+
+  .status {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    color: var(--inverse-muted);
+  }
+
+  h1 {
+    max-width: 22ch;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .back {
+    height: 3rem;
+    padding: 0 1.4rem;
+    border: 1px solid var(--inverse-line);
+    color: var(--inverse-fg);
+    font-weight: 400;
+  }
+
+  .back:hover {
+    border-color: var(--inverse-fg);
+    color: var(--inverse-fg);
+  }
+</style>

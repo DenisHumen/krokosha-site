@@ -10,7 +10,7 @@ import { localeFromParam } from '../../i18n/locales.ts';
 import Base from '../../layouts/Base.astro';
 import { getPageData } from '../../lib/page-data.ts';
 import { localeStaticPaths } from '../../lib/routes.ts';
-import { absoluteUrl, homeJsonLd } from '../../lib/seo.ts';
+import { absoluteUrl, homeJsonLd, serializeJsonLd } from '../../lib/seo.ts';
 
 export const getStaticPaths = localeStaticPaths;
 
@@ -22,6 +22,18 @@ const jsonLd = homeJsonLd({
   avatarUrl: absoluteUrl(origin, data.avatarImages.largest),
   ogImageUrl: absoluteUrl(origin, '/img/og-default.png'),
 });
+
+// What the easter eggs need (design/components/eggs/eggs.js): which are on, and their texts in the
+// language of the page. Read by scripts/home.ts; not executed, so the CSP has nothing to say.
+const telegram = data.profile.socials.find((social) => social.id === 'telegram')?.url;
+const eggs = {
+  flags: data.site.flags.easter_eggs,
+  experience: data.profile.experience_years,
+  texts: {
+    ...data.site.eggs,
+    telegram: telegram?.replace(/^https:\/\//, ''),
+  },
+};
 ---
 
 <Base
@@ -30,12 +42,20 @@ const jsonLd = homeJsonLd({
   title={data.seo.title}
   description={data.seo.description}
   jsonLd={[jsonLd]}
+  variant="home"
 >
   <Hero data={data} />
   <Services data={data} />
   <Skills data={data} />
-  <Projects data={data} />
   <Stats data={data} />
   <Curtain data={data} />
+  <Projects data={data} />
   <Contacts data={data} />
+  <script is:inline type="application/json" id="kro-eggs" set:html={serializeJsonLd(eggs)}></script>
 </Base>
+
+<script>
+  import { initHome } from '../../scripts/home.ts';
+
+  initHome();
+</script>

@@ -1,49 +1,476 @@
 ---
-// The whole tree is in the HTML from the start (brief A4: SEO); expanding is purely visual.
+// Skills as a topology (design: SKILLS): the core node, one «rack» per category, its units slide out
+// when the category is opened, connector lines with running packets are drawn between them
+// (scripts/skills.ts). The whole tree is in the HTML from the start (brief A4: search engines read
+// it); without a script every rack is simply open.
 import type { SitePageData } from '../lib/page-data.ts';
+import Avatar from './Avatar.astro';
+import Icon from './Icon.astro';
 
 interface Props {
   data: SitePageData;
 }
 
-const { site, skills } = Astro.props.data;
+const { data } = Astro.props;
+const { site, skills, profile } = data;
+const count = skills
+  .flatMap((category) => category.children)
+  .reduce((sum, group) => sum + group.children.length, 0);
 ---
 
-<section class="section" id="skills" data-section="skills">
-  <h2 data-slot="site.ui.headings.skills">{site.ui.headings.skills}</h2>
-  <ul class="skill-tree" data-slot="skills">
-    {skills.map((category) => (
-      <li
-        data-component="skill-node"
-        data-level="category"
-        data-icon={category.icon}
-        id={`skill-${category.id}`}
-      >
-        <h3 data-field="title" data-track={`skill-${category.id}`}>
-          {category.title}
-        </h3>
-        <ul>
-          {category.children.map((group) => (
-            <li data-component="skill-node" data-level="group" id={`skill-${group.id}`}>
-              <h4 data-field="title">{group.title}</h4>
-              <ul class="pills">
-                {group.children.map((skill) => (
-                  <li data-component="skill-node" data-level="skill" id={`skill-${skill.id}`}>
-                    <span class="pill mono" data-field="title">
-                      {skill.title}
-                    </span>
-                    {skill.note && (
-                      <span class="muted" data-field="note">
-                        {skill.note}
-                      </span>
-                    )}
+<section class="skills" id="skills" data-section="skills">
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <p class="eyebrow" data-slot="site.ui.headings.skills">
+          {site.ui.headings.skills}
+        </p>
+        <h2>
+          <span class="count">{count}</span>
+          {site.ui.skills_headline}
+        </h2>
+      </div>
+      <label class="search needs-js">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <span class="visually-hidden">{site.ui.skills_search}</span>
+        <input
+          type="search"
+          placeholder={site.ui.skills_search}
+          autocomplete="off"
+          data-skills-query
+        />
+        <span class="empty mono" hidden data-skills-empty>
+          {site.ui.skills_no_results}
+        </span>
+      </label>
+    </div>
+
+    <div class="topology" data-topology>
+      <svg class="lines" aria-hidden="true" data-topology-lines></svg>
+      <div class="core" data-topology-core>
+        <div class="core-box">
+          <div class="core-inner">
+            <Avatar data={data} size={72} decorative />
+          </div>
+        </div>
+        <span class="core-label mono">{profile.nickname} · core</span>
+      </div>
+
+      <ul class="racks" data-slot="skills">
+        {skills.map((category) => (
+          <li
+            class="rack"
+            data-component="skill-node"
+            data-level="category"
+            data-icon={category.icon}
+            id={`skill-${category.id}`}
+            data-rack
+          >
+            <button
+              class="rack-head mono"
+              type="button"
+              aria-expanded="true"
+              aria-controls={`rack-${category.id}`}
+              data-track={`skill-${category.id}`}
+            >
+              <Icon name={category.icon} size={16} stroke={1.6} />
+              <span data-field="title">{category.title}</span>
+              <span class="rack-count">
+                {category.children.reduce((sum, group) => sum + group.children.length, 0)}
+              </span>
+              <span class="rack-led" aria-hidden="true"></span>
+            </button>
+            <div class="rack-body" id={`rack-${category.id}`}>
+              <ul class="units">
+                {category.children.map((group) => (
+                  <li
+                    class="unit"
+                    data-component="skill-node"
+                    data-level="group"
+                    id={`skill-${group.id}`}
+                  >
+                    <h3 data-field="title">{group.title}</h3>
+                    <ul class="pills">
+                      {group.children.map((skill) => (
+                        <li
+                          class="skill mono"
+                          data-component="skill-node"
+                          data-level="skill"
+                          id={`skill-${skill.id}`}
+                          title={skill.note ?? undefined}
+                        >
+                          <span data-field="title">{skill.title}</span>
+                          {skill.note && (
+                            <span class="note" data-field="note">
+                              {skill.note}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </li>
                 ))}
               </ul>
-            </li>
-          ))}
-        </ul>
-      </li>
-    ))}
-  </ul>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
 </section>
+
+<script>
+  import { initSkills } from '../scripts/skills.ts';
+
+  initSkills();
+</script>
+
+<style>
+  .skills {
+    position: relative;
+    padding: 5rem var(--gutter) 6rem;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+  }
+
+  .wrap {
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem 2rem;
+  }
+
+  h2 {
+    margin-top: 0.8rem;
+    font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .count {
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.6rem;
+    min-width: min(100%, 18rem);
+    padding: 0 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+  }
+
+  .search:focus-within {
+    border-color: var(--fg);
+  }
+
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    outline: none;
+    font-size: 0.9rem;
+  }
+
+  .empty {
+    font-size: 0.7rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .topology {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem 3rem;
+    align-items: start;
+    margin-top: 3rem;
+  }
+
+  .lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .lines :global(path) {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1;
+    animation: kro-dash var(--dur-3) var(--ease-out) forwards;
+  }
+
+  .lines :global(path.live) {
+    stroke: var(--accent-line);
+  }
+
+  .lines :global(circle) {
+    fill: var(--accent);
+    offset-rotate: 0deg;
+  }
+
+  .core {
+    position: relative;
+    z-index: 1;
+    justify-self: center;
+    display: grid;
+    justify-items: center;
+    gap: 0.6rem;
+    text-align: center;
+  }
+
+  .core-box {
+    display: grid;
+    place-items: center;
+    width: 7.5rem;
+    height: 7.5rem;
+    padding: 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 1.6rem;
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  .core-inner {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 1.1rem;
+    background: var(--bg-2);
+  }
+
+  .core-inner :global(img) {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .core-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .racks {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 0.6rem;
+    align-content: start;
+  }
+
+  .rack {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem 2.5rem;
+    align-items: start;
+    transition: opacity var(--dur-2);
+  }
+
+  .rack:global(.is-dimmed) {
+    opacity: 0.35;
+  }
+
+  .rack-head {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    height: 3rem;
+    padding: 0 1rem 0 0.8rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--dur-2) var(--ease-out);
+  }
+
+  .rack-head:hover {
+    border-color: var(--fg);
+  }
+
+  .rack-head[aria-expanded='true'] {
+    background: var(--inverse-bg);
+    border-color: var(--inverse-bg);
+    color: var(--inverse-fg);
+    box-shadow: var(--shadow-1);
+  }
+
+  .rack-count {
+    margin-left: auto;
+    font-size: 0.68rem;
+    opacity: 0.7;
+  }
+
+  .rack-led {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--line-strong);
+    transition: background var(--dur-2);
+  }
+
+  .rack-head[aria-expanded='true'] .rack-led {
+    background: var(--accent);
+  }
+
+  /* Rows 0fr → 1fr: the units slide out at the natural height, whatever it is. */
+  .rack-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    min-width: 0;
+    transition: grid-template-rows var(--dur-3) var(--ease-out);
+  }
+
+  :global(html.js) .rack-body:not(:global(.is-open)) {
+    grid-template-rows: 0fr;
+  }
+
+  .units {
+    display: grid;
+    gap: 0.5rem;
+    align-content: start;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .unit {
+    display: grid;
+    grid-template-columns: minmax(7rem, 10rem) 1fr;
+    gap: 0.4rem 1rem;
+    align-items: start;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+    transition:
+      opacity var(--dur-3) var(--ease-out),
+      transform var(--dur-3) var(--ease-out);
+  }
+
+  :global(html.js) .rack-body:not(:global(.is-open)) .unit {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+
+  /* The units come one after another, 70 ms apart. */
+  .unit:nth-child(2) {
+    transition-delay: 70ms;
+  }
+  .unit:nth-child(3) {
+    transition-delay: 140ms;
+  }
+  .unit:nth-child(4) {
+    transition-delay: 210ms;
+  }
+  .unit:nth-child(5) {
+    transition-delay: 280ms;
+  }
+  .unit:nth-child(6) {
+    transition-delay: 350ms;
+  }
+  .unit:nth-child(n + 7) {
+    transition-delay: 420ms;
+  }
+
+  .unit h3 {
+    padding-top: 0.25rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--fg-2);
+  }
+
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .skill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 100%;
+    min-height: 1.7rem;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--bg);
+    font-size: 0.72rem;
+    transition: all var(--dur-2);
+  }
+
+  .skill > span:first-child {
+    white-space: nowrap;
+  }
+
+  .note {
+    max-width: 9rem;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.64rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .skill:global(.is-hit) {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  .skill:global(.is-miss) {
+    opacity: 0.3;
+  }
+
+  @media (min-width: 901px) {
+    .topology {
+      grid-template-columns: 10rem 1fr;
+    }
+
+    .core {
+      justify-self: start;
+    }
+
+    .rack {
+      grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .unit {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

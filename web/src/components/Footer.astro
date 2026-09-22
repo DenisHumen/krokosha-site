@@ -1,33 +1,163 @@
 ---
 import { fill } from '../i18n/localize.ts';
 import { localePath } from '../i18n/locales.ts';
+import type { Variant } from '../layouts/Base.astro';
 import type { SitePageData } from '../lib/page-data.ts';
 import { getTextPage } from '../lib/pages.ts';
-import SocialLinks from './SocialLinks.astro';
 
 interface Props {
   data: SitePageData;
+  page: string;
+  variant: Variant;
 }
 
-const { data } = Astro.props;
+const { data, page, variant } = Astro.props;
 const { lang, site, profile, buildTime } = data;
 const year = new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'UTC' }).format(buildTime);
 const privacy = await getTextPage('privacy', lang);
+const external = (url: string) => url.startsWith('https://');
 ---
 
-<footer class="site-footer" data-section="footer">
-  <SocialLinks socials={profile.socials} variant="icons" />
-  <p class="footer-meta mono muted">
-    <span data-slot="site.footer.copyright">{fill(site.footer.copyright, { year })}</span>
-    <a href={localePath(lang, 'privacy')}>{privacy.data.title}</a>
-  </p>
-  {/* Hidden entrance to the mini-game (brief part D): leads to a «coming soon» stub. */}
-  <a
-    class="game-entry mono"
-    href={localePath(lang, 'play')}
-    data-track="game-entry"
-    data-slot="site.footer.game_entry"
-  >
-    {site.footer.game_entry}
-  </a>
+<footer class:list={['site-footer', `site-footer-${variant}`]} data-section="footer">
+  {variant === 'play' ? (
+    <>
+      <span data-slot="site.footer.copyright">{fill(site.footer.copyright, { year })}</span>
+      <span>build: pending · wasd/joystick: —</span>
+    </>
+  ) : (
+    <>
+      <ul class="socials" data-slot="socials">
+        {profile.socials.map((social) => (
+          <li data-component="social-button">
+            <a
+              href={social.url}
+              data-field="url"
+              data-social={social.id}
+              data-track={`social-${social.id}`}
+              rel={external(social.url) ? 'me noopener' : undefined}
+            >
+              <span data-field="label">{social.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p class="meta">
+        <span data-slot="site.footer.copyright">{fill(site.footer.copyright, { year })}</span>
+        {page !== 'privacy' && <a href={localePath(lang, 'privacy')}>{privacy.data.title}</a>}
+        {variant === 'home' && <span aria-hidden="true" data-eggs-caption></span>}
+      </p>
+      {variant === 'home' && (
+        /* The hidden entrance to the mini-game (brief part D): leads to a «coming soon» stub. */
+        <a
+          class="game-entry"
+          href={localePath(lang, 'play')}
+          data-track="game-entry"
+          data-slot="site.footer.game_entry"
+          title={site.footer.game_entry}
+        >
+          <i aria-hidden="true"></i>
+          {site.footer.game_entry}
+        </a>
+      )}
+    </>
+  )}
 </footer>
+
+<style>
+  .site-footer {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem 2rem;
+    padding: 2rem var(--gutter);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .site-footer-home {
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  }
+
+  .site-footer-play {
+    background: none;
+    border-top-color: var(--inverse-line);
+    color: var(--inverse-muted);
+  }
+
+  .socials {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .socials a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+  }
+
+  .socials a:hover {
+    border-color: var(--fg);
+    color: var(--fg);
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.5rem;
+  }
+
+  .meta a {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .meta span:empty {
+    display: none;
+  }
+
+  .game-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  .game-entry:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .game-entry i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: kro-blink 3s infinite;
+  }
+
+  @media (min-width: 901px) {
+    .site-footer-home {
+      padding-left: calc(var(--rail-w) + var(--gutter));
+    }
+  }
+
+  /* Phones: the floating bar must not cover the last line. */
+  @media (max-width: 900px) {
+    .site-footer-home {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    }
+  }
+</style>

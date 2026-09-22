@@ -1,5 +1,7 @@
 ---
-// One template for every public repository (contract §3: `project-card`); `tier` decides how big it is.
+// One template for every public repository (contract §3: `project-card`); the tier decides the look:
+// featured — a large card, standard — a small one, compact — a line of the «All repositories» list.
+// The whole card of the first two is the link (an overlay from the title's link).
 import type { Locale } from '../i18n/locales.ts';
 import type { Site } from '../lib/data.ts';
 import type { PublicProject } from '../lib/schema.ts';
@@ -14,50 +16,258 @@ const { project, labels, lang } = Astro.props;
 const updated = new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeZone: 'UTC' }).format(
   new Date(`${project.updatedAt}T00:00:00Z`),
 );
+const language = project.language ?? '—';
+const track = `project-${project.name}`;
 ---
 
-<li class="card" data-component="project-card" data-tier={project.tier}>
-  <h3>
-    <a href={project.url} rel="noopener" data-field="url" data-track={`project-${project.name}`}>
-      <span data-field="name">{project.name}</span>
-    </a>
-    {project.archived && (
-      <span class="badge mono" data-field="archived">
-        {labels.archived}
-      </span>
-    )}
-  </h3>
-  {project.description && <p data-field="description">{project.description}</p>}
-  {project.topics.length > 0 && (
-    <ul class="pills" data-field="topics">
-      {project.topics.map((topic) => (
-        <li class="pill mono">{topic}</li>
-      ))}
-    </ul>
-  )}
-  <p class="meta mono muted">
-    {project.language && (
-      <span data-field="language">
+{project.tier === 'featured' && (
+  <li class="card featured" data-component="project-card" data-tier="featured">
+    <div class="top mono">
+      <span class="language" data-field="language">
         {/* SVG fill instead of an inline style: the language colour works under a strict CSP. */}
-        {project.languageColor && (
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-            <circle cx="5" cy="5" r="5" fill={project.languageColor} />
-          </svg>
-        )}
-        {project.language}
+        <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+          <circle cx="4" cy="4" r="4" fill={project.languageColor ?? 'var(--line-strong)'} />
+        </svg>
+        {language}
       </span>
+      {project.stars > 0 && <span data-field="stars">★ {project.stars}</span>}
+    </div>
+    <div>
+      <h3>
+        <a class="overlay" href={project.url} rel="noopener" data-field="url" data-track={track}>
+          <span data-field="name">{project.name}</span>
+        </a>
+      </h3>
+      {project.description && (
+        <p class="description" data-field="description">
+          {project.description}
+        </p>
+      )}
+    </div>
+    <div class="bottom mono">
+      <span>
+        {labels.updated}{' '}
+        <time datetime={project.updatedAt} data-field="updatedAt">
+          {updated}
+        </time>
+      </span>
+      <span class="go" aria-hidden="true">
+        ↗
+      </span>
+    </div>
+  </li>
+)}
+
+{project.tier === 'standard' && (
+  <li class="card standard" data-component="project-card" data-tier="standard">
+    <h3>
+      <a class="overlay" href={project.url} rel="noopener" data-field="url" data-track={track}>
+        <span data-field="name">{project.name}</span>
+      </a>
+    </h3>
+    {project.description && (
+      <p class="description" data-field="description">
+        {project.description}
+      </p>
     )}
-    {project.stars > 0 && <span data-field="stars">★ {project.stars}</span>}
-    <span>
-      {labels.updated}
+    <p class="meta mono">
+      <span class="language" data-field="language">
+        <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true">
+          <circle cx="4" cy="4" r="4" fill={project.languageColor ?? 'var(--line-strong)'} />
+        </svg>
+        {language}
+      </span>
       <time datetime={project.updatedAt} data-field="updatedAt">
         {updated}
       </time>
-    </span>
-    {project.homepage && (
-      <a href={project.homepage} rel="noopener" data-field="homepage">
-        {labels.website}
+    </p>
+  </li>
+)}
+
+{project.tier === 'compact' && (
+  <li class="line" data-component="project-card" data-tier="compact">
+    <h3>
+      <a href={project.url} rel="noopener" data-field="url" data-track={track}>
+        <span data-field="name">{project.name}</span>
       </a>
-    )}
-  </p>
-</li>
+      {project.archived && (
+        <span class="archived mono" data-field="archived">
+          {labels.archived}
+        </span>
+      )}
+    </h3>
+    <span class="language mono" data-field="language">
+      {language}
+    </span>
+    <time class="mono" datetime={project.updatedAt} data-field="updatedAt">
+      {updated}
+    </time>
+  </li>
+)}
+
+<style>
+  .card {
+    position: relative;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--line);
+    transition:
+      transform var(--dur-2) var(--ease-out),
+      border-color var(--dur-2);
+  }
+
+  .overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .featured {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 0.8rem;
+    min-height: 14rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .featured:hover {
+    transform: translateY(-3px);
+    border-color: var(--line-strong);
+  }
+
+  .top,
+  .bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    color: var(--muted);
+  }
+
+  .top {
+    font-size: 0.7rem;
+  }
+
+  .bottom {
+    font-size: 0.68rem;
+  }
+
+  .go {
+    color: var(--fg);
+  }
+
+  .language {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .featured h3 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  .description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .featured .description {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--fg-2);
+  }
+
+  .standard {
+    display: grid;
+    gap: 0.5rem;
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-m);
+    background: var(--bg);
+  }
+
+  .standard:hover {
+    border-color: var(--fg);
+  }
+
+  .standard h3 {
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  .standard .description {
+    font-size: 0.82rem;
+    color: var(--muted);
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .meta {
+    display: flex;
+    gap: 0.8rem;
+    font-size: 0.66rem;
+    color: var(--muted);
+  }
+
+  .meta .language {
+    gap: 0.35rem;
+  }
+
+  .line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem 1.5rem;
+    align-items: baseline;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+  }
+
+  .line h3 {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: baseline;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .line a {
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 3px;
+  }
+
+  .archived {
+    padding: 0 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+
+  .line .language,
+  .line time {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .line time {
+    text-align: right;
+  }
+
+  @media (min-width: 901px) {
+    .line {
+      grid-template-columns: minmax(0, 1fr) 8rem 7rem;
+    }
+  }
+</style>

@@ -47,6 +47,10 @@ plurals:
     en: [public project, public projects]
     uk: [публічний проєкт, публічні проєкти, публічних проєктів]
     ru: [публичный проект, публичных проекта, публичных проектов]
+  skills:
+    en: [skill, skills]
+    uk: [навичка, навички, навичок]
+    ru: [навык, навыка, навыков]
 
 socials:
   - id: telegram
@@ -288,6 +292,12 @@ ui:
   language:        { en: "Language", uk: "Мова", ru: "Язык" }
   skills_search:   { en: "Search skills", uk: "Пошук навичок", ru: "Поиск по навыкам" }
   skills_no_results: { en: "Nothing found", uk: "Нічого не знайдено", ru: "Ничего не найдено" }
+  # Заголовок дерева навыков: число — отдельно и приглушённо, {skills} — слово из plurals.skills.
+  skills_headline: { en: "{skills}, one topology", uk: "{skills} в одній топології", ru: "{skills} в одной топологии" }
+  menu:            { en: "Menu", uk: "Меню", ru: "Меню" }
+  socials:         { en: "Social links", uk: "Соцмережі", ru: "Соцсети" }
+  contents:        { en: "Contents", uk: "Зміст", ru: "Содержание" }
+  draft:           { en: "draft", uk: "чернетка", ru: "черновик" }   # метка текстовой страницы со status: draft
 
 not_found:                              # 404, черновик
   title: { en: "Packet lost", uk: "Пакет втрачено", ru: "Пакет потерян" }
@@ -297,6 +307,17 @@ not_found:                              # 404, черновик
     ru: "Страница, которую вы искали, не дошла до адресата."
   game_hint: { en: "Find the packet", uk: "Знайдіть пакет", ru: "Найдите пакет" }
   back: { en: "Back to home", uk: "На головну", ru: "На главную" }
+  # Игра «найди пакет» (флаг lost_packet_404). Технические подписи — «ping port 7 … timeout», «tries 3»,
+  # «SW-CORE-01» — часть оформления и одинаковы на всех языках; переводятся только слова для человека.
+  game:
+    prompt: { en: "ping the ports", uk: "пінгуйте порти", ru: "пингуйте порты" }
+    warm: { en: "warm", uk: "гаряче", ru: "горячо" }
+    cold: { en: "cold", uk: "холодно", ru: "холодно" }
+    found:
+      en: "packet found · 200 OK · route restored"
+      uk: "пакет знайдено · 200 OK · маршрут відновлено"
+      ru: "пакет найден · 200 OK · маршрут восстановлен"
+    port: { en: "port", uk: "порт", ru: "порт" }            # «port 7» — имя кнопки для экранного диктора
 
 footer:
   copyright: "© {year} Krokosha"
@@ -305,6 +326,31 @@ footer:
     en: "Something is coming here soon."
     uk: "Скоро тут дещо з'явиться."
     ru: "Здесь скоро кое-что появится."
+  play_status: { en: "HATCH SEALED · ACCESS LATER", uk: "ЛЮК ЗАЧИНЕНО · ДОСТУП ПІЗНІШЕ", ru: "ЛЮК ЗАКРЫТ · ДОСТУП ПОЗЖЕ" }
+
+# Пасхалки (бриф A6; какие включены — flags.easter_eggs). Команды терминала и строки «BIOS» — на
+# английском, как в настоящей консоли; по-человечески сказанное — на языке страницы.
+eggs:
+  found: { en: "Easter egg found", uk: "Пасхалку знайдено", ru: "Пасхалка найдена" }
+  all:
+    en: "All easter eggs found. Achievement: root@krokosha"
+    uk: "Усі пасхалки знайдено. Ачівка: root@krokosha"
+    ru: "Все пасхалки найдены. Ачивка: root@krokosha"
+  night: { en: "server room · 03:14 · all green", uk: "серверна · 03:14 · усе зелене", ru: "серверная · 03:14 · всё зелёное" }
+  croc: { en: "Crocodile", uk: "Крокодил", ru: "Крокодил" }
+  croc5:
+    en: "crock-crock. You found the real Krokosha"
+    uk: "крок-крок. Ти знайшов справжнього Krokosha"
+    ru: "крок-крок. Ты нашёл настоящего Krokosha"
+  console:
+    en: "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA"
+    uk: "Хто читає консоль — той уже майже колега. krokosha.hello() · або наберіть sudo на сторінці · або ↑↑↓↓←→←→BA"
+    ru: "Кто читает консоль — тот уже почти коллега. krokosha.hello() · или наберите sudo на странице · или ↑↑↓↓←→←→BA"
+  terminal:
+    whoami: { en: "guest (but curious). Denis is root here.", uk: "guest (але допитливий). root тут — Денис.", ru: "guest (но любопытный). root здесь — Денис." }
+    uptime: { en: "up {years}, 0 incidents caused by coffee", uk: "up {years}, 0 інцидентів через каву", ru: "up {years}, 0 инцидентов из-за кофе" }
+    ping: { en: "he answers fast", uk: "він відповідає швидко", ru: "он отвечает быстро" }
+    rm: { en: "nice try. Snapshot restored in 0.2 s", uk: "гарна спроба. Знімок відновлено за 0.2 с", ru: "хорошая попытка. Снапшот восстановлен за 0.2 с" }
 
 # То, что видят поисковики и соцсети: <title>, описание в выдаче, карточка при отправке ссылки.
 # В site.json (данные для дизайна) не попадает.

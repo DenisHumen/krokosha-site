@@ -1,9 +1,8 @@
 ---
-// «Discuss a project» (brief B10.1). Works without JavaScript: a plain POST to the API, which
-// answers with the «thank you» page. With JavaScript (/assets/form.js): validation in place,
-// proof-of-work against spam, sending without a reload.
-//
-// Temporary markup: Claude Design restyles it and keeps the data-* contract (docs/contract.md §3).
+// «Discuss a project» (brief B10.1, contract §7). Works without JavaScript: a plain POST to the API,
+// which answers with the «thank you» page. With JavaScript (/assets/form.js, included as is): checks
+// in place, a proof of work against spam, sending without a reload. The look is the design's
+// (design/pages/index.dc.html → CONTACTS); names, ids and message blocks are the contract's.
 import { localePath } from '../i18n/locales.ts';
 import { fill } from '../i18n/localize.ts';
 import type { SitePageData } from '../lib/page-data.ts';
@@ -75,14 +74,14 @@ const scriptTexts = JSON.stringify({
           maxlength="100"
           autocomplete="name"
         />
-        <span class="field-error" data-error-for="name" role="alert" />
+        <span class="field-error" data-error-for="name" role="alert"></span>
       </p>
 
       <fieldset class="field">
         <legend data-field="labels.contact_method">{text('labels', 'contact_method')}</legend>
-        <span class="choices">
+        <span class="methods">
           {form.contact_methods.map((method, index) => (
-            <label class="choice">
+            <label class="method">
               <input
                 type="radio"
                 name="contact_method"
@@ -98,6 +97,7 @@ const scriptTexts = JSON.stringify({
           {text('labels', 'contact_value')}
         </label>
         <input
+          class="mono"
           id="form-contact"
           name="contact_value"
           type="text"
@@ -105,7 +105,7 @@ const scriptTexts = JSON.stringify({
           maxlength="200"
           placeholder={text('placeholders', form.contact_methods[0]?.id ?? 'email')}
         />
-        <span class="field-error" data-error-for="contact_value" role="alert" />
+        <span class="field-error" data-error-for="contact_value" role="alert"></span>
       </fieldset>
 
       <p class="field">
@@ -118,13 +118,13 @@ const scriptTexts = JSON.stringify({
             <option value={direction.id}>{direction.label}</option>
           ))}
         </select>
-        <span class="field-error" data-error-for="direction" role="alert" />
+        <span class="field-error" data-error-for="direction" role="alert"></span>
       </p>
 
       <p class="field">
         <label for="form-description" data-field="labels.description">
           {text('labels', 'description')}{' '}
-          <span class="muted">— {text('labels', 'description_hint')}</span>
+          <span class="hint">— {text('labels', 'description_hint')}</span>
         </label>
         <textarea
           id="form-description"
@@ -134,13 +134,13 @@ const scriptTexts = JSON.stringify({
           maxlength="4000"
           rows="6"
         ></textarea>
-        <span class="field-error" data-error-for="description" role="alert" />
+        <span class="field-error" data-error-for="description" role="alert"></span>
       </p>
 
       <div class="field-row">
         <p class="field">
           <label for="form-budget" data-field="labels.budget">
-            {text('labels', 'budget')} <span class="muted">— {text('labels', 'optional')}</span>
+            {text('labels', 'budget')} <span class="hint">— {text('labels', 'optional')}</span>
           </label>
           <select id="form-budget" name="budget">
             <option value="">{text('labels', 'choose')}</option>
@@ -151,7 +151,7 @@ const scriptTexts = JSON.stringify({
         </p>
         <p class="field">
           <label for="form-timeline" data-field="labels.timeline">
-            {text('labels', 'timeline')} <span class="muted">— {text('labels', 'optional')}</span>
+            {text('labels', 'timeline')} <span class="hint">— {text('labels', 'optional')}</span>
           </label>
           <select id="form-timeline" name="timeline">
             <option value="">{text('labels', 'choose')}</option>
@@ -166,11 +166,12 @@ const scriptTexts = JSON.stringify({
         <p class="field">
           <label for="form-files" data-field="labels.attachments">
             {text('labels', 'attachments')}{' '}
-            <span class="muted">
+            <span class="hint">
               — {text('labels', 'optional')}, {text('labels', 'attachments_hint')}
             </span>
           </label>
           <input
+            class="files"
             id="form-files"
             name="files"
             type="file"
@@ -179,12 +180,12 @@ const scriptTexts = JSON.stringify({
             data-max-files={files.max}
             data-max-bytes={files.maxBytes}
           />
-          <span class="field-error" data-error-for="files" role="alert" />
+          <span class="field-error" data-error-for="files" role="alert"></span>
         </p>
       )}
 
-      <p class="field field-consent">
-        <label class="choice">
+      <p class="field">
+        <label class="consent">
           <input type="checkbox" name="consent" value="on" required />
           <span data-field="labels.consent">
             {consentBefore}
@@ -192,25 +193,26 @@ const scriptTexts = JSON.stringify({
             {consentAfter}
           </span>
         </label>
-        <span class="field-error" data-error-for="consent" role="alert" />
+        <span class="field-error" data-error-for="consent" role="alert"></span>
       </p>
 
-      <p class="form-actions">
+      <p class="actions">
         <button
-          class="button button-primary"
+          class="pill pill-inverse submit"
           type="submit"
           data-track="form-submit"
           data-field="labels.submit"
         >
           {text('labels', 'submit')}
         </button>
+        <span class="wire mono">POST /api/leads · no cookies</span>
       </p>
     </form>
 
     {/* Shown by the script after sending, and — by the address alone, with :target — when the API
           sends a visitor without JavaScript back to the form. */}
     <p
-      class="form-message form-message-error"
+      class="form-message message-error"
       id="form-error-invalid"
       role="alert"
       data-slot="form.messages.invalid"
@@ -218,7 +220,7 @@ const scriptTexts = JSON.stringify({
       {text('messages', 'invalid')}
     </p>
     <p
-      class="form-message form-message-error"
+      class="form-message message-error"
       id="form-error-rate"
       role="alert"
       data-slot="form.messages.rate_limited"
@@ -226,7 +228,7 @@ const scriptTexts = JSON.stringify({
       {fill(text('messages', 'rate_limited'), { email })}
     </p>
     <p
-      class="form-message form-message-error"
+      class="form-message message-error"
       id="form-error-server"
       role="alert"
       data-slot="form.messages.server_error"
@@ -235,27 +237,289 @@ const scriptTexts = JSON.stringify({
     </p>
 
     <div
-      class="form-message form-message-success"
+      class="form-message message-success"
       id="form-success"
       role="status"
       tabindex="-1"
       data-slot="form.success"
     >
+      <p class="ack mono">ACK · 201 CREATED</p>
       <h3 data-field="title">{text('messages', 'success_generic')}</h3>
       <p data-field="text">
         {text('messages', 'success_text')} {replyPromise}
       </p>
       <p data-field="telegram" hidden>
         <a
-          class="button button-primary"
+          class="pill pill-inverse continue"
           href="https://t.me/"
           rel="noopener"
           data-track="form-continue-telegram"
         >
-          {text('messages', 'continue_telegram')}
+          {text('messages', 'continue_telegram')}{' '}
+          <span class="arrow" aria-hidden="true">
+            →
+          </span>
         </a>
       </p>
     </div>
     <script is:inline defer src="/assets/form.js"></script>
   </div>
 )}
+
+<style>
+  .contact-form {
+    display: grid;
+    gap: 1rem;
+  }
+
+  /* No class on the <form>: its first attributes are method and action — the installer's test looks for them. */
+  form {
+    display: grid;
+    gap: 1.1rem;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  form[hidden] {
+    display: none;
+  }
+
+  /* For robots only: people never see it, and never reach it with the keyboard. */
+  .form-trap {
+    position: absolute;
+    left: -200vw;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .field > label,
+  legend {
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--fg-2);
+  }
+
+  legend {
+    margin-bottom: 0.4rem;
+  }
+
+  .hint {
+    color: var(--muted);
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='tel'],
+  select,
+  textarea {
+    width: 100%;
+    height: 2.9rem;
+    padding: 0 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    outline: none;
+    transition: border-color var(--dur-1);
+  }
+
+  #form-contact {
+    font-size: 0.9rem;
+  }
+
+  textarea {
+    height: auto;
+    min-height: 8rem;
+    padding: 0.75rem 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--fg);
+  }
+
+  [aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+
+  .files {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .files[aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+
+  /* Email · Telegram · Phone as a segmented switch; the radios stay real radios. */
+  .methods {
+    display: inline-flex;
+    width: max-content;
+    max-width: 100%;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--bg);
+  }
+
+  .method {
+    position: relative;
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background var(--dur-1);
+  }
+
+  .method input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .method:has(input:checked) {
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+
+  .method:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    gap: 1rem;
+  }
+
+  .consent {
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+
+  .consent input {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.2rem 0 0;
+    accent-color: var(--accent);
+  }
+
+  .consent a {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .field-error {
+    font-size: 0.78rem;
+    color: var(--danger);
+  }
+
+  .field-error:empty {
+    display: none;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.25rem;
+  }
+
+  .submit {
+    height: 3.1rem;
+    padding: 0 1.5rem;
+    border: 0;
+    font-size: 0.98rem;
+    cursor: pointer;
+  }
+
+  /* While sending (/assets/form.js disables the button): a blinking dot before the text. */
+  .submit:disabled {
+    opacity: 0.7;
+    cursor: progress;
+  }
+
+  .submit:disabled::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: kro-blink 0.8s infinite;
+  }
+
+  .wire {
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+
+  .message-error {
+    padding: 1rem 1.2rem;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+  }
+
+  .message-success {
+    gap: 1rem;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  .message-success:target,
+  .message-success:global(.is-shown) {
+    display: grid;
+  }
+
+  .ack {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+
+  .message-success h3 {
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  .message-success [data-field='text'] {
+    color: var(--fg-2);
+  }
+
+  .continue {
+    height: 2.9rem;
+    padding: 0 1.3rem;
+  }
+</style>

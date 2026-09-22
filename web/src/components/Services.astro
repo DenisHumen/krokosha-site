@@ -1,4 +1,6 @@
 ---
+// «What I do» (design: SERVICES). Big numbers stick under the header while their block scrolls by,
+// and the next block pushes the previous number out — CSS only (position: sticky).
 import type { SitePageData } from '../lib/page-data.ts';
 
 interface Props {
@@ -8,23 +10,115 @@ interface Props {
 const { site } = Astro.props.data;
 ---
 
-<section class="section" id="services" data-section="services">
-  <h2 data-slot="site.ui.headings.services">{site.ui.headings.services}</h2>
-  {/* Each `id` is a landing anchor for ads: /#networks, /#devops… (brief B7) */}
-  <ol class="services" data-slot="site.services">
-    {site.services.map((service) => (
-      <li class="service" id={service.id} data-component="service-block">
-        <span class="number mono" data-field="number">
-          {service.number}
-        </span>
-        <div>
-          <h3 data-field="title">{service.title}</h3>
-          <p class="mono muted" data-field="subtitle">
-            {service.subtitle}
-          </p>
-          <p data-field="text">{service.text}</p>
-        </div>
-      </li>
-    ))}
-  </ol>
+<section class="services" id="services" data-section="services">
+  <div class="wrap">
+    <h2 class="eyebrow" data-slot="site.ui.headings.services">
+      {site.ui.headings.services}
+    </h2>
+    {/* Each `id` is a landing anchor for ads: /#networks, /#devops… (brief B7) */}
+    <ol class="list" data-slot="site.services">
+      {site.services.map((service) => (
+        <li class="service" id={service.id} data-component="service-block">
+          <div class="number">
+            <span data-field="number">{service.number}</span>
+          </div>
+          <div class="body">
+            <div>
+              <h3 data-field="title">{service.title}</h3>
+              <p class="subtitle mono" data-field="subtitle">
+                {service.subtitle}
+              </p>
+            </div>
+            <p class="text" data-field="text">
+              {service.text}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </div>
 </section>
+
+<style>
+  .services {
+    position: relative;
+    padding: 4rem var(--gutter) 6rem;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .wrap {
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  .list {
+    margin-top: 1rem;
+  }
+
+  .service {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem 3rem;
+    align-items: start;
+    border-top: 1px solid var(--line);
+    scroll-margin-top: 4rem;
+  }
+
+  .number {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 1;
+    padding: 1rem 0 0.5rem;
+    background: var(--bg);
+  }
+
+  .number span {
+    display: block;
+    font-size: clamp(4.5rem, 11vw, 10rem);
+    line-height: 0.9;
+    letter-spacing: -0.05em;
+    font-weight: 500;
+  }
+
+  .body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem 2.5rem;
+    align-items: start;
+    padding: 1.6rem 0 2.5rem;
+  }
+
+  h3 {
+    font-size: clamp(1.25rem, 1.8vw, 1.6rem);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    margin-top: 0.6rem;
+    font-size: 0.74rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .text {
+    max-width: 34rem;
+    color: var(--fg-2);
+    font-size: 1.02rem;
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 901px) {
+    .service {
+      grid-template-columns: minmax(8rem, 18rem) 1fr;
+      min-height: 62vh;
+    }
+
+    .body {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+</style>

@@ -1,5 +1,8 @@
 ---
-// Only numbers that come from data — no invented metrics (brief A3).
+// «In numbers» (design: STATS): dot-matrix digits of real numbers only (brief A3). The section
+// sticks to the top while the curtain slides over it. Digits are plain markup made at build time;
+// screen readers and search engines get the number as text.
+import { digitDots } from '../lib/dots.ts';
 import type { SitePageData } from '../lib/page-data.ts';
 
 interface Props {
@@ -7,22 +10,114 @@ interface Props {
 }
 
 const { profile, projects, site } = Astro.props.data;
+const stats = [
+  {
+    value: profile.experience_years,
+    slot: 'profile.experience_years',
+    label: site.stats.experience,
+    labelSlot: 'site.stats.experience',
+  },
+  {
+    value: projects.public.length,
+    slot: 'projects.public.count',
+    label: site.stats.public_projects,
+    labelSlot: 'site.stats.public_projects',
+  },
+];
 ---
 
-<section class="section" id="stats" data-section="stats">
-  <h2 data-slot="site.ui.headings.stats">{site.ui.headings.stats}</h2>
-  <dl class="stats">
-    <div>
-      <dt data-slot="site.stats.experience">{site.stats.experience}</dt>
-      <dd class="mono" data-slot="profile.experience_years">
-        {profile.experience_years}
-      </dd>
-    </div>
-    <div>
-      <dt data-slot="site.stats.public_projects">{site.stats.public_projects}</dt>
-      <dd class="mono" data-slot="projects.public.count">
-        {projects.public.length}
-      </dd>
-    </div>
-  </dl>
+<section class="stats" id="stats" data-section="stats">
+  <div class="wrap">
+    <h2 class="eyebrow" data-slot="site.ui.headings.stats">
+      {site.ui.headings.stats}
+    </h2>
+    <dl class="list">
+      {stats.map((stat) => (
+        <div class="stat">
+          <dt data-slot={stat.labelSlot}>{stat.label}</dt>
+          <dd class="number" data-slot={stat.slot}>
+            <span class="visually-hidden">{stat.value}</span>
+            {digitDots(stat.value).map((dots) => (
+              <span class="digit" aria-hidden="true">
+                {dots.map((lit) => (
+                  <i class:list={{ lit }}></i>
+                ))}
+              </span>
+            ))}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  </div>
 </section>
+
+<style>
+  .stats {
+    position: sticky;
+    top: 0;
+    z-index: 0;
+    display: grid;
+    align-content: center;
+    min-height: 100vh;
+    padding: 5rem var(--gutter);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    --dot-size: 10px;
+    --dot-gap: 5px;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  .list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: 3rem 4rem;
+    margin-top: 2.5rem;
+  }
+
+  .stat {
+    display: grid;
+    gap: 1rem;
+  }
+
+  /* The number above its label, as in the design; in the markup the label comes first (<dt>, <dd>). */
+  .number {
+    order: -1;
+    display: flex;
+    gap: var(--dot-gap);
+  }
+
+  .digit {
+    display: grid;
+    grid-template-columns: repeat(5, var(--dot-size));
+    gap: var(--dot-gap);
+  }
+
+  .digit i {
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: 50%;
+    background: var(--dot-dim);
+    transition: background var(--dur-3);
+  }
+
+  .digit i.lit {
+    background: var(--dot);
+  }
+
+  dt {
+    font-size: 1.05rem;
+    color: var(--fg-2);
+  }
+
+  @media (min-width: 901px) {
+    .stats {
+      --dot-size: 16px;
+      --dot-gap: 8px;
+    }
+  }
+</style>
