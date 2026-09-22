@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../pages/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="./admin.css">
+</helmet>
+<div data-screen-label="Admin · Overview">
+<header class="topbar">
+  <a class="brand" href="#">KROKOSHA</a>
+  <nav aria-label="Разделы">
+    <a href="#" aria-current="page">Обзор</a>
+    <a href="leads.dc.html">Заявки <span class="badge">3</span></a>
+    <a href="#">Входящие</a>
+    <a href="#">Бот</a>
+    <a href="#">Визиты</a>
+    <a href="#">Трафик</a>
+    <a href="#">Статус</a>
+    <a href="#">Аккаунт</a>
+  </nav>
+  <form class="signout"><span class="muted">denis</span><button class="button button-ghost" type="button">Выйти</button></form>
+</header>
+<main class="page">
+  <div class="page-head">
+    <h1>{{ dayTitle }}</h1>
+    <div class="period">
+      <div class="period-step"><a class="period-arrow" href="#" aria-label="Предыдущий период">‹</a><span class="period-arrow is-off" aria-hidden="true">›</span></div>
+      <div class="segmented" role="group" aria-label="Период"><a href="#" aria-current="true">День</a><a href="#">Неделя</a><a href="#">Месяц</a></div>
+      <form class="range"><input type="date" value="2026-09-22"><span class="muted" aria-hidden="true">—</span><input type="date" value="2026-09-22"><button class="button button-ghost" type="button">Показать</button></form>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="dash-main">
+      <section class="card">
+        <h2 class="card-title">Таймлайн</h2>
+        <div class="card-body">
+          <svg class="chart" viewBox="0 0 720 150" role="img" aria-label="Визиты по часам">
+            <sc-for list="{{ gridLines }}" as="g" hint-placeholder-count="4"><line class="chart-grid" x1="0" x2="720" y1="{{ g.y }}" y2="{{ g.y }}"></line></sc-for>
+            <sc-for list="{{ hours }}" as="h" hint-placeholder-count="24">
+              <g><rect class="chart-slot" x="{{ h.x }}" y="0" width="30" height="130"></rect><rect class="chart-bar" x="{{ h.x }}" y="{{ h.y }}" width="20" height="{{ h.h }}" rx="2"></rect><rect class="chart-bar-ads" x="{{ h.x }}" y="{{ h.ay }}" width="20" height="{{ h.ah }}" rx="2"></rect><rect class="chart-bar-bots" x="{{ h.bx }}" y="{{ h.by }}" width="6" height="{{ h.bh }}" rx="1"></rect><text class="chart-label" x="{{ h.tx }}" y="146" text-anchor="middle">{{ h.label }}</text></g>
+            </sc-for>
+          </svg>
+          <p class="legend"><span class="legend-item"><span class="swatch swatch-accent"></span>Визиты по часам</span><span class="legend-item"><span class="swatch swatch-pink"></span>По рекламе (UTM, click id)</span><span class="legend-item"><span class="swatch swatch-cyan"></span>Боты и программы (по логу сервера)</span></p>
+        </div>
+      </section>
+      <div class="dash-split">
+        <div class="stack">
+          <section class="card"><h2 class="card-title">Сейчас на сайте</h2><div class="card-body"><p class="figure figure-large" id="active-count" aria-live="polite">{{ active }}</p><p class="muted">посетителей за последние 5 минут</p></div></section>
+          <section class="card"><h2 class="card-title">Активность</h2><div class="card-body">
+            <ol class="feed" id="feed"><sc-for list="{{ feed }}" as="f" hint-placeholder-count="10"><li class="{{ f.cls }}"><time>{{ f.time }}</time><span class="feed-path">{{ f.path }}</span><span class="feed-text">{{ f.text }}</span></li></sc-for></ol>
+          </div></section>
+        </div>
+        <div class="stack">
+          <section class="card"><h2 class="card-title">Секции: время</h2><div class="card-body">
+            <ul class="rows"><sc-for list="{{ sectionsTime }}" as="r" hint-placeholder-count="7"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+          </div></section>
+          <section class="card"><h2 class="card-title">Секции: кто дошёл</h2><div class="card-body">
+            <ul class="rows"><sc-for list="{{ sectionsReach }}" as="r" hint-placeholder-count="7"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-cyan" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+            <h3 class="card-subtitle">Глубина прокрутки</h3>
+            <ul class="rows"><sc-for list="{{ scroll }}" as="r" hint-placeholder-count="4"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">до {{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-pink" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+          </div></section>
+        </div>
+      </div>
+    </div>
+    <div class="dash-side stack">
+      <section class="card"><h2 class="card-title">Посещения</h2><div class="card-body">
+        <div class="figures"><div><p class="figure-label">Посетители</p><p class="figure">148</p></div><div><p class="figure-label">Визиты</p><p class="figure">173</p></div><div><p class="figure-label">Просмотры</p><p class="figure">241</p></div></div>
+        <dl class="facts"><div><dt>Страница на экране в среднем</dt><dd>2 мин 14 с</dd></div><div><dt>Клики по кнопкам и ссылкам</dt><dd>57</dd></div><div><dt>Визиты по рекламе</dt><dd>31</dd></div></dl>
+      </div></section>
+      <section class="card"><h2 class="card-title">Конверсии</h2><div class="card-body scores">
+        <sc-for list="{{ scores }}" as="s" hint-placeholder-count="3"><div class="score"><div class="score-ring"><svg class="ring" viewBox="0 0 36 36"><circle class="ring-track" cx="18" cy="18" r="15.5"></circle><circle class="ring-value {{ s.tone }}" cx="18" cy="18" r="15.5" stroke-dasharray="{{ s.dash }}" transform="rotate(-90 18 18)"></circle></svg><span class="score-value">{{ s.pct }}</span></div><div><p class="score-name">{{ s.name }}</p><p class="muted">{{ s.sub }}</p></div></div></sc-for>
+      </div></section>
+      <section class="card"><h2 class="card-title">Источники</h2><div class="card-body">
+        <ul class="rows"><sc-for list="{{ sources }}" as="r" hint-placeholder-count="5"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+        <h3 class="card-subtitle">Кампании (UTM)</h3>
+        <ul class="rows"><sc-for list="{{ campaigns }}" as="r" hint-placeholder-count="3"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+      </div></section>
+    </div>
+  </div>
+
+  <div class="grid grid-below">
+    <section class="card"><h2 class="card-title">Страницы и языки</h2><div class="card-body">
+      <ul class="rows"><sc-for list="{{ pages }}" as="r" hint-placeholder-count="4"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+      <h3 class="card-subtitle">Язык страницы</h3>
+      <ul class="rows"><sc-for list="{{ langs }}" as="r" hint-placeholder-count="3"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+    </div></section>
+    <section class="card"><h2 class="card-title">Клики</h2><div class="card-body">
+      <ul class="rows"><sc-for list="{{ clicks }}" as="r" hint-placeholder-count="5"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+      <h3 class="card-subtitle">Пасхалки</h3>
+      <ul class="rows"><sc-for list="{{ eggs }}" as="r" hint-placeholder-count="3"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-pink" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+    </div></section>
+    <section class="card"><h2 class="card-title">Устройства</h2><div class="card-body">
+      <ul class="rows"><sc-for list="{{ devices }}" as="r" hint-placeholder-count="3"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-cyan" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+    </div></section>
+    <section class="card"><h2 class="card-title">География</h2><div class="card-body">
+      <ul class="rows"><sc-for list="{{ geo }}" as="r" hint-placeholder-count="4"><li class="row"><span class="row-share">{{ r.pct }}</span><span class="row-name">{{ r.name }}</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect class="bar-track" width="100" height="4" rx="2"></rect><rect class="bar-accent" width="{{ r.w }}" height="4" rx="2"></rect></svg><span class="row-value">{{ r.value }}</span></li></sc-for></ul>
+      <p class="muted">Страна и город определяются на сервере по базе GeoIP; сам адрес хранится усечённым.</p>
+    </div></section>
+    <section class="card"><h2 class="card-title">Экспорт</h2><div class="card-body">
+      <p>Данные за выбранный период в CSV (UTF-8, время — UTC).</p>
+      <p class="actions"><a class="button button-ghost" href="#">Просмотры</a><a class="button button-ghost" href="#">События</a></p>
+      <p class="muted">В файлах нет ни полных адресов, ни User-Agent: их нет и в базе.</p>
+    </div></section>
+  </div>
+</main>
+<footer class="footnote muted">версия 0.9.3 · admin.css v2 (design/admin)</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { feed: [], active: 3 };
+  componentDidMount() {
+    const base = [['12:04:31', '/', 'открыл страницу'], ['12:04:52', '/#services', 'дошёл до «Что я делаю»'], ['12:05:10', '/#skills', 'открыл ветку DevOps'], ['12:05:41', '/#projects', 'клик project-vlb-Virtual-Load-Balancer'], ['12:06:02', '/#contacts', 'клик cta-telegram'], ['12:06:30', '/ru/', 'открыл страницу'], ['12:07:12', '/ru/#skills', 'нашёл пасхалку konami'], ['12:07:45', '/uk/', 'открыл страницу'], ['12:08:03', '/uk/#contacts', 'form-submit · #K-0043'], ['12:09:20', '/', 'скролл 100%']];
+    this.setState({ feed: base.map(([time, path, text]) => ({ time, path, text, cls: '' })) });
+    this.timer = setInterval(() => { const t = new Date(); const time = t.toTimeString().slice(0, 8); const opts = [['/', 'открыл страницу'], ['/#skills', 'открыл ветку Сети'], ['/#contacts', 'клик cta-email'], ['/#projects', 'клик projects-show-all']]; const [path, text] = opts[Math.floor(Math.random() * opts.length)]; this.setState((s) => ({ feed: [{ time, path, text, cls: 'is-new' }, ...s.feed.map((f) => ({ ...f, cls: '' }))].slice(0, 14), active: Math.max(1, s.active + (Math.random() > 0.5 ? 1 : -1)) })); }, 6000);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  rows(list, total) { return list.map(([name, v, label]) => { const p = Math.round((v / total) * 100); return { name, pct: p + '%', w: p, value: label ?? v }; }); }
+  renderVals() {
+    const vals = [1, 0, 0, 1, 2, 3, 4, 9, 14, 18, 16, 15, 17, 19, 21, 18, 14, 12, 15, 11, 8, 6, 4, 2], ads = [0, 0, 0, 0, 0, 1, 1, 3, 4, 5, 4, 3, 5, 6, 7, 5, 3, 2, 4, 3, 2, 1, 0, 0], bots = [3, 4, 2, 5, 3, 2, 4, 3, 2, 3, 4, 2, 3, 2, 4, 3, 2, 3, 5, 2, 3, 4, 2, 3];
+    const max = 24, H = 130, k = H / max;
+    return {
+      dayTitle: 'Вторник, 22 сентября 2026', active: this.state.active, feed: this.state.feed,
+      gridLines: [0, 1, 2, 3].map((i) => ({ y: 10 + i * 40 })),
+      hours: vals.map((v, i) => ({ x: i * 30, tx: i * 30 + 10, label: i % 3 === 0 ? String(i).padStart(2, '0') : '', y: H - v * k, h: v * k, ay: H - ads[i] * k, ah: ads[i] * k, bx: i * 30 + 22, by: H - bots[i] * k, bh: bots[i] * k })),
+      sectionsTime: this.rows([['hero', 38, '1 ч 12 м'], ['services', 18, '34 мин'], ['skills', 16, '30 мин'], ['projects', 12, '22 мин'], ['stats', 4, '7 мин'], ['curtain', 3, '5 мин'], ['contacts', 9, '17 мин']], 100),
+      sectionsReach: this.rows([['hero', 100, 148], ['services', 76, 113], ['skills', 61, 90], ['projects', 44, 65], ['stats', 40, 59], ['curtain', 37, 55], ['contacts', 29, 43]], 100),
+      scroll: this.rows([['25%', 82, 121], ['50%', 58, 86], ['75%', 41, 61], ['100%', 27, 40]], 100),
+      scores: [{ name: 'Telegram', pct: '9.5%', sub: '14 посетителей', tone: 'ring-accent', dash: '9.2 88' }, { name: 'Почта', pct: '3.4%', sub: '5 посетителей', tone: 'ring-cyan', dash: '3.3 94' }, { name: 'GitHub', pct: '6.1%', sub: '9 посетителей', tone: 'ring-pink', dash: '5.9 91' }],
+      sources: this.rows([['Прямые заходы', 61], ['Google', 44], ['Telegram', 22], ['GitHub', 12], ['Прочее', 9]], 148),
+      campaigns: this.rows([['mikrotik-setup', 17], ['devops-outsource', 9], ['proxmox-cluster', 5]], 31),
+      pages: this.rows([['/', 133], ['/privacy', 6], ['/thanks', 2], ['/404', 3]], 148), langs: this.rows([['EN', 71], ['RU', 49], ['UA', 28]], 148),
+      clicks: this.rows([['cta-telegram', 14], ['project-*', 12], ['social-github', 9], ['cta-discuss', 8], ['projects-show-all', 6]], 57),
+      eggs: this.rows([['egg-konami', 3], ['egg-sudo', 2], ['egg-croc', 4]], 9),
+      devices: this.rows([['Десктоп', 89], ['Телефон', 54], ['Планшет', 5]], 148),
+      geo: this.rows([['Украина', 78], ['Польша', 21], ['Германия', 17], ['США', 12]], 148),
+    };
+  }
+}
+</script>
+</body>
+</html>

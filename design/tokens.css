@@ -1,0 +1,93 @@
+/* krokosha.xyz — design tokens. Dark is the default look; light via [data-theme="light"] (theme toggle). */
+:root {
+  color-scheme: dark;
+
+  --font-sans: 'Geologica', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+  --space-9: 7rem;
+  --gutter: clamp(1rem, 4vw, 3.5rem);
+  --page: 84rem;
+
+  --radius-s: 4px;
+  --radius-m: 10px;
+  --radius-l: 18px;
+  --radius-pill: 999px;
+
+
+  --dur-1: 160ms;
+  --dur-2: 320ms;
+  --dur-3: 640ms;
+  --dur-4: 1200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --z-rail: 20;
+  --z-nav: 30;
+  --z-curtain: 5;
+  --z-egg: 40;
+  --z-overlay: 50;
+  
+  --bg: #0e0e10;
+  --bg-2: #141416;
+  --surface: #161618;
+  --surface-2: #1d1d20;
+  --fg: #ededea;
+  --fg-2: #c9c9c4;
+  --muted: #9a9a95;
+  --line: #2a2a2e;
+  --line-strong: #3a3a40;
+  --inverse-bg: #f1f1ee;
+  --inverse-surface: #ffffff;
+  --inverse-fg: #121212;
+  --inverse-muted: #6a6a66;
+  --inverse-line: #d4d4cf;
+  --accent: #9d86f0;
+  --accent-ink: #121212;
+  --accent-soft: rgba(157, 134, 240, 0.16);
+  --accent-line: #7d64e0;
+  --danger: #ff8a7a;
+  --ok: #5fd39a;
+  --dot: #ededea;
+  --dot-dim: #3a3a40;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #eeeeeb;
+  --bg-2: #e6e6e2;
+  --surface: #f7f7f5;
+  --surface-2: #ffffff;
+  --fg: #121212;
+  --fg-2: #3a3a38;
+  --muted: #6a6a66;
+  --line: #d4d4cf;
+  --line-strong: #b9b9b3;
+  --inverse-bg: #111113;
+  --inverse-surface: #1b1b1e;
+  --inverse-fg: #f1f1ee;
+  --inverse-muted: #9a9a95;
+  --inverse-line: #2c2c30;
+  --accent: #6b4de6;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(107, 77, 230, 0.12);
+  --accent-line: #8a72ea;
+  --danger: #a3261a;
+  --ok: #1f7a4d;
+  --dot: #1a1a1a;
+  --dot-dim: #b5b5b0;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px -12px rgba(0, 0, 0, 0.18);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.08), 0 24px 48px -20px rgba(0, 0, 0, 0.28);
+}
