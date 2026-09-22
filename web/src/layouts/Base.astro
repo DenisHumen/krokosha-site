@@ -1,13 +1,20 @@
 ---
-// Base layout: <head> with full SEO (brief B7), header, footer.
-// Markup is temporary (phase 1). Visual components from design/ replace it in phase 2;
+// Base layout: <head> with full SEO (brief B7), the page frame of the design (design/pages/*.dc.html)
+// and its three variants: the home page (fixed header, left rail, bottom bar on phones), a service
+// page (404, privacy, thanks) and the inverted /play.
 // data-slot / data-track / data-section attributes follow docs/contract.md.
+import { Font } from 'astro:assets';
+import '../../../design/tokens.css';
 import '../styles/global.css';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
+import MobileBar from '../components/MobileBar.astro';
+import Rail from '../components/Rail.astro';
 import { OG_LOCALE, LOCALES, localePath } from '../i18n/locales.ts';
 import type { SitePageData } from '../lib/page-data.ts';
 import { absoluteUrl, alternateLinks, serializeJsonLd } from '../lib/seo.ts';
+
+export type Variant = 'home' | 'page' | 'play';
 
 interface Props {
   data: SitePageData;
@@ -18,9 +25,18 @@ interface Props {
   /** Service pages (404, play) and drafts are kept out of search results. */
   noindex?: boolean;
   jsonLd?: Record<string, unknown>[];
+  variant?: Variant;
 }
 
-const { data, page, title, description, noindex = false, jsonLd = [] } = Astro.props;
+const {
+  data,
+  page,
+  title,
+  description,
+  noindex = false,
+  jsonLd = [],
+  variant = 'page',
+} = Astro.props;
 const { lang, site, seo } = data;
 const origin = Astro.site ?? new URL(import.meta.env.SITE);
 
@@ -72,8 +88,10 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ededeb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#eeeeeb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e0e10" media="(prefers-color-scheme: dark)" />
+    <Font cssVariable="--font-geologica" />
+    <Font cssVariable="--font-fira-code" />
 
     {/* Applies the saved theme before first paint. External and tiny on purpose: CSP stays free of inline scripts. */}
     <script is:inline src="/assets/theme.js"></script>
@@ -83,14 +101,40 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
       <script is:inline type="application/ld+json" set:html={serializeJsonLd(block)}></script>
     ))}
   </head>
-  <body>
+  <body class={`frame-${variant}`}>
     <a class="skip-link" href="#main">
       {site.ui.skip_to_content}
     </a>
-    <Header data={data} page={page} />
-    <main id="main">
+    <Header data={data} page={page} variant={variant} />
+    {variant === 'home' && <Rail data={data} />}
+    {variant === 'home' && <MobileBar data={data} />}
+    <main id="main" class={`main-${variant}`}>
       <slot />
     </main>
-    <Footer data={data} />
+    <Footer data={data} page={page} variant={variant} />
   </body>
 </html>
+
+<style is:global>
+  /* Service pages: header, content in the middle, footer at the bottom (design: 404, privacy, thanks). */
+  .frame-page,
+  .frame-play {
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .frame-play {
+    position: relative;
+    overflow: hidden;
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+
+  /* The home page leaves room for the fixed left rail on wide screens. */
+  @media (min-width: 901px) {
+    .main-home {
+      padding-left: var(--rail-w);
+    }
+  }
+</style>

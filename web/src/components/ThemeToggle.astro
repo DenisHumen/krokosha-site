@@ -7,17 +7,39 @@ const { label } = Astro.props;
 ---
 
 <button class="theme-toggle" type="button" aria-label={label} title={label} data-theme-toggle>
-  <span aria-hidden="true">◐</span>
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"></circle>
+    <path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"></path>
+  </svg>
 </button>
 
+<style>
+  .theme-toggle {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface);
+    cursor: pointer;
+  }
+
+  .theme-toggle:hover {
+    border-color: var(--fg);
+  }
+</style>
+
 <script>
-  // Light ↔ dark. Until the visitor chooses, the system theme applies (see public/assets/theme.js).
+  // Light ↔ dark. Until the visitor chooses, the system theme applies (design/tokens.css,
+  // public/assets/theme.js); the choice is remembered.
   const root = document.documentElement;
-  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  const systemLight = window.matchMedia('(prefers-color-scheme: light)');
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')) {
     button.addEventListener('click', () => {
-      const current = root.dataset.theme ?? (systemDark.matches ? 'dark' : 'light');
+      const current = root.dataset.theme ?? (systemLight.matches ? 'light' : 'dark');
       const next = current === 'dark' ? 'light' : 'dark';
       root.dataset.theme = next;
       try {

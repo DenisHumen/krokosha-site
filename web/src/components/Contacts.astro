@@ -1,8 +1,9 @@
 ---
-// Quick-contact buttons and the «Discuss a project» form (brief B10.1).
+// Contacts (design: CONTACTS): the quick ways — Telegram, email — as big buttons, and the «Discuss a
+// project» form (brief B10.1). On wide screens the left column stays in view while the form scrolls.
 import type { SitePageData } from '../lib/page-data.ts';
 import ContactForm from './ContactForm.astro';
-import SocialLinks from './SocialLinks.astro';
+import Icon from './Icon.astro';
 
 interface Props {
   data: SitePageData;
@@ -10,15 +11,147 @@ interface Props {
 
 const { data } = Astro.props;
 const { profile, site } = data;
+const number = site.nav.find((item) => item.anchor === 'contacts')?.number;
+const primary = profile.socials.filter((social) => social.primary === true);
+const ctaLabels: Record<string, string> = {
+  telegram: site.hero.cta.telegram,
+  email: site.hero.cta.email,
+};
+const handle = (url: string) => url.replace(/^mailto:/, '').replace(/^https:\/\//, '');
+const external = (url: string) => url.startsWith('https://');
 ---
 
-<section class="section" id="contacts" data-section="contacts">
-  <h2 data-slot="site.contacts.heading">{site.contacts.heading}</h2>
-  <p data-slot="site.contacts.text">{site.contacts.text}</p>
-  <SocialLinks
-    socials={profile.socials}
-    variant="cta"
-    ctaLabels={{ telegram: site.hero.cta.telegram }}
-  />
-  <ContactForm data={data} />
+<section class="contacts" id="contacts" data-section="contacts">
+  <div class="wrap">
+    <div class="intro">
+      {number && <p class="eyebrow">{number}</p>}
+      <h2 data-slot="site.contacts.heading">{site.contacts.heading}</h2>
+      <p class="text" data-slot="site.contacts.text">
+        {site.contacts.text}
+      </p>
+      <ul class="quick" data-slot="socials">
+        {primary.map((social) => (
+          <li data-component="social-button">
+            <a
+              class:list={['quick-link', { main: social.id === 'telegram' }]}
+              href={social.url}
+              data-field="url"
+              data-social={social.id}
+              data-track={`cta-${social.id}`}
+              rel={external(social.url) ? 'me noopener' : undefined}
+            >
+              <Icon name={social.id} size={22} stroke={1.6} />
+              <span class="quick-label" data-field="label">
+                <span>{ctaLabels[social.id] ?? social.label}</span>
+                <span class="handle mono">{handle(social.url)}</span>
+              </span>
+              <span class="arrow" aria-hidden="true">
+                →
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+    <ContactForm data={data} />
+  </div>
 </section>
+
+<style>
+  .contacts {
+    position: relative;
+    z-index: 5;
+    padding: 5rem var(--gutter) 7rem;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+  }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3rem 5rem;
+    align-items: start;
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  .intro {
+    display: grid;
+    gap: 1.5rem;
+    top: 5rem;
+  }
+
+  h2 {
+    font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+  }
+
+  .text {
+    max-width: 26rem;
+    color: var(--fg-2);
+    text-wrap: pretty;
+  }
+
+  .quick {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .quick-link {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    height: 4.25rem;
+    padding: 0 1.25rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 1.05rem;
+    font-weight: 500;
+    transition: transform var(--dur-1) var(--ease-out);
+  }
+
+  .quick-link:hover {
+    transform: translateX(4px);
+  }
+
+  .quick-link.main {
+    border-color: var(--inverse-bg);
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+
+  .quick-link.main:hover {
+    color: var(--inverse-fg);
+  }
+
+  .quick-label {
+    display: grid;
+    line-height: 1.2;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .handle {
+    font-size: 0.68rem;
+    font-weight: 400;
+    opacity: 0.7;
+  }
+
+  .quick-link .arrow {
+    margin-left: auto;
+  }
+
+  @media (min-width: 901px) {
+    .wrap {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    }
+
+    .intro {
+      position: sticky;
+    }
+  }
+</style>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../pages/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="./admin.css">
+</helmet>
+<div data-screen-label="Admin · Leads">
+<header class="topbar">
+  <a class="brand" href="#">KROKOSHA</a>
+  <nav aria-label="Разделы">
+    <a href="overview.dc.html">Обзор</a>
+    <a href="#" aria-current="page">Заявки <span class="badge">3</span></a>
+    <a href="#">Входящие</a>
+    <a href="#">Бот</a>
+    <a href="#">Визиты</a>
+    <a href="#">Трафик</a>
+    <a href="#">Статус</a>
+    <a href="#">Аккаунт</a>
+  </nav>
+  <form class="signout"><span class="muted">denis</span><button class="button button-ghost" type="button">Выйти</button></form>
+</header>
+<main class="page">
+  <div class="page-head">
+    <h1>Заявки</h1>
+    <div class="period">
+      <div class="segmented" role="group" aria-label="Вид"><a href="#" onClick="{{ showList }}" aria-current="{{ listCur }}">Список</a><a href="#" onClick="{{ showBoard }}" aria-current="{{ boardCur }}">Доска</a></div>
+      <form class="range" role="search"><input type="search" placeholder="Имя, контакт, текст, #K-0042"><button class="button button-ghost" type="button">Найти</button></form>
+      <a class="button button-ghost" href="#">Шаблоны</a>
+      <a class="button button-ghost" href="#">CSV</a>
+    </div>
+  </div>
+
+  <div class="grid grid-funnel">
+    <section class="card"><h2 class="card-title">Воронка · 30 дней</h2><div class="card-body">
+      <div class="figures"><div><p class="figure-label">Заявок</p><p class="figure">18</p></div><div><p class="figure-label">В работе</p><p class="figure">4</p></div><div><p class="figure-label">Ждём клиента</p><p class="figure">2</p></div><div><p class="figure-label">Завершено</p><p class="figure">7</p></div></div>
+      <dl class="facts"><div><dt>Первая реакция (медиана)</dt><dd>41 мин</dd></div><div><dt>Новых, ещё не взятых</dt><dd>3</dd></div><div><dt>Отклонено · спам</dt><dd>1 · 1</dd></div></dl>
+    </div></section>
+    <section class="card"><h2 class="card-title">Откуда заявки · 30 дней</h2><div class="card-body">
+      <ul class="rows rows-plain">
+        <li class="row"><span class="row-name">Google Ads <span class="muted">· mikrotik-setup</span></span><span class="row-value">7 заявок</span><span class="row-value">завершено: 3</span></li>
+        <li class="row"><span class="row-name">Прямые заходы</span><span class="row-value">6 заявок</span><span class="row-value">завершено: 3</span></li>
+        <li class="row"><span class="row-name">Telegram</span><span class="row-value">3 заявки</span><span class="row-value">завершено: 1</span></li>
+        <li class="row"><span class="row-name">Визит неизвестен</span><span class="row-value">2 заявки</span><span class="row-value">завершено: 0</span></li>
+      </ul>
+    </div></section>
+  </div>
+
+  <nav class="tabs" aria-label="Статус">
+    <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6"><a href="#" aria-current="{{ t.cur }}">{{ t.name }} <span class="muted">{{ t.count }}</span></a></sc-for>
+  </nav>
+
+  <sc-if value="{{ board }}" hint-placeholder-val="{{ false }}">
+    <div class="board" data-board>
+      <sc-for list="{{ columns }}" as="c" hint-placeholder-count="5">
+        <section class="board-column" data-status="{{ c.status }}" aria-label="{{ c.name }}">
+          <h2 class="card-title">{{ c.name }} <span class="muted" data-count>{{ c.count }}</span></h2>
+          <div class="board-cards">
+            <sc-for list="{{ c.cards }}" as="l" hint-placeholder-count="2">
+              <article class="board-card" draggable="true" data-lead="{{ l.id }}">
+                <p class="board-card-head"><a href="#">#{{ l.number }}</a> <span class="muted">{{ l.day }}</span></p>
+                <p class="board-card-name">{{ l.name }}</p>
+                <p class="muted">{{ l.direction }}{{ l.budgetText }}</p>
+                <sc-if value="{{ l.assignee }}" hint-placeholder-val="{{ false }}"><p class="muted">взял(а) {{ l.assignee }}</p></sc-if>
+                <sc-if value="{{ l.waiting }}" hint-placeholder-val="{{ false }}"><p><span class="tag tag-warn">клиент ждёт ответа</span></p></sc-if>
+              </article>
+            </sc-for>
+          </div>
+        </section>
+      </sc-for>
+    </div>
+  </sc-if>
+  <sc-if value="{{ list }}" hint-placeholder-val="{{ true }}">
+    <section class="card">
+      <h2 class="card-title">18 заявок · ждут ответа: 2</h2>
+      <div class="card-body">
+        <div class="table-scroll">
+          <table class="table table-wide">
+            <thead><tr><th>Номер</th><th>Получена</th><th>Статус</th><th>Клиент</th><th>Направление</th><th>Задача</th><th>Источник</th><th>Кто взял</th></tr></thead>
+            <tbody>
+              <sc-for list="{{ leads }}" as="l" hint-placeholder-count="8">
+                <tr>
+                  <td class="mono"><a href="#">#{{ l.number }}</a></td>
+                  <td class="mono">{{ l.time }}</td>
+                  <td><span class="status status-{{ l.status }}">{{ l.statusName }}</span></td>
+                  <td>{{ l.name }}<span class="cell-sub">{{ l.contact }}</span></td>
+                  <td>{{ l.direction }}<span class="cell-sub">{{ l.budget }}</span></td>
+                  <td class="cell-excerpt"><span class="clamp">{{ l.excerpt }}</span></td>
+                  <td>{{ l.source }}<span class="cell-sub">{{ l.campaign }}</span></td>
+                  <td>{{ l.assigneeText }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p class="pager"><span class="muted">страница 1</span><a class="button button-ghost" href="#">Старше →</a></p>
+      </div>
+    </section>
+  </sc-if>
+</main>
+<footer class="footnote muted">версия 0.9.3 · admin.css v2 (design/admin)</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;list&quot;,&quot;board&quot;],&quot;default&quot;:&quot;list&quot;,&quot;tsType&quot;:&quot;'list'|'board'&quot;}}">
+class Component extends DCLogic {
+  state = { view: 'list' };
+  NAMES = { new: 'Новая', in_progress: 'В работе', waiting_client: 'Ждём клиента', done: 'Завершена', rejected: 'Отклонена', spam: 'Спам' };
+  LEADS = [
+    { id: 43, number: 'K-0043', time: '22.09 12:08', day: '22.09', status: 'new', name: 'Олена Ковальчук', contact: 'olena@retail.ua', direction: 'Сети и оборудование', budget: '$1–3k', excerpt: 'Нужно перестроить сеть офиса на 40 мест: MikroTik, 2 VLAN, гостевой Wi-Fi, резервный канал.', source: 'Google Ads', campaign: 'mikrotik-setup', assignee: '' },
+    { id: 42, number: 'K-0042', time: '22.09 09:41', day: '22.09', status: 'new', name: 'Ivan Petrov', contact: '@ivan_p', direction: 'DevOps', budget: '$3–10k', excerpt: 'CI/CD для трёх сервисов на Go, деплой в k3s, мониторинг Prometheus + Grafana.', source: 'Telegram', campaign: '', assignee: '' },
+    { id: 41, number: 'K-0041', time: '21.09 18:20', day: '21.09', status: 'new', name: 'Marek Nowak', contact: '+48 601 …', direction: 'Серверы, СХД, кластеры', budget: 'пока не знаю', excerpt: 'Proxmox-кластер на 3 ноды с Ceph, миграция с ESXi без остановки сервисов.', source: 'Google', campaign: '', assignee: '' },
+    { id: 40, number: 'K-0040', time: '20.09 14:02', day: '20.09', status: 'in_progress', name: 'Дмитро Савченко', contact: 'dmytro@logix.ua', direction: 'Высоконагруженная ЛВС', budget: 'больше $10k', excerpt: 'Проектирование ЛВС склада 12 000 м²: 10GbE ядро, PoE для камер и терминалов.', source: 'Прямые заходы', campaign: '', assignee: 'Денис', waiting: false },
+    { id: 39, number: 'K-0039', time: '19.09 11:15', day: '19.09', status: 'in_progress', name: 'Anna Berg', contact: 'anna@berg.se', direction: 'DevOps', budget: '$500–1k', excerpt: 'Nginx + балансировка на два бэкенда, HTTPS, rate-limit для API.', source: 'GitHub', campaign: '', assignee: 'Денис', waiting: true },
+    { id: 38, number: 'K-0038', time: '18.09 16:47', day: '18.09', status: 'waiting_client', name: 'Сергій Литвин', contact: '@serhii_l', direction: 'Сети и оборудование', budget: '$1–3k', excerpt: 'Cisco Catalyst 9300, стек из двух, OSPF с филиалом, QoS для телефонии.', source: 'Google Ads', campaign: 'mikrotik-setup', assignee: 'Денис' },
+    { id: 37, number: 'K-0037', time: '17.09 10:30', day: '17.09', status: 'done', name: 'Piotr Zieliński', contact: 'piotr@fab.pl', direction: 'Серверы, СХД, кластеры', budget: '$3–10k', excerpt: 'Сборка сервера хранения на TrueNAS, ZFS, iSCSI для виртуализации.', source: 'Прямые заходы', campaign: '', assignee: 'Денис' },
+    { id: 36, number: 'K-0036', time: '15.09 08:12', day: '15.09', status: 'spam', name: 'SEO Expert', contact: 'promo@…', direction: 'Другое', budget: '', excerpt: 'We can rank your website #1 on Google in 7 days …', source: 'Визит неизвестен', campaign: '', assignee: '' },
+  ];
+  renderVals() {
+    const board = this.state.view === 'board';
+    const leads = this.LEADS.map((l) => ({ ...l, statusName: this.NAMES[l.status], budgetText: l.budget ? ' · ' + l.budget : '', assigneeText: l.assignee || '—' }));
+    const counts = leads.reduce((a, l) => ((a[l.status] = (a[l.status] || 0) + 1), a), {});
+    const tabs = [['', 'Все', leads.length], ['new', 'Новые', counts.new || 0], ['in_progress', 'В работе', counts.in_progress || 0], ['waiting_client', 'Ждут клиента', counts.waiting_client || 0], ['done', 'Завершены', counts.done || 0], ['rejected', 'Отклонены и спам', (counts.rejected || 0) + (counts.spam || 0)]].map(([k, name, count], i) => ({ name, count, cur: i === 0 ? 'true' : undefined }));
+    const columns = ['new', 'in_progress', 'waiting_client', 'done', 'rejected'].map((status) => { const cards = leads.filter((l) => l.status === status || (status === 'rejected' && l.status === 'spam')); return { status, name: status === 'rejected' ? 'Отклонены' : this.NAMES[status], count: cards.length, cards }; });
+    return { board, list: !board, listCur: board ? undefined : 'true', boardCur: board ? 'true' : undefined, showList: (e) => { e.preventDefault(); this.setState({ view: 'list' }); }, showBoard: (e) => { e.preventDefault(); this.setState({ view: 'board' }); }, tabs, columns, leads };
+  }
+}
+</script>
+</body>
+</html>

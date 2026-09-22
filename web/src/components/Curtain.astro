@@ -1,4 +1,7 @@
 ---
+// The curtain (design: CURTAIN): an inverted panel that slides over the sticky numbers, with a ring
+// of dots turning slowly as it passes (parallax in scripts/home.ts). The ring is drawn at build time.
+import { ringDots } from '../lib/dots.ts';
 import type { SitePageData } from '../lib/page-data.ts';
 
 interface Props {
@@ -6,17 +9,114 @@ interface Props {
 }
 
 const { curtain } = Astro.props.data.site;
+const RADIUS = 260;
+const box = RADIUS + 6;
 ---
 
-<section class="section curtain" data-section="curtain">
-  <h2 data-slot="site.curtain.heading">{curtain.heading}</h2>
-  <p data-slot="site.curtain.text">{curtain.text}</p>
-  <a
-    class="button button-primary"
-    href="#contacts"
-    data-track="cta-discuss"
-    data-slot="site.curtain.cta"
-  >
-    {curtain.cta}
-  </a>
+<section class="curtain" data-section="curtain" data-curtain>
+  <div class="ring" aria-hidden="true" data-curtain-ring>
+    <svg viewBox={`${-box} ${-box} ${box * 2} ${box * 2}`}>
+      {ringDots(RADIUS).map((dot) => (
+        <circle cx={dot.x} cy={dot.y} r="2.5" opacity={dot.opacity.toFixed(2)} />
+      ))}
+    </svg>
+  </div>
+  <div class="content">
+    <h2 data-slot="site.curtain.heading" data-curtain-heading>
+      {curtain.heading}
+    </h2>
+    <p data-slot="site.curtain.text" data-curtain-text>
+      {curtain.text}
+    </p>
+    <a class="pill cta" href="#contacts" data-track="cta-discuss" data-slot="site.curtain.cta">
+      {curtain.cta}{' '}
+      <span class="arrow" aria-hidden="true">
+        →
+      </span>
+    </a>
+  </div>
 </section>
+
+<style>
+  .curtain {
+    position: relative;
+    z-index: var(--z-curtain);
+    display: grid;
+    align-content: center;
+    min-height: 100vh;
+    padding: 7rem var(--gutter);
+    overflow: hidden;
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+    box-shadow: 0 -30px 60px -30px rgba(0, 0, 0, 0.4);
+  }
+
+  .ring {
+    position: absolute;
+    right: -8vw;
+    top: 50%;
+    width: 266px;
+    height: 266px;
+    margin-right: -133px;
+    transform: translateY(-50%);
+    will-change: transform;
+  }
+
+  .ring svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .ring circle {
+    fill: var(--inverse-muted);
+  }
+
+  .content {
+    position: relative;
+    display: grid;
+    gap: 1.5rem;
+    justify-items: start;
+    width: 100%;
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  h2 {
+    max-width: 15ch;
+    font-size: clamp(2.2rem, 5vw, 4.75rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    font-weight: 500;
+    text-wrap: balance;
+    will-change: transform;
+  }
+
+  p {
+    max-width: 32rem;
+    color: var(--inverse-muted);
+    font-size: 1.1rem;
+    will-change: transform;
+  }
+
+  .cta {
+    height: 3.2rem;
+    padding: 0 1.5rem;
+    background: var(--inverse-fg);
+    color: var(--inverse-bg);
+  }
+
+  .cta:hover {
+    color: var(--inverse-bg);
+    transform: translateY(-1px);
+  }
+
+  @media (min-width: 901px) {
+    .ring {
+      width: 532px;
+      height: 532px;
+      margin-right: -266px;
+    }
+  }
+</style>

@@ -1,4 +1,6 @@
 ---
+// EN · UA · RU as a segmented pill; the current language is filled. Real links: every language is its
+// own page (/, /uk/, /ru/), so switching works without JavaScript and search engines see all three.
 import { localePath } from '../i18n/locales.ts';
 import type { SitePageData } from '../lib/page-data.ts';
 
@@ -28,3 +30,33 @@ const { i18n, ui } = data.site;
     ))}
   </ul>
 </nav>
+
+<style>
+  .lang-switcher {
+    display: flex;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+  }
+
+  a {
+    display: block;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--muted);
+    transition: background var(--dur-1);
+  }
+
+  a:hover {
+    color: var(--fg);
+  }
+
+  a[aria-current] {
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+</style>

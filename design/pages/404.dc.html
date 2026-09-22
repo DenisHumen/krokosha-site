@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.55 var(--font-sans)}
+a{color:inherit;text-decoration:none}a:hover{color:var(--accent)}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+h1,h2,h3,p,ul,ol{margin:0}ul,ol{padding:0;list-style:none}
+@keyframes kro-up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes kro-blink{50%{opacity:.2}}
+@keyframes kro-packet{to{offset-distance:100%}}
+</style>
+</helmet>
+<div data-screen-label="404" style="min-height:100vh;display:grid;grid-template-rows:auto 1fr auto">
+<header style="position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;height:3.75rem;padding:0 var(--gutter);background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+  <a href="index.dc.html" data-slot="profile.nickname" style="display:flex;align-items:center;gap:.6rem;font-weight:500;letter-spacing:.02em"><span aria-hidden="true" style="display:grid;grid-template-columns:repeat(3,4px);gap:2px"><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--accent);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i></span><span>{{ profile.nickname }}</span></a>
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <ul data-slot="site.i18n" style="display:flex;border:1px solid var(--line);border-radius:var(--radius-pill);padding:2px;background:var(--surface)">
+      <sc-for list="{{ locales }}" as="l" hint-placeholder-count="3"><li><button type="button" data-track="lang-{{ l.code }}" onClick="{{ l.pick }}" aria-current="{{ l.current }}" style="padding:.25rem .6rem;border:0;border-radius:var(--radius-pill);background:{{ l.bg }};color:{{ l.fg }};font-family:var(--font-mono);font-size:.72rem;cursor:pointer">{{ l.label }}</button></li></sc-for>
+    </ul>
+    <button type="button" aria-label="{{ site.ui.theme_toggle }}" data-theme-toggle onClick="{{ toggleTheme }}" style="width:2.25rem;height:2.25rem;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface);cursor:pointer"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"></circle><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"></path></svg></button>
+  </div>
+</header>
+
+<main data-section="not-found" style="display:grid;align-content:center;justify-items:center;gap:2rem;padding:4rem var(--gutter);text-align:center">
+  <div style="display:grid;gap:1rem;justify-items:center;max-width:40rem;animation:kro-up var(--dur-4) var(--ease-out) both">
+    <p style="display:flex;align-items:center;gap:.6rem;font-family:var(--font-mono);font-size:.74rem;letter-spacing:.12em;color:var(--muted)"><i aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--danger);animation:kro-blink 1.2s infinite"></i>404 · ICMP TIME EXCEEDED</p>
+    <h1 data-slot="site.not_found.title" style="font-size:clamp(2.4rem,6vw,4.5rem);line-height:1;letter-spacing:-.035em;font-weight:500">{{ site.not_found.title }}</h1>
+    <p data-slot="site.not_found.text" style="color:var(--fg-2);max-width:30rem;text-wrap:pretty">{{ site.not_found.text }}</p>
+  </div>
+
+  <!-- mini-game: the packet hides behind one of the switch ports -->
+  <div style="display:grid;gap:1rem;justify-items:center;animation:kro-up var(--dur-4) var(--ease-out) .3s both">
+    <p data-slot="site.not_found.game_hint" style="font-family:var(--font-mono);font-size:.74rem;color:var(--muted)">{{ hint }}</p>
+    <div style="position:relative;padding:1rem;border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface);box-shadow:var(--shadow-1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 .25rem .75rem;font-family:var(--font-mono);font-size:.62rem;color:var(--muted);letter-spacing:.1em"><span>SW-CORE-01 · 24 × 10G</span><span>{{ tries }} · {{ statusText }}</span></div>
+      <div style="display:grid;grid-template-columns:repeat({{ cols }},2.2rem);gap:.4rem">
+        <sc-for list="{{ ports }}" as="p" hint-placeholder-count="24">
+          <button type="button" onClick="{{ p.click }}" disabled="{{ p.disabled }}" aria-label="port {{ p.n }}" style="width:2.2rem;height:2.2rem;border:1px solid {{ p.border }};border-radius:var(--radius-s);background:{{ p.bg }};cursor:pointer;display:grid;place-items:center;transition:all var(--dur-2)"><i style="width:8px;height:8px;border-radius:50%;background:{{ p.led }};animation:{{ p.anim }}"></i></button>
+        </sc-for>
+      </div>
+    </div>
+    <p aria-live="polite" style="min-height:1.5rem;font-family:var(--font-mono);font-size:.78rem;color:{{ logColor }}">{{ log }}</p>
+  </div>
+
+  <a href="index.dc.html" data-slot="site.not_found.back" style="display:inline-flex;align-items:center;gap:.6rem;height:3rem;padding:0 1.4rem;border-radius:var(--radius-pill);background:var(--inverse-bg);color:var(--inverse-fg);font-weight:500">← {{ site.not_found.back }}</a>
+</main>
+
+<footer data-section="footer" style="padding:2rem var(--gutter);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem 2rem;font-family:var(--font-mono);font-size:.72rem;color:var(--muted)">
+  <ul data-slot="socials" style="display:flex;gap:.5rem"><sc-for list="{{ socials }}" as="s" hint-placeholder-count="3"><li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="social-{{ s.id }}" rel="me noopener" style="display:inline-flex;padding:.35rem .7rem;border:1px solid var(--line);border-radius:var(--radius-pill)" style-hover="border-color:var(--fg);color:var(--fg)"><span data-field="label">{{ s.label }}</span></a></li></sc-for></ul>
+  <p style="display:flex;gap:1.5rem"><span data-slot="site.footer.copyright">{{ copyright }}</span><a href="privacy.dc.html" style="text-decoration:underline;text-underline-offset:3px">{{ privacyTitle }}</a></p>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;en&quot;,&quot;uk&quot;,&quot;ru&quot;],&quot;default&quot;:&quot;en&quot;,&quot;tsType&quot;:&quot;'ru'|'en'|'uk'&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { data: null, lang: 'en', target: Math.floor(Math.random() * 24), tried: [], found: false };
+  async componentDidMount() { await this.load(this.props.lang ?? 'en'); }
+  componentDidUpdate() { const lang = this.props.lang ?? 'en'; if (lang !== this.propLang) { this.propLang = lang; if (lang !== this.state.lang) this.load(lang); } const theme = this.props.theme ?? 'dark'; if (theme !== this.applied) { this.applied = theme; document.documentElement.dataset.theme = theme; } }
+  async load(lang) { this.loading = true; const { loadMock } = await import('./lib/mock-data.js'); const data = await loadMock(lang); this.loading = false; document.documentElement.lang = lang; this.setState({ data, lang }); }
+  toggleTheme = () => { const root = document.documentElement; const cur = root.dataset.theme || 'dark'; const next = cur === 'dark' ? 'light' : 'dark'; root.dataset.theme = next; try { localStorage.setItem('theme', next); } catch {} this.forceUpdate(); };
+  ping(i) {
+    if (this.state.found || this.state.tried.includes(i)) return;
+    const found = i === this.state.target;
+    this.setState((s) => ({ tried: [...s.tried, i], found }));
+    if (found) { try { const k = 'krokosha:eggs', l = JSON.parse(localStorage.getItem(k) || '[]'); if (!l.includes('lost_packet')) { l.push('lost_packet'); localStorage.setItem(k, JSON.stringify(l)); } } catch {} }
+  }
+  renderVals() {
+    const { data, lang, target, tried, found } = this.state; const d = data || {}; const site = d.site || {}; const profile = d.profile || {};
+    const t = { ru: ['пингуйте порты', 'timeout', 'reply from port', 'пакет найден · 200 OK · маршрут восстановлен', 'горячо', 'холодно'], en: ['ping the ports', 'timeout', 'reply from port', 'packet found · 200 OK · route restored', 'warm', 'cold'], uk: ['пінгуйте порти', 'timeout', 'reply from port', 'пакет знайдено · 200 OK · маршрут відновлено', 'гаряче', 'холодно'] }[lang] || [];
+    const dist = (i) => Math.abs((i % 8) - (target % 8)) + Math.abs(Math.floor(i / 8) - Math.floor(target / 8));
+    const last = tried[tried.length - 1];
+    const log = found ? t[3] : last === undefined ? '' : `ping port ${last + 1} … ${t[1]} · ${dist(last) <= 2 ? t[4] : t[5]}`;
+    return {
+      site, profile, lang, toggleTheme: this.toggleTheme, socials: profile.socials || [],
+      locales: (site.i18n?.locales || []).map((l) => ({ ...l, current: l.code === lang ? 'page' : undefined, bg: l.code === lang ? 'var(--inverse-bg)' : 'transparent', fg: l.code === lang ? 'var(--inverse-fg)' : 'var(--muted)', pick: () => this.load(l.code) })),
+      copyright: String(site.footer?.copyright || '').replace('{year}', new Date().getFullYear()), privacyTitle: lang === 'en' ? 'Privacy' : lang === 'uk' ? 'Конфіденційність' : 'Конфиденциальность',
+      hint: site.not_found?.game_hint ? `${site.not_found.game_hint} — ${t[0] || ''}` : '', cols: 8, tries: `tries ${tried.length}`, statusText: found ? 'LINK UP' : 'SEARCHING', log, logColor: found ? 'var(--ok)' : 'var(--muted)',
+      ports: Array.from({ length: 24 }, (_, i) => { const was = tried.includes(i), hit = found && i === target; return { n: i + 1, click: () => this.ping(i), disabled: found || was, border: hit ? 'var(--accent)' : was ? 'var(--line)' : 'var(--line-strong)', bg: hit ? 'var(--accent-soft)' : was ? 'var(--bg)' : 'var(--surface-2)', led: hit ? 'var(--accent)' : was ? 'var(--danger)' : 'var(--line-strong)', anim: hit ? 'kro-blink .6s 3' : was ? 'none' : `kro-blink ${(1.2 + (i % 5) * 0.3).toFixed(1)}s infinite` }; }),
+    };
+  }
+}
+</script>
+</body>
+</html>

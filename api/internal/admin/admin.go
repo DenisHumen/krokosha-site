@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +27,12 @@ import (
 
 //go:embed templates/*.html static/*
 var assets embed.FS
+
+// The fonts of static/fonts: Go knows the type of .woff2 only from /etc/mime.types, which a minimal
+// server may not have — and a font served as application/octet-stream is refused under nosniff.
+func init() {
+	_ = mime.AddExtensionType(".woff2", "font/woff2")
+}
 
 // CookieName uses the __Host- prefix: browsers then insist on Secure, Path=/ and no Domain,
 // so no sub-domain and no plain-HTTP page can ever set or read it.

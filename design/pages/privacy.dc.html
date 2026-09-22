@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 1.0625rem/1.65 var(--font-sans)}
+a{color:inherit;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-strong)}a:hover{color:var(--accent)}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+h1,h2,h3,p,ul,ol{margin:0}ul,ol{padding:0;list-style:none}
+code{font-family:var(--font-mono);font-size:.85em;padding:.05em .35em;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+</style>
+</helmet>
+<div data-screen-label="Privacy" style="min-height:100vh;display:grid;grid-template-rows:auto 1fr auto">
+<header style="position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;height:3.75rem;padding:0 var(--gutter);background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+  <a href="index.dc.html" data-slot="profile.nickname" style="display:flex;align-items:center;gap:.6rem;font-weight:500;letter-spacing:.02em;text-decoration:none"><span aria-hidden="true" style="display:grid;grid-template-columns:repeat(3,4px);gap:2px"><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--accent);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i></span><span>{{ profile.nickname }}</span></a>
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <ul data-slot="site.i18n" style="display:flex;border:1px solid var(--line);border-radius:var(--radius-pill);padding:2px;background:var(--surface)">
+      <sc-for list="{{ locales }}" as="l" hint-placeholder-count="3"><li><button type="button" data-track="lang-{{ l.code }}" onClick="{{ l.pick }}" aria-current="{{ l.current }}" style="padding:.25rem .6rem;border:0;border-radius:var(--radius-pill);background:{{ l.bg }};color:{{ l.fg }};font-family:var(--font-mono);font-size:.72rem;cursor:pointer">{{ l.label }}</button></li></sc-for>
+    </ul>
+    <button type="button" aria-label="{{ site.ui.theme_toggle }}" data-theme-toggle onClick="{{ toggleTheme }}" style="width:2.25rem;height:2.25rem;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface);cursor:pointer"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"></circle><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"></path></svg></button>
+  </div>
+</header>
+
+<main style="padding:4rem var(--gutter) 6rem">
+  <div style="max-width:var(--page);margin:0 auto;display:grid;grid-template-columns:{{ cols }};gap:3rem 5rem;align-items:start">
+    <aside style="position:{{ asidePos }};top:5rem;display:grid;gap:1rem;font-family:var(--font-mono);font-size:.74rem;color:var(--muted)">
+      <a href="index.dc.html" style="text-decoration:none">← {{ site.not_found.back }}</a>
+      <p>{{ site.projects.labels.updated }}: <span>{{ updated }}</span></p>
+      <p style="padding:.3rem .6rem;border:1px dashed var(--line-strong);border-radius:var(--radius-s);width:max-content">{{ statusLabel }}</p>
+      <nav aria-label="Contents" style="display:grid;gap:.35rem;margin-top:1rem">
+        <sc-for list="{{ toc }}" as="t" hint-placeholder-count="6"><a href="#{{ t.id }}" style="text-decoration:none;padding-left:.75rem;border-left:1px solid var(--line)" style-hover="border-color:var(--accent)">{{ t.text }}</a></sc-for>
+      </nav>
+    </aside>
+    <article style="max-width:42rem;display:grid;gap:1.1rem">
+      <h1 style="font-size:clamp(2rem,4.5vw,3.4rem);line-height:1.05;letter-spacing:-.035em;font-weight:500;margin-bottom:1rem;text-wrap:balance">{{ title }}</h1>
+      <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="12">
+        <sc-if value="{{ b.isH }}" hint-placeholder-val="{{ false }}"><h2 id="{{ b.id }}" style="margin-top:1.6rem;font-size:1.35rem;font-weight:500;letter-spacing:-.02em;display:flex;align-items:baseline;gap:.75rem;scroll-margin-top:5rem"><span style="font-family:var(--font-mono);font-size:.7rem;color:var(--accent)">{{ b.n }}</span>{{ b.text }}</h2></sc-if>
+        <sc-if value="{{ b.isP }}" hint-placeholder-val="{{ true }}"><p style="color:var(--fg-2);text-wrap:pretty" dangerouslySetInnerHTML="{{ b.html }}"></p></sc-if>
+        <sc-if value="{{ b.isL }}" hint-placeholder-val="{{ false }}"><ul style="display:grid;gap:.4rem;padding-left:.2rem"><sc-for list="{{ b.items }}" as="it" hint-placeholder-count="3"><li style="display:grid;grid-template-columns:1rem 1fr;gap:.5rem;color:var(--fg-2)"><i aria-hidden="true" style="width:6px;height:6px;margin-top:.6rem;border-radius:50%;background:var(--accent)"></i><span dangerouslySetInnerHTML="{{ it.html }}"></span></li></sc-for></ul></sc-if>
+      </sc-for>
+    </article>
+  </div>
+</main>
+
+<footer data-section="footer" style="padding:2rem var(--gutter);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem 2rem;font-family:var(--font-mono);font-size:.72rem;color:var(--muted)">
+  <ul data-slot="socials" style="display:flex;gap:.5rem"><sc-for list="{{ socials }}" as="s" hint-placeholder-count="3"><li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="social-{{ s.id }}" rel="me noopener" style="display:inline-flex;padding:.35rem .7rem;border:1px solid var(--line);border-radius:var(--radius-pill);text-decoration:none" style-hover="border-color:var(--fg);color:var(--fg)"><span data-field="label">{{ s.label }}</span></a></li></sc-for></ul>
+  <p><span data-slot="site.footer.copyright">{{ copyright }}</span></p>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;en&quot;,&quot;uk&quot;,&quot;ru&quot;],&quot;default&quot;:&quot;en&quot;,&quot;tsType&quot;:&quot;'ru'|'en'|'uk'&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { data: null, lang: 'en', md: '', mobile: false };
+  async componentDidMount() { this.mq = matchMedia('(max-width: 900px)'); this.onMq = () => this.setState({ mobile: this.mq.matches }); this.mq.addEventListener('change', this.onMq); this.onMq(); await this.load(this.props.lang ?? 'en'); }
+  componentDidUpdate() { const lang = this.props.lang ?? 'en'; if (lang !== this.propLang) { this.propLang = lang; if (lang !== this.state.lang) this.load(lang); } const theme = this.props.theme ?? 'dark'; if (theme !== this.applied) { this.applied = theme; document.documentElement.dataset.theme = theme; } }
+  async load(lang) { this.loading = true; const { loadMock } = await import('./lib/mock-data.js'); const [data, md] = await Promise.all([loadMock(lang), fetch(`../../content/pages/privacy.${lang}.md`).then((r) => r.text())]); this.loading = false; document.documentElement.lang = lang; this.setState({ data, lang, md }); }
+  toggleTheme = () => { const root = document.documentElement; const cur = root.dataset.theme || 'dark'; const next = cur === 'dark' ? 'light' : 'dark'; root.dataset.theme = next; try { localStorage.setItem('theme', next); } catch {} this.forceUpdate(); };
+  inline(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\*\*(.+?)\*\*/g, '<strong style="font-weight:500;color:var(--fg)">$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>').replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>'); }
+  parse(md) {
+    const fm = {}; let body = md;
+    const m = md.match(/^---\n([\s\S]*?)\n---\n/); if (m) { body = md.slice(m[0].length); m[1].split('\n').forEach((l) => { const i = l.indexOf(':'); if (i > 0) fm[l.slice(0, i).trim()] = l.slice(i + 1).replace(/#.*$/, '').trim(); }); }
+    const blocks = []; let n = 0; let para = [];
+    const flush = () => { if (para.length) { blocks.push({ isP: true, html: { __html: this.inline(para.join(' ')) } }); para = []; } };
+    body.split('\n').forEach((line) => {
+      if (/^##\s/.test(line)) { flush(); n++; const text = line.replace(/^##\s+/, ''); blocks.push({ isH: true, n: String(n).padStart(2, '0'), id: 'p-' + n, text }); }
+      else if (/^[-*]\s/.test(line)) { flush(); const last = blocks[blocks.length - 1]; const item = { html: { __html: this.inline(line.replace(/^[-*]\s+/, '')) } }; if (last && last.isL) last.items.push(item); else blocks.push({ isL: true, items: [item] }); }
+      else if (line.trim() === '') flush(); else para.push(line.trim());
+    }); flush();
+    return { fm, blocks };
+  }
+  renderVals() {
+    const { data, lang, md, mobile } = this.state; const d = data || {}; const site = d.site || {}; const profile = d.profile || {};
+    const { fm, blocks } = this.parse(md || '');
+    const status = { draft: { ru: 'черновик', en: 'draft', uk: 'чернетка' }, published: { ru: 'опубликовано', en: 'published', uk: 'опубліковано' } }[fm.status || 'draft'];
+    return {
+      site, profile, lang, toggleTheme: this.toggleTheme, socials: profile.socials || [],
+      locales: (site.i18n?.locales || []).map((l) => ({ ...l, current: l.code === lang ? 'page' : undefined, bg: l.code === lang ? 'var(--inverse-bg)' : 'transparent', fg: l.code === lang ? 'var(--inverse-fg)' : 'var(--muted)', pick: () => this.load(l.code) })),
+      copyright: String(site.footer?.copyright || '').replace('{year}', new Date().getFullYear()),
+      title: fm.title || '', updated: fm.updated || '—', statusLabel: status?.[lang] || fm.status || '', blocks, toc: blocks.filter((b) => b.isH).map((b) => ({ id: b.id, text: b.text })),
+      cols: mobile ? '1fr' : '14rem minmax(0,1fr)', asidePos: mobile ? 'static' : 'sticky',
+    };
+  }
+}
+</script>
+</body>
+</html>

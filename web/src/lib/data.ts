@@ -164,9 +164,13 @@ export function buildProjects(content: Content, lang: Locale, options: BuildOpti
 export function buildSite(content: Content, lang: Locale, options: BuildOptions): Site {
   const { site } = content;
   const years = experienceYears(site.profile.career_start, options.now, site.timezone);
+  const skills = buildSkills(content, lang, options)
+    .flatMap((category) => category.children)
+    .reduce((sum, group) => sum + group.children.length, 0);
   const words = {
     years: plural(site.plurals.years[lang], years, lang),
     public_projects: plural(site.plurals.public_projects[lang], content.github.public.length, lang),
+    skills: plural(site.plurals.skills[lang], skills, lang),
   };
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the non-text keys
@@ -182,6 +186,14 @@ export function buildSite(content: Content, lang: Locale, options: BuildOptions)
     },
     ...texts,
     hero: { ...texts.hero, experience_label: fill(texts.hero.experience_label, words) },
+    ui: { ...texts.ui, skills_headline: fill(texts.ui.skills_headline, words) },
+    eggs: {
+      ...texts.eggs,
+      terminal: {
+        ...texts.eggs.terminal,
+        uptime: fill(texts.eggs.terminal.uptime, { years: `${years} ${words.years}` }),
+      },
+    },
     stats: {
       experience: fill(texts.stats.experience, words),
       public_projects: fill(texts.stats.public_projects, words),

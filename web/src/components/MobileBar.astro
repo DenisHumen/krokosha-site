@@ -1,0 +1,81 @@
+---
+// Phones: a floating bar at the bottom with the socials and «Discuss a project» — always one tap away.
+import type { SitePageData } from '../lib/page-data.ts';
+import Icon from './Icon.astro';
+
+interface Props {
+  data: SitePageData;
+}
+
+const { profile, site } = Astro.props.data;
+const external = (url: string) => url.startsWith('https://');
+---
+
+<nav class="mobile-bar" aria-label={site.ui.socials}>
+  <ul data-slot="socials">
+    {profile.socials.map((social) => (
+      <li data-component="social-button">
+        <a
+          href={social.url}
+          data-field="url"
+          data-social={social.id}
+          data-track={`social-${social.id}`}
+          rel={external(social.url) ? 'me noopener' : undefined}
+          aria-label={social.label}
+        >
+          <Icon name={social.id} size={20} />
+        </a>
+      </li>
+    ))}
+  </ul>
+  <a class="pill pill-inverse cta" href="#contacts" data-track="cta-discuss">
+    {site.hero.cta.discuss}
+  </a>
+</nav>
+
+<style>
+  .mobile-bar {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    transform: translateX(-50%);
+    z-index: var(--z-rail);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.35rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: color-mix(in oklab, var(--surface-2) 90%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-2);
+  }
+
+  ul {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  ul a {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    color: var(--fg);
+  }
+
+  .cta {
+    height: 2.75rem;
+    padding: 0 1.1rem;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  @media (min-width: 901px) {
+    .mobile-bar {
+      display: none;
+    }
+  }
+</style>

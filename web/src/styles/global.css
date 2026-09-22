@@ -1,52 +1,23 @@
 /*
- * Temporary styles of the phase-1 skeleton: readable, accessible, light + dark.
- * The real look comes from design/tokens.css and design/components in phase 2 —
- * variable names here are placeholders, not a contract.
+ * Site-wide rules. The look is the design's (design/pages/*.dc.html → <helmet>, design/tokens.css);
+ * this file adds what the integration needs: the fonts of Astro's font pipeline, reduced motion,
+ * shared pieces used by several components, and the states the API relies on (form messages
+ * reached by :target, the %%…_CLASS%% marks of the «thank you» page).
  */
 
 :root {
-  color-scheme: light dark;
-  --bg: #ededeb;
-  --surface: #f6f6f4;
-  --fg: #111111;
-  --muted: #5c5c58;
-  --line: #cfcfcb;
-  --danger: #a3261a;
-  --inverse-bg: #111111;
-  --inverse-fg: #f3f3f1;
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Consolas, monospace;
-  --page: 72rem;
+  /* Astro serves Geologica and Fira Code itself (astro.config.ts → fonts) with metric-matched
+     fallbacks: the text does not jump when the font arrives. */
+  --font-sans: var(--font-geologica), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-fira-code), ui-monospace, 'SF Mono', Consolas, monospace;
+  --header-h: 3.75rem;
+  --rail-w: 3.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0f0f0f;
-    --surface: #181818;
-    --fg: #f0f0ee;
-    --muted: #a3a39e;
-    --line: #333331;
-    --danger: #ff8a7a;
-    --inverse-bg: #f0f0ee;
-    --inverse-fg: #111111;
-  }
-}
-
-:root[data-theme='dark'] {
-  --danger: #ff8a7a;
-  color-scheme: dark;
-  --bg: #0f0f0f;
-  --surface: #181818;
-  --fg: #f0f0ee;
-  --muted: #a3a39e;
-  --line: #333331;
-  --inverse-bg: #f0f0ee;
-  --inverse-fg: #111111;
-}
-
-:root[data-theme='light'] {
-  --danger: #a3261a;
-  color-scheme: light;
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+  -webkit-text-size-adjust: 100%;
 }
 
 *,
@@ -55,463 +26,121 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-  scroll-padding-top: 4.5rem;
-  -webkit-text-size-adjust: 100%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-}
-
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 400 1rem/1.6 var(--sans);
+  font: 400 1rem/1.55 var(--font-sans);
+  font-feature-settings: 'ss01';
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 h1,
 h2,
 h3,
-h4 {
-  margin: 0 0 0.5em;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-
-h1 {
-  font-size: clamp(2rem, 6vw, 4.25rem);
-}
-
-h2 {
-  font-size: clamp(1.6rem, 4vw, 2.75rem);
-}
-
-h3 {
-  font-size: 1.25rem;
-}
-
-h4 {
-  font-size: 1rem;
-}
-
-p {
-  margin: 0 0 1em;
+h4,
+p,
+ul,
+ol,
+dl,
+dd,
+figure {
+  margin: 0;
 }
 
 ul,
 ol {
-  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-a {
-  color: inherit;
-  text-underline-offset: 0.2em;
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
-:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 3px;
-}
-
-.mono {
-  font-family: var(--mono);
-  font-size: 0.875rem;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.skip-link {
-  position: absolute;
-  left: 1rem;
-  top: -4rem;
-  z-index: 10;
-  padding: 0.5rem 1rem;
-  background: var(--inverse-bg);
-  color: var(--inverse-fg);
-}
-
-.skip-link:focus {
-  top: 1rem;
-}
-
-/* Header */
-
-.site-header {
-  z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1.5rem;
-  padding: 0.75rem clamp(1rem, 4vw, 3rem);
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
-}
-
-/* On a phone the wrapped header is too tall to stay on screen. */
-@media (min-width: 60rem) {
-  .site-header {
-    position: sticky;
-    top: 0;
+@keyframes kro-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
-.brand {
-  font-weight: 700;
-  text-decoration: none;
+@keyframes kro-blink {
+  50% {
+    opacity: 0.2;
+  }
 }
 
-.nav,
-.lang-switcher,
-.header-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem 1rem;
+@keyframes kro-packet {
+  to {
+    offset-distance: 100%;
+  }
 }
 
-.nav {
-  flex-wrap: wrap;
+@keyframes kro-dash {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
-.nav a,
-.lang-switcher a {
-  display: inline-block;
-  padding: 0.35rem 0.25rem;
-  text-decoration: none;
+@keyframes kro-scan {
+  to {
+    transform: translateY(100vh);
+  }
 }
 
-.nav a:hover,
-.lang-switcher a:hover,
-.lang-switcher a[aria-current] {
-  text-decoration: underline;
+/* The rack LEDs of the «night mode» egg (design/components/eggs/eggs.js). */
+@keyframes kro-led {
+  50% {
+    opacity: 0.25;
+  }
 }
 
-.nav .mono {
-  margin-right: 0.35em;
-  color: var(--muted);
+/* Brief A6 and the handoff: nothing moves by itself for those who asked the system for calm. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0s !important;
+  }
 }
 
-.header-tools {
-  margin-left: auto;
-}
-
-.lang-switcher a {
-  font-family: var(--mono);
-  font-size: 0.875rem;
-}
-
-.theme-toggle {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-/* Sections */
-
-.section {
-  max-width: var(--page);
-  margin: 0 auto;
-  padding: clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 3rem);
-}
-
-.section + .section {
-  border-top: 1px solid var(--line);
-}
-
-.center {
-  text-align: center;
-}
-
-.hero .headline span {
-  display: block;
-}
-
-.lead {
-  max-width: 44rem;
-  font-size: 1.25rem;
-}
-
-.person {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  margin: 2rem 0;
-}
-
-.person p {
-  margin: 0;
-}
-
-.facts,
-.footer-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1.5rem;
-}
-
-.avatar {
-  display: block;
-  border-radius: 50%;
-  background: var(--surface);
-}
-
-.actions,
-.socials {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.actions {
-  align-items: center;
-}
-
-.captions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 2rem;
-  margin: 3rem 0 0;
-  color: var(--muted);
-}
-
-.button {
-  display: inline-block;
-  padding: 0.75rem 1.5rem;
-  border: 1px solid var(--fg);
-  border-radius: 999px;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.button:hover {
-  text-decoration: underline;
-}
-
-.button-primary {
-  background: var(--inverse-bg);
-  color: var(--inverse-fg);
-}
-
-.socials-icons .button {
-  padding: 0.4rem 0.9rem;
-  border-color: var(--line);
-  font-size: 0.875rem;
-}
-
-/* Services */
-
-.service {
-  display: grid;
-  grid-template-columns: minmax(3rem, 8rem) 1fr;
-  gap: 1rem 2rem;
-  padding: 2rem 0;
-  border-top: 1px solid var(--line);
-  scroll-margin-top: 4.5rem;
-}
-
-.service .number {
-  font-size: clamp(2rem, 6vw, 4rem);
-  line-height: 1;
-}
-
-/* Skills */
-
-.skill-tree {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-  gap: 2.5rem 2rem;
-}
-
-.skill-tree h4 {
-  margin: 1.25rem 0 0.5rem;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.pill {
-  display: inline-block;
-  padding: 0.2rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-}
-
-.pills .muted {
-  font-size: 0.875rem;
-}
-
-/* Projects */
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-  gap: 1rem;
-  margin: 1.5rem 0;
-}
-
-.cards-featured {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
-}
-
-.cards-compact {
-  grid-template-columns: 1fr;
-  gap: 0;
-}
-
-.card {
-  padding: 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: var(--surface);
-  overflow-wrap: anywhere;
-}
-
-.cards-compact .card {
-  border-width: 0 0 1px;
-  border-radius: 0;
-  background: transparent;
-}
-
-.card .meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 0.75rem 0 0;
-}
-
-.card .meta svg {
-  margin-right: 0.35em;
-}
-
-.badge {
-  display: inline-block;
-  margin-left: 0.5em;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 0.25rem;
-  color: var(--muted);
-  font-weight: 400;
-  vertical-align: middle;
-}
-
-summary {
-  padding: 0.5rem 0;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.notice {
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-}
-
-/* Stats */
-
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2rem 4rem;
-  margin: 0;
-}
-
-.stats div {
-  display: flex;
-  flex-direction: column-reverse;
-}
-
-.stats dd {
-  margin: 0;
-  font-size: clamp(3rem, 10vw, 6rem);
-  line-height: 1;
-}
-
-.stats dt {
-  color: var(--muted);
-}
-
-/* Curtain */
-
-.curtain {
-  max-width: none;
-  background: var(--inverse-bg);
-  color: var(--inverse-fg);
-  text-align: center;
-}
-
-.curtain .button-primary {
-  border-color: var(--inverse-fg);
-  background: var(--inverse-fg);
-  color: var(--inverse-bg);
-}
-
-/* Footer */
-
-.site-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem 2rem;
-  padding: 2rem clamp(1rem, 4vw, 3rem);
-  border-top: 1px solid var(--line);
-}
-
-.site-footer p {
-  margin: 0;
-}
-
-.game-entry {
-  color: var(--muted);
-}
-
-/* Text pages */
-
-.prose {
-  max-width: 46rem;
-}
-
-.prose h1 {
-  font-size: clamp(2rem, 5vw, 3rem);
-}
-
-.prose h2 {
-  margin-top: 2em;
-  font-size: 1.5rem;
-}
-
-.prose ul {
-  margin: 0 0 1em;
-  padding-left: 1.25rem;
-  list-style: disc;
-}
-
-.prose li {
-  margin-bottom: 0.35em;
-}
-
-/* Contact form (temporary look; the contract of data-* attributes is what the design keeps) */
+/* --- shared pieces ------------------------------------------------------------------------------ */
 
 .visually-hidden {
   position: absolute;
@@ -525,132 +154,100 @@ summary {
   border: 0;
 }
 
-.contact-form {
-  max-width: 40rem;
-  margin-top: 2.5rem;
-}
-
-/* For robots only: people never see it, and never reach it with the keyboard. */
-.form-trap {
+.skip-link {
   position: absolute;
-  left: -200vw;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
+  left: 1rem;
+  top: -4rem;
+  z-index: 60;
+  padding: 0.5rem 1rem;
+  background: var(--inverse-bg);
+  color: var(--inverse-fg);
+  border-radius: var(--radius-pill);
 }
 
-.field {
-  display: grid;
-  gap: 0.4rem;
-  margin: 0 0 1.25rem;
-  padding: 0;
-  border: 0;
+.skip-link:focus {
+  top: 1rem;
 }
 
-.field label,
-.field legend {
-  padding: 0;
-  font-size: 0.9375rem;
+.mono {
+  font-family: var(--font-mono);
 }
 
-.field input[type='text'],
-.field input[type='email'],
-.field input[type='tel'],
-.field select,
-.field textarea {
-  width: 100%;
-  padding: 0.7rem 0.85rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
-  color: var(--fg);
-  font: inherit;
-}
-
-.field textarea {
-  min-height: 9rem;
-  resize: vertical;
-}
-
-/* Rendered only when content/site.yaml lets the form take files. */
-.field input[type='file'] {
-  width: 100%;
-  padding: 0.6rem 0.85rem;
-  border: 1px dashed var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
+.muted {
   color: var(--muted);
-  font: inherit;
-  font-size: 0.9375rem;
 }
 
-.field [aria-invalid='true'] {
-  border-color: var(--danger);
-}
-
-.field-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0 1.25rem;
-}
-
-.choices {
+/* A section label: a short accent line, then the words in small capitals. */
+.eyebrow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  margin-bottom: 0.25rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  line-height: 1.55;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-.choice {
+.eyebrow::before {
+  content: '';
+  flex: none;
+  width: 2rem;
+  height: 1px;
+  background: var(--accent);
+}
+
+/* Pill-shaped links and buttons; each place sets its own size. */
+.pill {
   display: inline-flex;
-  gap: 0.5rem;
-  align-items: baseline;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  transition: transform var(--dur-1) var(--ease-out);
 }
 
-.choice input {
-  accent-color: var(--fg);
+.pill-inverse {
+  background: var(--inverse-bg);
+  color: var(--inverse-fg);
 }
 
-.field-error {
-  color: var(--danger);
-  font-size: 0.875rem;
+.pill-inverse:hover {
+  color: var(--inverse-fg);
+  transform: translateY(-1px);
 }
 
-.field-error:empty {
-  display: none;
+.pill-line {
+  border: 1px solid var(--line-strong);
 }
 
-.form-actions {
-  margin: 0;
+.pill-line:hover {
+  border-color: var(--fg);
+  color: var(--fg);
 }
 
-/* Shown by the script — or by the address alone: the API sends a visitor without JavaScript
+.arrow {
+  font-family: var(--font-mono);
+}
+
+/* Only where a script makes the thing work (public/assets/theme.js sets .js before the first paint). */
+html:not(.js) .needs-js {
+  display: none !important;
+}
+
+/* --- the contact form: states the API relies on --------------------------------------------------- */
+
+/* Shown by /assets/form.js — or by the address alone: the API sends a visitor without JavaScript
    back to «#form-error-…», and :target does the rest. */
 .form-message {
   display: none;
-  margin: 1.5rem 0 0;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--fg);
-  border-radius: 0.5rem;
-  background: var(--surface);
 }
 
 .form-message:target,
 .form-message.is-shown {
   display: block;
-}
-
-.form-message-error {
-  border-left-color: var(--danger);
-}
-
-.form-message h3 {
-  margin: 0 0 0.5rem;
-}
-
-.form-message p:last-child {
-  margin-bottom: 0;
 }
 
 /* «Thank you» page: the API switches its parts by replacing the %%…_CLASS%% marks. */

@@ -1,5 +1,6 @@
 ---
-// All public repositories are shown; well-developed ones are larger (contract §5).
+// Projects (design: PROJECTS). Every public repository is shown; how prominent it is depends on its
+// tier (contract §5): featured cards, standard cards, and the compact rest behind «All repositories».
 import type { SitePageData } from '../lib/page-data.ts';
 import type { Tier } from '../lib/schema.ts';
 import ProjectCard from './ProjectCard.astro';
@@ -14,65 +15,260 @@ const byTier = (tier: Tier) => projects.public.filter((project) => project.tier 
 const compact = byTier('compact');
 ---
 
-<section class="section" id="projects" data-section="projects">
-  <h2 data-slot="site.projects.heading">{texts.heading}</h2>
-  <p class="muted" data-slot="site.projects.note">
-    {texts.note}
-  </p>
-  {projects.stale && (
-    <p class="notice" role="status" data-slot="site.projects.error_note">
-      {texts.error_note}
-    </p>
-  )}
-
-  <div data-slot="projects.public">
-    <ul class="cards cards-featured">
-      {byTier('featured').map((project) => (
-        <ProjectCard project={project} labels={texts.labels} lang={lang} />
-      ))}
-    </ul>
-    <ul class="cards">
-      {byTier('standard').map((project) => (
-        <ProjectCard project={project} labels={texts.labels} lang={lang} />
-      ))}
-    </ul>
-    {compact.length > 0 && (
-      <details>
-        <summary data-track="projects-show-all">
-          <span data-slot="site.projects.show_all_label">{texts.show_all_label}</span>
-          <span class="mono muted">+{compact.length}</span>
-        </summary>
-        <ul class="cards cards-compact">
-          {compact.map((project) => (
-            <ProjectCard project={project} labels={texts.labels} lang={lang} />
-          ))}
-        </ul>
-      </details>
-    )}
-  </div>
-
-  {projects.private.length > 0 && (
-    <>
-      <h3 data-slot="site.projects.private_heading">{texts.private_heading}</h3>
-      <p class="muted" data-slot="site.projects.private_note">
-        {texts.private_note}
+<section class="projects" id="projects" data-section="projects">
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <p class="eyebrow">github · {projects.public.length}</p>
+        <h2 data-slot="site.projects.heading">{texts.heading}</h2>
+      </div>
+      <p class="note" data-slot="site.projects.note">
+        {texts.note}
       </p>
-      <ul class="cards" data-slot="projects.private">
-        {projects.private.map((project) => (
-          <li class="card" data-component="private-card">
-            <h4 data-field="title">{project.title}</h4>
-            <p data-field="description">{project.description}</p>
-            <ul class="pills" data-field="tags">
-              {project.tags.map((tag) => (
-                <li class="pill mono">{tag}</li>
-              ))}
-            </ul>
-            <span class="badge mono" data-field="note">
-              {project.note}
-            </span>
-          </li>
+    </div>
+    {projects.stale && (
+      <p class="stale mono" role="status" data-slot="site.projects.error_note">
+        <i aria-hidden="true"></i>
+        {texts.error_note}
+      </p>
+    )}
+
+    <div class="public" data-slot="projects.public">
+      <ul class="featured">
+        {byTier('featured').map((project) => (
+          <ProjectCard project={project} labels={texts.labels} lang={lang} />
         ))}
       </ul>
-    </>
-  )}
+      <ul class="standard">
+        {byTier('standard').map((project) => (
+          <ProjectCard project={project} labels={texts.labels} lang={lang} />
+        ))}
+      </ul>
+      {compact.length > 0 && (
+        <details class="all">
+          <summary class="pill pill-line" data-track="projects-show-all">
+            <span data-slot="site.projects.show_all_label">{texts.show_all_label}</span>
+            <span class="more mono">+{compact.length}</span>
+            <span class="chevron mono" aria-hidden="true">
+              ↓
+            </span>
+          </summary>
+          <ul class="compact">
+            {compact.map((project) => (
+              <ProjectCard project={project} labels={texts.labels} lang={lang} />
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+
+    {projects.private.length > 0 && (
+      <div class="private">
+        <div>
+          <h3 data-slot="site.projects.private_heading">{texts.private_heading}</h3>
+          <p class="note" data-slot="site.projects.private_note">
+            {texts.private_note}
+          </p>
+        </div>
+        <ul class="private-list" data-slot="projects.private">
+          {projects.private.map((project) => (
+            <li class="private-card" data-component="private-card">
+              <h4 data-field="title">{project.title}</h4>
+              <span class="badge mono" data-field="note">
+                {project.note}
+              </span>
+              <p data-field="description">{project.description}</p>
+              <ul class="tags" data-field="tags">
+                {project.tags.map((tag) => (
+                  <li class="mono">{tag}</li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </div>
 </section>
+
+<style>
+  .projects {
+    position: relative;
+    z-index: 5;
+    padding: 5rem var(--gutter) 6rem;
+    background: var(--bg);
+  }
+
+  .wrap {
+    display: grid;
+    gap: 1.5rem;
+    max-width: var(--page);
+    margin: 0 auto;
+  }
+
+  .head,
+  .private {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: 1rem 3rem;
+    align-items: end;
+  }
+
+  h2 {
+    margin-top: 0.8rem;
+    font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+  }
+
+  .note {
+    max-width: 30rem;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+
+  .stale {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.7rem 1rem;
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-m);
+    font-size: 0.78rem;
+    color: var(--fg-2);
+  }
+
+  .stale i {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: kro-blink 1.2s infinite;
+  }
+
+  .public {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .featured {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+    gap: 1rem;
+  }
+
+  .standard {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    gap: 0.75rem;
+  }
+
+  .all summary {
+    display: inline-flex;
+    gap: 0.6rem;
+    height: 2.6rem;
+    padding: 0 1.1rem;
+    font-size: 0.9rem;
+    font-weight: 400;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .all summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .more {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .chevron {
+    transition: transform var(--dur-2);
+  }
+
+  .all[open] .chevron {
+    transform: rotate(180deg);
+  }
+
+  /* Where the browser can animate <details>, the list unrolls like the rest of the design. */
+  .all::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size var(--dur-3) var(--ease-out),
+      content-visibility var(--dur-3) allow-discrete;
+  }
+
+  .all[open]::details-content {
+    block-size: auto;
+    block-size: calc-size(auto, size);
+  }
+
+  .private {
+    align-items: start;
+    margin-top: 2.5rem;
+  }
+
+  .private h3 {
+    font-size: 1.3rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  .private .note {
+    max-width: 28rem;
+    margin-top: 0.5rem;
+  }
+
+  .private-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .private-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-m);
+  }
+
+  .private-card h4 {
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .badge {
+    justify-self: end;
+    padding: 0 0.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-s);
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .private-card p {
+    grid-column: 1 / -1;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .tags {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .tags li {
+    padding: 0 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    font-size: 0.66rem;
+  }
+</style>

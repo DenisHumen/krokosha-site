@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<style>
+html{scroll-behavior:smooth;scroll-padding-top:5rem;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.55 var(--font-sans);font-feature-settings:"ss01"}
+a{color:inherit;text-decoration:none}a:hover{color:var(--accent)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+h1,h2,h3,h4,p,ul,ol,dl,figure{margin:0}ul,ol{padding:0;list-style:none}
+::selection{background:var(--accent);color:var(--accent-ink)}
+@keyframes kro-up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes kro-blink{50%{opacity:.2}}
+@keyframes kro-packet{to{offset-distance:100%}}
+@keyframes kro-dash{to{stroke-dashoffset:0}}
+</style>
+</helmet>
+
+<div data-screen-label="Main" style="min-height:100vh;position:relative">
+
+<!-- skip link -->
+<a href="#main" style="position:absolute;left:1rem;top:-4rem;z-index:60;padding:.5rem 1rem;background:var(--inverse-bg);color:var(--inverse-fg);border-radius:var(--radius-pill)" style-focus="top:1rem">{{ site.ui.skip_to_content }}</a>
+
+<!-- top navigation -->
+<header style="position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;gap:1.5rem;height:3.75rem;padding:0 var(--gutter);background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+  <a href="#" data-slot="profile.nickname" style="display:flex;align-items:center;gap:.6rem;font-weight:500;letter-spacing:.02em">
+    <span aria-hidden="true" style="display:grid;grid-template-columns:repeat(3,4px);gap:2px"><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--accent);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i><i style="width:4px;height:4px;background:var(--fg);border-radius:50%"></i></span>
+    <span>{{ profile.nickname }}</span>
+  </a>
+  <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+  <nav aria-label="{{ profile.nickname }}" style="margin-left:auto">
+    <ul data-slot="site.nav" style="display:flex;gap:1.75rem">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="4">
+        <li><a href="#{{ n.anchor }}" style="position:relative;display:flex;gap:.45rem;align-items:baseline;padding:.4rem 0;font-size:.9375rem" style-hover="color:var(--fg)">
+          <span data-field="number" style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted)">{{ n.number }}</span>
+          <span data-field="label">{{ n.label }}</span>
+          <i aria-hidden="true" style="position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--fg);transform-origin:left;transition:transform var(--dur-2) var(--ease-out);transform:{{ n.underline }}"></i>
+        </a></li>
+      </sc-for>
+    </ul>
+  </nav>
+  </sc-if>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-left:auto">
+    <ul data-slot="site.i18n" aria-label="{{ site.ui.language }}" style="display:flex;border:1px solid var(--line);border-radius:var(--radius-pill);padding:2px;background:var(--surface)">
+      <sc-for list="{{ locales }}" as="l" hint-placeholder-count="3">
+        <li><button type="button" data-track="lang-{{ l.code }}" onClick="{{ l.pick }}" lang="{{ l.code }}" aria-current="{{ l.current }}" style="padding:.25rem .6rem;border:0;border-radius:var(--radius-pill);background:{{ l.bg }};color:{{ l.fg }};font-family:var(--font-mono);font-size:.72rem;cursor:pointer;transition:background var(--dur-1)">{{ l.label }}</button></li>
+      </sc-for>
+    </ul>
+    <button type="button" aria-label="{{ site.ui.theme_toggle }}" title="{{ site.ui.theme_toggle }}" data-theme-toggle onClick="{{ toggleTheme }}" style="width:2.25rem;height:2.25rem;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface);cursor:pointer" style-hover="border-color:var(--fg)">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"></circle><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"></path></svg>
+    </button>
+    <sc-if value="{{ mobile }}" hint-placeholder-val="{{ false }}">
+      <button type="button" aria-label="Menu" aria-expanded="{{ menuOpen }}" onClick="{{ toggleMenu }}" style="width:2.25rem;height:2.25rem;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface);cursor:pointer"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12" stroke="currentColor" stroke-width="1.3"></path></svg></button>
+    </sc-if>
+  </div>
+</header>
+<sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+  <nav aria-label="{{ profile.nickname }}" style="position:fixed;inset:3.75rem 0 0 0;z-index:29;background:var(--bg);padding:2rem var(--gutter);display:grid;align-content:start;gap:.25rem">
+    <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="4">
+      <a href="#{{ n.anchor }}" onClick="{{ toggleMenu }}" style="display:flex;gap:1rem;align-items:baseline;padding:1rem 0;border-bottom:1px solid var(--line);font-size:1.75rem;font-weight:300"><span style="font-family:var(--font-mono);font-size:.8rem;color:var(--muted)">{{ n.number }}</span>{{ n.label }}</a>
+    </sc-for>
+  </nav>
+</sc-if>
+
+<!-- left rail (desktop) -->
+<sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+<aside aria-label="Social" style="position:fixed;left:0;top:3.75rem;bottom:0;width:3.5rem;z-index:20;display:flex;flex-direction:column;align-items:center;gap:1rem;padding:1.5rem 0;border-right:1px solid var(--line);background:var(--bg)">
+  <ul data-slot="socials" style="display:flex;flex-direction:column;gap:.5rem">
+    <sc-for list="{{ socials }}" as="s" hint-placeholder-count="3">
+      <li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="social-{{ s.id }}" rel="me noopener" aria-label="{{ s.label }}" title="{{ s.label }}" style="display:grid;place-items:center;width:2.25rem;height:2.25rem;border-radius:50%;border:1px solid transparent;color:var(--fg-2);transition:all var(--dur-1)" style-hover="border-color:var(--fg);color:var(--fg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ s.icon }}"></path></svg></a></li>
+    </sc-for>
+  </ul>
+  <i aria-hidden="true" style="flex:1;width:1px;background:var(--line);position:relative;overflow:hidden"><b ref="{{ railDot }}" style="position:absolute;left:-2px;top:0;width:5px;height:5px;border-radius:50%;background:var(--accent)"></b></i>
+  <span aria-hidden="true" style="writing-mode:vertical-rl;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.14em;color:var(--muted)">{{ eggsCaption }}</span>
+</aside>
+</sc-if>
+
+<!-- bottom floating bar (mobile) -->
+<sc-if value="{{ mobile }}" hint-placeholder-val="{{ false }}">
+<nav aria-label="Social" style="position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 14px);transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:.25rem;padding:.35rem;border:1px solid var(--line);border-radius:var(--radius-pill);background:color-mix(in oklab,var(--surface-2) 90%,transparent);backdrop-filter:blur(12px);box-shadow:var(--shadow-2)">
+  <ul data-slot="socials" style="display:flex;gap:.25rem">
+    <sc-for list="{{ socials }}" as="s" hint-placeholder-count="3">
+      <li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="social-{{ s.id }}" rel="me noopener" aria-label="{{ s.label }}" style="display:grid;place-items:center;width:2.75rem;height:2.75rem;border-radius:50%;color:var(--fg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ s.icon }}"></path></svg></a></li>
+    </sc-for>
+  </ul>
+  <a href="#contacts" data-track="cta-discuss" style="display:flex;align-items:center;height:2.75rem;padding:0 1.1rem;border-radius:var(--radius-pill);background:var(--inverse-bg);color:var(--inverse-fg);font-size:.9rem;font-weight:500;white-space:nowrap">{{ site.hero.cta.discuss }}</a>
+</nav>
+</sc-if>
+
+<main id="main" style="padding-left:{{ mainPad }}">
+
+<!-- ===== HERO ===== -->
+<section id="hero" data-section="hero" ref="{{ heroRef }}" style="position:relative;height:260vh">
+  <div style="position:sticky;top:0;height:100vh;overflow:hidden;display:grid;grid-template-rows:1fr auto">
+    <x-import component-from-global-scope="kro-hands" from="../components/hero/hands.js" layout="{{ handsLayout }}" style="position:absolute;inset:0;pointer-events:none" hint-size="100%,100%"></x-import>
+    <div ref="{{ heroText }}" style="position:relative;z-index:2;display:grid;place-items:center;text-align:center;padding:5rem var(--gutter) 0;will-change:transform,opacity">
+      <div style="max-width:52rem;display:grid;gap:1.25rem;justify-items:center">
+        <h1 style="font-size:clamp(2rem,5.2vw,4.25rem);line-height:1.06;letter-spacing:-.03em;font-weight:500;text-wrap:balance;animation:kro-up var(--dur-4) var(--ease-out) .2s both">
+          <span data-slot="site.hero.headline.muted" style="display:block;color:var(--muted);font-weight:300">{{ site.hero.headline.muted }}</span>
+          <span data-slot="site.hero.headline.strong" style="display:block">{{ site.hero.headline.strong }}</span>
+        </h1>
+        <p data-slot="site.hero.lead" style="max-width:36rem;color:var(--fg-2);font-size:clamp(.95rem,1.2vw,1.1rem);text-wrap:pretty;animation:kro-up var(--dur-4) var(--ease-out) .45s both">{{ site.hero.lead }}</p>
+        <div style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.6rem;animation:kro-up var(--dur-4) var(--ease-out) .65s both">
+          <ul data-slot="socials" style="display:contents">
+            <sc-for list="{{ primarySocials }}" as="s" hint-placeholder-count="2">
+              <li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="cta-{{ s.id }}" rel="me noopener" style="display:inline-flex;align-items:center;gap:.5rem;height:2.9rem;padding:0 1.3rem;border-radius:var(--radius-pill);background:{{ s.bg }};color:{{ s.fg }};border:1px solid {{ s.border }};font-weight:500;font-size:.95rem;box-shadow:{{ s.shadow }};transition:transform var(--dur-1) var(--ease-out)" style-hover="transform:translateY(-1px)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ s.icon }}"></path></svg><span data-field="label">{{ s.cta }}</span></a></li>
+            </sc-for>
+          </ul>
+          <a href="#contacts" data-track="cta-discuss" data-slot="site.hero.cta.discuss" style="display:inline-flex;align-items:center;gap:.4rem;height:2.9rem;padding:0 .9rem;color:var(--fg-2);font-size:.95rem" style-hover="color:var(--accent)">{{ site.hero.cta.discuss }} <span aria-hidden="true" style="font-family:var(--font-mono)">→</span></a>
+        </div>
+        <div style="display:flex;align-items:center;gap:.8rem;margin-top:.5rem;animation:kro-up var(--dur-4) var(--ease-out) .85s both">
+          <button type="button" onClick="{{ avatarClick }}" aria-label="{{ profile.avatar.alt }}" style="padding:0;border:0;background:none;cursor:pointer;border-radius:50%;position:relative;overflow:hidden;width:44px;height:44px">
+            <picture data-slot="profile.avatar"><img src="web/src/assets/avatar-fallback.png" width="44" height="44" alt="{{ profile.avatar.alt }}" style="display:block;width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--surface)"></picture>
+          </button>
+          <div style="text-align:left;line-height:1.3">
+            <p style="font-size:.9rem"><strong data-slot="profile.name" style="font-weight:500">{{ profile.name }}</strong> <span style="color:var(--muted)">· <span data-slot="profile.role">{{ profile.role }}</span></span></p>
+            <p style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted)"><span data-slot="profile.experience_years">{{ profile.experience_years }}</span>+ <span data-slot="site.hero.experience_label">{{ site.hero.experience_label }}</span> · <span data-slot="profile.location">{{ profile.location }}</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- link-up caption, shows when the fingers meet -->
+    <p ref="{{ linkCap }}" data-slot="site.hero.link_caption" aria-live="polite" style="position:absolute;left:50%;top:50%;transform:translate(-50%,3.4rem);z-index:3;padding:.3rem .7rem;border:1px solid var(--accent-line);border-radius:var(--radius-pill);color:var(--accent);background:var(--bg);font-family:var(--font-mono);font-size:.72rem;letter-spacing:.06em;opacity:0;transition:opacity var(--dur-2)">{{ site.hero.link_caption }}</p>
+    <div style="position:relative;z-index:2;display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:end;padding:0 var(--gutter) 1.5rem;font-family:var(--font-mono);font-size:.72rem;color:var(--muted);animation:kro-up var(--dur-4) var(--ease-out) 1.1s both">
+      <span data-slot="site.hero.captions.left">{{ site.hero.captions.left }}</span>
+      <span data-slot="site.hero.captions.center" style="text-align:center;max-width:22rem">{{ site.hero.captions.center }}</span>
+      <span data-slot="site.hero.captions.right" style="text-align:right;animation:kro-blink 2.4s ease-in-out infinite">{{ site.hero.captions.right }}</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SERVICES: sticky numbers ===== -->
+<section id="services" data-section="services" style="position:relative;padding:4rem var(--gutter) 6rem;border-top:1px solid var(--line);background:var(--bg)">
+  <div style="max-width:var(--page);margin:0 auto">
+    <p data-slot="site.ui.headings.services" style="display:flex;align-items:center;gap:.75rem;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)"><i aria-hidden="true" style="width:2rem;height:1px;background:var(--accent)"></i>{{ site.ui.headings.services }}</p>
+    <ol data-slot="site.services" style="margin-top:1rem">
+      <sc-for list="{{ services }}" as="s" hint-placeholder-count="5">
+        <li id="{{ s.id }}" data-component="service-block" style="display:grid;grid-template-columns:{{ serviceCols }};gap:1rem 3rem;align-items:start;min-height:{{ serviceMinH }};border-top:1px solid var(--line);scroll-margin-top:4rem">
+          <div style="position:sticky;top:3.75rem;background:var(--bg);padding:1rem 0 .5rem;z-index:1">
+            <span data-field="number" style="display:block;font-size:clamp(4.5rem,11vw,10rem);line-height:.9;letter-spacing:-.05em;font-weight:500">{{ s.number }}</span>
+          </div>
+          <div style="padding:1.6rem 0 2.5rem;display:grid;grid-template-columns:{{ serviceTextCols }};gap:1rem 2.5rem;align-items:start">
+            <div>
+              <h3 data-field="title" style="font-size:clamp(1.25rem,1.8vw,1.6rem);line-height:1.2;letter-spacing:-.02em;font-weight:500;text-wrap:balance">{{ s.title }}</h3>
+              <p data-field="subtitle" style="margin-top:.6rem;font-family:var(--font-mono);font-size:.74rem;color:var(--muted);line-height:1.6">{{ s.subtitle }}</p>
+            </div>
+            <p data-field="text" style="color:var(--fg-2);max-width:34rem;text-wrap:pretty;font-size:1.02rem">{{ s.text }}</p>
+          </div>
+        </li>
+      </sc-for>
+    </ol>
+  </div>
+</section>
+
+<!-- ===== SKILLS: topology + rack ===== -->
+<section id="skills" data-section="skills" style="position:relative;padding:5rem var(--gutter) 6rem;border-top:1px solid var(--line);background:var(--bg-2)">
+  <div style="max-width:var(--page);margin:0 auto">
+    <div style="display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:1rem 2rem">
+      <div>
+        <p data-slot="site.ui.headings.skills" style="display:flex;align-items:center;gap:.75rem;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)"><i aria-hidden="true" style="width:2rem;height:1px;background:var(--accent)"></i>{{ site.ui.headings.skills }}</p>
+        <h2 style="margin-top:.8rem;font-size:clamp(1.8rem,3.2vw,2.8rem);line-height:1.1;letter-spacing:-.03em;font-weight:500;text-wrap:balance"><span style="color:var(--muted);font-weight:300">{{ skillsCountText }}</span> {{ skillsHeadline }}</h2>
+      </div>
+      <label style="display:flex;align-items:center;gap:.5rem;height:2.6rem;padding:0 .9rem;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--surface);min-width:min(100%,18rem)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">{{ site.ui.skills_search }}</span>
+        <input type="search" value="{{ query }}" onChange="{{ onSearch }}" placeholder="{{ site.ui.skills_search }}" style="flex:1;border:0;background:none;outline:none;font-size:.9rem;min-width:0">
+        <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted);white-space:nowrap">{{ site.ui.skills_no_results }}</span></sc-if>
+      </label>
+    </div>
+
+    <div ref="{{ treeRef }}" style="position:relative;margin-top:3rem;display:grid;grid-template-columns:{{ treeCols }};gap:1.5rem 3rem;align-items:start">
+      <svg ref="{{ treeSvg }}" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible">
+        <sc-for list="{{ treeLines }}" as="ln" hint-placeholder-count="0">
+          <path d="{{ ln.d }}" fill="none" stroke="{{ ln.stroke }}" stroke-width="1" stroke-dasharray="{{ ln.dash }}" stroke-dashoffset="{{ ln.dash }}" style="animation:kro-dash var(--dur-3) var(--ease-out) forwards"></path>
+        </sc-for>
+        <sc-for list="{{ packets }}" as="pk" hint-placeholder-count="0">
+          <circle r="2.5" fill="var(--accent)" style="offset-path:path('{{ pk.d }}');offset-rotate:0deg;animation:kro-packet {{ pk.dur }} linear {{ pk.delay }} infinite"></circle>
+        </sc-for>
+      </svg>
+      <!-- central node -->
+      <div ref="{{ nodeRef }}" style="position:relative;z-index:1;justify-self:{{ nodeAlign }};display:grid;justify-items:center;gap:.6rem;text-align:center">
+        <div style="width:7.5rem;height:7.5rem;border-radius:1.6rem;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);display:grid;place-items:center;padding:.6rem">
+          <div style="width:100%;height:100%;border-radius:1.1rem;background:var(--bg-2);display:grid;place-items:center;overflow:hidden">
+            <picture data-slot="profile.avatar"><img src="web/src/assets/avatar-fallback.png" width="72" height="72" alt="" style="width:4.5rem;height:4.5rem;border-radius:50%;object-fit:cover"></picture>
+          </div>
+        </div>
+        <span style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted)">{{ profile.nickname }} · core</span>
+      </div>
+      <!-- categories = rack -->
+      <ul data-slot="skills" role="tree" style="position:relative;z-index:1;display:grid;gap:.6rem;align-content:start">
+        <sc-for list="{{ cats }}" as="c" hint-placeholder-count="6">
+          <li data-component="skill-node" data-level="category" data-icon="{{ c.icon }}" id="skill-{{ c.id }}" role="treeitem" aria-expanded="{{ c.open }}" style="display:grid;grid-template-columns:{{ catCols }};gap:.5rem 2.5rem;align-items:start;opacity:{{ c.op }};transition:opacity var(--dur-2)">
+            <button type="button" ref="{{ c.ref }}" data-track="skill-{{ c.id }}" onClick="{{ c.toggle }}" style="display:flex;align-items:center;gap:.7rem;height:3rem;padding:0 1rem 0 .8rem;border:1px solid {{ c.border }};border-radius:var(--radius-pill);background:{{ c.bg }};color:{{ c.fg }};cursor:pointer;text-align:left;font-family:var(--font-mono);font-size:.8rem;transition:all var(--dur-2) var(--ease-out);box-shadow:{{ c.shadow }}" style-hover="border-color:var(--fg)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ c.iconPath }}"></path></svg>
+              <span data-field="title">{{ c.title }}</span>
+              <span style="margin-left:auto;font-size:.68rem;opacity:.7">{{ c.count }}</span>
+              <span aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:{{ c.dot }};transition:background var(--dur-2)"></span>
+            </button>
+            <!-- rack units slide out -->
+            <div style="display:grid;grid-template-rows:{{ c.rows }};transition:grid-template-rows var(--dur-3) var(--ease-out);min-width:0">
+              <ul role="group" style="overflow:hidden;min-height:0;display:grid;gap:.5rem;align-content:start">
+                <sc-for list="{{ c.groups }}" as="g" hint-placeholder-count="2">
+                  <li data-component="skill-node" data-level="group" id="skill-{{ g.id }}" ref="{{ g.ref }}" role="treeitem" style="display:grid;grid-template-columns:minmax(7rem,10rem) 1fr;gap:.4rem 1rem;align-items:start;padding:.55rem .8rem;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);opacity:{{ c.unitOp }};transform:translateX({{ c.unitX }});transition:opacity var(--dur-3) var(--ease-out) {{ g.delay }},transform var(--dur-3) var(--ease-out) {{ g.delay }}">
+                    <h4 data-field="title" style="font-size:.78rem;font-weight:500;color:var(--fg-2);line-height:1.35;padding-top:.25rem">{{ g.title }}</h4>
+                    <ul role="group" style="display:flex;flex-wrap:wrap;gap:.35rem">
+                      <sc-for list="{{ g.children }}" as="sk" hint-placeholder-count="4">
+                        <li data-component="skill-node" data-level="skill" id="skill-{{ sk.id }}" role="treeitem" title="{{ sk.note }}" style="display:inline-flex;align-items:center;gap:.4rem;min-height:1.7rem;padding:.15rem .6rem;border:1px solid {{ sk.border }};border-radius:var(--radius-pill);background:{{ sk.bg }};font-family:var(--font-mono);font-size:.72rem;opacity:{{ sk.op }};transition:all var(--dur-2);max-width:100%">
+                          <span data-field="title" style="white-space:nowrap">{{ sk.title }}</span><sc-if value="{{ sk.hasNote }}" hint-placeholder-val="{{ false }}"><span data-field="note" style="color:var(--muted);font-size:.64rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:9rem">{{ sk.note }}</span></sc-if>
+                        </li>
+                      </sc-for>
+                    </ul>
+                  </li>
+                </sc-for>
+              </ul>
+            </div>
+          </li>
+        </sc-for>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== STATS (sticky, the curtain slides over it) ===== -->
+<section id="stats" data-section="stats" style="position:sticky;top:0;z-index:0;min-height:100vh;display:grid;align-content:center;padding:5rem var(--gutter);background:var(--bg);border-top:1px solid var(--line)">
+  <div style="max-width:var(--page);margin:0 auto;width:100%">
+    <p data-slot="site.ui.headings.stats" style="display:flex;align-items:center;gap:.75rem;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)"><i aria-hidden="true" style="width:2rem;height:1px;background:var(--accent)"></i>{{ site.ui.headings.stats }}</p>
+    <dl style="margin-top:2.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:3rem 4rem">
+      <sc-for list="{{ statItems }}" as="st" hint-placeholder-count="2">
+        <div style="display:grid;gap:1rem">
+          <dd data-slot="{{ st.slot }}" aria-label="{{ st.value }}" style="display:flex;gap:{{ dotGap }}">
+            <sc-for list="{{ st.digits }}" as="dg" hint-placeholder-count="1">
+              <span aria-hidden="true" style="display:grid;grid-template-columns:repeat(5,{{ dotSize }});gap:{{ dotGap }}">
+                <sc-for list="{{ dg.dots }}" as="d" hint-placeholder-count="35"><i style="width:{{ dotSize }};height:{{ dotSize }};border-radius:50%;background:{{ d.c }};transition:background var(--dur-3)"></i></sc-for>
+              </span>
+            </sc-for>
+          </dd>
+          <dt data-slot="{{ st.labelSlot }}" style="font-size:1.05rem;color:var(--fg-2)">{{ st.label }}</dt>
+        </div>
+      </sc-for>
+    </dl>
+  </div>
+</section>
+
+<!-- ===== CURTAIN ===== -->
+<section data-section="curtain" ref="{{ curtainRef }}" style="position:relative;z-index:5;min-height:100vh;display:grid;align-content:center;padding:7rem var(--gutter);background:var(--inverse-bg);color:var(--inverse-fg);overflow:hidden;box-shadow:0 -30px 60px -30px rgba(0,0,0,.4)">
+  <div ref="{{ curtainRing }}" aria-hidden="true" style="position:absolute;right:-8vw;top:50%;width:{{ ringSize }};aspect-ratio:1;transform:translateY(-50%);will-change:transform">
+    <sc-for list="{{ ringDots }}" as="r" hint-placeholder-count="0"><i style="position:absolute;left:50%;top:50%;width:5px;height:5px;border-radius:50%;background:var(--inverse-muted);opacity:{{ r.o }};transform:translate(-50%,-50%) rotate({{ r.a }}deg) translateX({{ r.r }})"></i></sc-for>
+  </div>
+  <div style="position:relative;max-width:var(--page);margin:0 auto;width:100%;display:grid;gap:1.5rem;justify-items:start">
+    <h2 ref="{{ curtainH }}" data-slot="site.curtain.heading" style="max-width:15ch;font-size:clamp(2.2rem,5vw,4.75rem);line-height:1.02;letter-spacing:-.035em;font-weight:500;text-wrap:balance;will-change:transform">{{ site.curtain.heading }}</h2>
+    <p ref="{{ curtainP }}" data-slot="site.curtain.text" style="max-width:32rem;color:var(--inverse-muted);font-size:1.1rem;will-change:transform">{{ site.curtain.text }}</p>
+    <a href="#contacts" data-track="cta-discuss" data-slot="site.curtain.cta" style="display:inline-flex;align-items:center;gap:.6rem;height:3.2rem;padding:0 1.5rem;border-radius:var(--radius-pill);background:var(--inverse-fg);color:var(--inverse-bg);font-weight:500;transition:transform var(--dur-1) var(--ease-out)" style-hover="transform:translateY(-1px);color:var(--inverse-bg)">{{ site.curtain.cta }} <span aria-hidden="true" style="font-family:var(--font-mono)">→</span></a>
+  </div>
+</section>
+
+<!-- ===== PROJECTS ===== -->
+<section id="projects" data-section="projects" style="position:relative;z-index:5;padding:5rem var(--gutter) 6rem;background:var(--bg)">
+  <div style="max-width:var(--page);margin:0 auto;display:grid;gap:1.5rem">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1rem 3rem;align-items:end">
+      <div>
+        <p style="display:flex;align-items:center;gap:.75rem;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)"><i aria-hidden="true" style="width:2rem;height:1px;background:var(--accent)"></i>github · {{ publicCount }}</p>
+        <h2 data-slot="site.projects.heading" style="margin-top:.8rem;font-size:clamp(1.8rem,3.2vw,2.8rem);line-height:1.1;letter-spacing:-.03em;font-weight:500">{{ site.projects.heading }}</h2>
+      </div>
+      <p data-slot="site.projects.note" style="color:var(--muted);max-width:30rem;text-wrap:pretty">{{ site.projects.note }}</p>
+    </div>
+    <sc-if value="{{ stale }}" hint-placeholder-val="{{ false }}">
+      <p role="status" data-slot="site.projects.error_note" style="display:flex;gap:.6rem;align-items:center;padding:.7rem 1rem;border:1px dashed var(--line-strong);border-radius:var(--radius-m);font-family:var(--font-mono);font-size:.78rem;color:var(--fg-2)"><i aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--danger);animation:kro-blink 1.2s infinite"></i>{{ site.projects.error_note }}</p>
+    </sc-if>
+
+    <div data-slot="projects.public" style="display:grid;gap:1rem">
+      <ul style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,19rem),1fr));gap:1rem">
+        <sc-for list="{{ featured }}" as="p" hint-placeholder-count="6">
+          <li data-component="project-card" data-tier="featured" style="position:relative;display:grid;grid-template-rows:auto 1fr auto;gap:.8rem;min-height:14rem;padding:1.25rem;border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface);overflow-wrap:anywhere;transition:transform var(--dur-2) var(--ease-out),border-color var(--dur-2)" style-hover="transform:translateY(-3px);border-color:var(--line-strong)">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-family:var(--font-mono);font-size:.7rem;color:var(--muted)">
+              <span data-field="language" style="display:inline-flex;align-items:center;gap:.4rem"><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="{{ p.languageColor }}"></circle></svg>{{ p.language }}</span>
+              <span>{{ p.starsText }}</span>
+            </div>
+            <div>
+              <h3 style="font-size:1.1rem;font-weight:500;line-height:1.25;letter-spacing:-.01em"><a href="{{ p.url }}" rel="noopener" data-field="url" data-track="project-{{ p.name }}" style="text-decoration:none" style-before="content:'';position:absolute;inset:0;border-radius:inherit"><span data-field="name">{{ p.name }}</span></a></h3>
+              <p data-field="description" style="margin-top:.5rem;font-size:.9rem;color:var(--fg-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ p.description }}</p>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-family:var(--font-mono);font-size:.68rem;color:var(--muted)">
+              <span>{{ site.projects.labels.updated }} <time datetime="{{ p.updatedAt }}" data-field="updatedAt">{{ p.updated }}</time></span>
+              <span aria-hidden="true" style="color:var(--fg)">↗</span>
+            </div>
+          </li>
+        </sc-for>
+      </ul>
+      <ul style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr));gap:.75rem">
+        <sc-for list="{{ standard }}" as="p" hint-placeholder-count="8">
+          <li data-component="project-card" data-tier="standard" style="position:relative;display:grid;gap:.5rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--bg);overflow-wrap:anywhere;transition:border-color var(--dur-2)" style-hover="border-color:var(--fg)">
+            <h3 style="font-size:.95rem;font-weight:500;line-height:1.3"><a href="{{ p.url }}" rel="noopener" data-field="url" data-track="project-{{ p.name }}" style-before="content:'';position:absolute;inset:0"><span data-field="name">{{ p.name }}</span></a></h3>
+            <p data-field="description" style="font-size:.82rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ p.description }}</p>
+            <p style="display:flex;gap:.8rem;font-family:var(--font-mono);font-size:.66rem;color:var(--muted)"><span data-field="language" style="display:inline-flex;align-items:center;gap:.35rem"><svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="{{ p.languageColor }}"></circle></svg>{{ p.language }}</span><time datetime="{{ p.updatedAt }}" data-field="updatedAt">{{ p.updated }}</time></p>
+          </li>
+        </sc-for>
+      </ul>
+      <div>
+        <button type="button" data-track="projects-show-all" aria-expanded="{{ compactOpen }}" onClick="{{ toggleCompact }}" style="display:inline-flex;align-items:center;gap:.6rem;height:2.6rem;padding:0 1.1rem;border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:none;cursor:pointer;font-size:.9rem" style-hover="border-color:var(--fg)"><span data-slot="site.projects.show_all_label">{{ site.projects.show_all_label }}</span><span style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted)">+{{ compactCount }}</span><span aria-hidden="true" style="font-family:var(--font-mono);transition:transform var(--dur-2);transform:{{ compactChevron }}">↓</span></button>
+        <div style="display:grid;grid-template-rows:{{ compactRows }};transition:grid-template-rows var(--dur-3) var(--ease-out)">
+          <ul style="overflow:hidden;min-height:0">
+            <sc-for list="{{ compact }}" as="p" hint-placeholder-count="8">
+              <li data-component="project-card" data-tier="compact" style="display:grid;grid-template-columns:{{ compactCols }};gap:.5rem 1.5rem;align-items:baseline;padding:.75rem 0;border-bottom:1px solid var(--line);font-size:.9rem;overflow-wrap:anywhere">
+                <h3 style="font-size:.9rem;font-weight:500;display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap"><a href="{{ p.url }}" rel="noopener" data-field="url" data-track="project-{{ p.name }}" style="text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px"><span data-field="name">{{ p.name }}</span></a><sc-if value="{{ p.archived }}" hint-placeholder-val="{{ false }}"><span data-field="archived" style="padding:0 .4rem;border:1px solid var(--line);border-radius:var(--radius-s);font-family:var(--font-mono);font-size:.62rem;color:var(--muted)">{{ site.projects.labels.archived }}</span></sc-if></h3>
+                <span data-field="language" style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted)">{{ p.language }}</span>
+                <time datetime="{{ p.updatedAt }}" data-field="updatedAt" style="font-family:var(--font-mono);font-size:.7rem;color:var(--muted);text-align:right">{{ p.updated }}</time>
+              </li>
+            </sc-for>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:2.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1rem 3rem;align-items:start">
+      <div>
+        <h3 data-slot="site.projects.private_heading" style="font-size:1.3rem;font-weight:500;letter-spacing:-.02em">{{ site.projects.private_heading }}</h3>
+        <p data-slot="site.projects.private_note" style="margin-top:.5rem;color:var(--muted);max-width:28rem;text-wrap:pretty">{{ site.projects.private_note }}</p>
+      </div>
+      <ul data-slot="projects.private" style="display:grid;gap:.75rem">
+        <sc-for list="{{ privates }}" as="p" hint-placeholder-count="1">
+          <li data-component="private-card" style="display:grid;grid-template-columns:1fr auto;gap:.5rem 1rem;padding:1rem 1.1rem;border:1px dashed var(--line-strong);border-radius:var(--radius-m)">
+            <h4 data-field="title" style="font-size:.95rem;font-weight:500">{{ p.title }}</h4>
+            <span data-field="note" style="justify-self:end;padding:0 .5rem;border:1px solid var(--line-strong);border-radius:var(--radius-s);font-family:var(--font-mono);font-size:.64rem;color:var(--muted);letter-spacing:.08em">{{ p.note }}</span>
+            <p data-field="description" style="grid-column:1/-1;font-size:.85rem;color:var(--muted)">{{ p.description }}</p>
+            <ul data-field="tags" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:.35rem"><sc-for list="{{ p.tags }}" as="t" hint-placeholder-count="0"><li style="padding:0 .5rem;border:1px solid var(--line);border-radius:var(--radius-pill);font-family:var(--font-mono);font-size:.66rem">{{ t }}</li></sc-for></ul>
+          </li>
+        </sc-for>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CONTACTS + FORM ===== -->
+<section id="contacts" data-section="contacts" style="position:relative;z-index:5;padding:5rem var(--gutter) 7rem;border-top:1px solid var(--line);background:var(--bg-2)">
+  <div style="max-width:var(--page);margin:0 auto;display:grid;grid-template-columns:{{ contactCols }};gap:3rem 5rem;align-items:start">
+    <div style="display:grid;gap:1.5rem;position:{{ contactSticky }};top:5rem">
+      <p style="display:flex;align-items:center;gap:.75rem;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)"><i aria-hidden="true" style="width:2rem;height:1px;background:var(--accent)"></i>04</p>
+      <h2 data-slot="site.contacts.heading" style="font-size:clamp(1.8rem,3.2vw,2.8rem);line-height:1.1;letter-spacing:-.03em;font-weight:500">{{ site.contacts.heading }}</h2>
+      <p data-slot="site.contacts.text" style="color:var(--fg-2);max-width:26rem;text-wrap:pretty">{{ site.contacts.text }}</p>
+      <ul data-slot="socials" style="display:grid;gap:.6rem">
+        <sc-for list="{{ primarySocials }}" as="s" hint-placeholder-count="2">
+          <li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="cta-{{ s.id }}" rel="me noopener" style="display:flex;align-items:center;gap:1rem;height:4.25rem;padding:0 1.25rem;border-radius:var(--radius-l);background:{{ s.bg }};color:{{ s.fg }};border:1px solid {{ s.border }};font-weight:500;font-size:1.05rem;transition:transform var(--dur-1) var(--ease-out)" style-hover="transform:translateX(4px)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ s.icon }}"></path></svg><span data-field="label" style="display:grid;line-height:1.2"><span>{{ s.cta }}</span><span style="font-family:var(--font-mono);font-size:.68rem;font-weight:400;opacity:.7">{{ s.handle }}</span></span><span aria-hidden="true" style="margin-left:auto;font-family:var(--font-mono)">→</span></a></li>
+        </sc-for>
+      </ul>
+    </div>
+
+    <div data-slot="site.contacts.form" style="display:grid;gap:1rem">
+      <sc-if value="{{ formVisible }}" hint-placeholder-val="{{ true }}">
+      <form method="post" action="/api/leads" data-form data-texts="{{ formTexts }}" novalidate onSubmit="{{ onSubmit }}" style="display:grid;gap:1.1rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface)">
+        <input type="hidden" name="lang" value="{{ lang }}">
+        <input type="hidden" name="altcha" value="">
+        <p aria-hidden="true" style="position:absolute;left:-200vw;width:1px;height:1px;overflow:hidden"><label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label></p>
+
+        <p style="display:grid;gap:.4rem">
+          <label for="form-name" data-field="labels.name" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.name }}</label>
+          <input id="form-name" name="name" type="text" required maxlength="100" autocomplete="name" aria-invalid="{{ fe.name.invalid }}" style="height:2.9rem;padding:0 .9rem;border:1px solid {{ fe.name.border }};border-radius:var(--radius-m);background:var(--bg);outline:none;transition:border-color var(--dur-1)" style-focus="border-color:var(--fg)">
+          <span data-error-for="name" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.name.msg }}</span>
+        </p>
+
+        <fieldset style="display:grid;gap:.5rem;padding:0;border:0;margin:0">
+          <legend data-field="labels.contact_method" style="padding:0;font-size:.85rem;color:var(--fg-2);margin-bottom:.4rem">{{ form.labels.contact_method }}</legend>
+          <span role="radiogroup" style="display:inline-flex;padding:3px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--bg);width:max-content;max-width:100%">
+            <sc-for list="{{ methods }}" as="m" hint-placeholder-count="3">
+              <label style="position:relative;padding:.4rem .9rem;border-radius:var(--radius-pill);background:{{ m.bg }};color:{{ m.fg }};font-size:.85rem;cursor:pointer;transition:background var(--dur-1)"><input type="radio" name="contact_method" value="{{ m.id }}" checked="{{ m.checked }}" onChange="{{ m.pick }}" required style="position:absolute;opacity:0;inset:0;margin:0;cursor:pointer"><span>{{ m.label }}</span></label>
+            </sc-for>
+          </span>
+          <label for="form-contact" data-field="labels.contact_value" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">{{ form.labels.contact_value }}</label>
+          <input id="form-contact" name="contact_value" type="{{ contactType }}" required maxlength="200" placeholder="{{ contactPlaceholder }}" aria-invalid="{{ fe.contact_value.invalid }}" style="height:2.9rem;padding:0 .9rem;border:1px solid {{ fe.contact_value.border }};border-radius:var(--radius-m);background:var(--bg);outline:none;font-family:var(--font-mono);font-size:.9rem" style-focus="border-color:var(--fg)">
+          <span data-error-for="contact_value" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.contact_value.msg }}</span>
+        </fieldset>
+
+        <p style="display:grid;gap:.4rem">
+          <label for="form-direction" data-field="labels.direction" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.direction }}</label>
+          <select id="form-direction" name="direction" required aria-invalid="{{ fe.direction.invalid }}" style="height:2.9rem;padding:0 .9rem;border:1px solid {{ fe.direction.border }};border-radius:var(--radius-m);background:var(--bg);outline:none;appearance:auto">
+            <option value="">{{ form.labels.choose }}</option>
+            <sc-for list="{{ form.directions }}" as="d" hint-placeholder-count="6"><option value="{{ d.id }}">{{ d.label }}</option></sc-for>
+          </select>
+          <span data-error-for="direction" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.direction.msg }}</span>
+        </p>
+
+        <p style="display:grid;gap:.4rem">
+          <label for="form-description" data-field="labels.description" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.description }} <span style="color:var(--muted)">— {{ form.labels.description_hint }}</span></label>
+          <textarea id="form-description" name="description" required minlength="20" maxlength="4000" rows="6" aria-invalid="{{ fe.description.invalid }}" style="padding:.75rem .9rem;border:1px solid {{ fe.description.border }};border-radius:var(--radius-m);background:var(--bg);outline:none;resize:vertical;min-height:8rem;line-height:1.5" style-focus="border-color:var(--fg)"></textarea>
+          <span data-error-for="description" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.description.msg }}</span>
+        </p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:1rem">
+          <p style="display:grid;gap:.4rem">
+            <label for="form-budget" data-field="labels.budget" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.budget }} <span style="color:var(--muted)">— {{ form.labels.optional }}</span></label>
+            <select id="form-budget" name="budget" style="height:2.9rem;padding:0 .9rem;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--bg);outline:none"><option value="">{{ form.labels.choose }}</option><sc-for list="{{ budgets }}" as="b" hint-placeholder-count="6"><option value="{{ b.i }}">{{ b.label }}</option></sc-for></select>
+          </p>
+          <p style="display:grid;gap:.4rem">
+            <label for="form-timeline" data-field="labels.timeline" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.timeline }} <span style="color:var(--muted)">— {{ form.labels.optional }}</span></label>
+            <select id="form-timeline" name="timeline" style="height:2.9rem;padding:0 .9rem;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--bg);outline:none"><option value="">{{ form.labels.choose }}</option><sc-for list="{{ timelines }}" as="b" hint-placeholder-count="4"><option value="{{ b.i }}">{{ b.label }}</option></sc-for></select>
+          </p>
+        </div>
+
+        <sc-if value="{{ attachments }}" hint-placeholder-val="{{ false }}">
+          <p style="display:grid;gap:.4rem">
+            <label for="form-files" data-field="labels.attachments" style="font-size:.85rem;color:var(--fg-2)">{{ form.labels.attachments }} <span style="color:var(--muted)">— {{ form.labels.optional }}, {{ form.labels.attachments_hint }}</span></label>
+            <input id="form-files" name="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.txt,.docx" data-max-files="3" data-max-bytes="10485760" aria-invalid="{{ fe.files.invalid }}" style="padding:.7rem .9rem;border:1px dashed {{ fe.files.border }};border-radius:var(--radius-m);background:var(--bg);color:var(--muted);font-size:.85rem">
+            <span data-error-for="files" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.files.msg }}</span>
+          </p>
+        </sc-if>
+
+        <p style="display:grid;gap:.4rem">
+          <label style="display:flex;gap:.7rem;align-items:flex-start;font-size:.85rem;color:var(--fg-2);cursor:pointer"><input type="checkbox" name="consent" value="on" required style="margin:.2rem 0 0;width:1rem;height:1rem;accent-color:var(--accent)"><span data-field="labels.consent">{{ consentBefore }}<a href="privacy.dc.html" style="text-decoration:underline;text-underline-offset:3px">{{ form.labels.privacy_link_text }}</a>{{ consentAfter }}</span></label>
+          <span data-error-for="consent" role="alert" style="font-size:.78rem;color:var(--danger)">{{ fe.consent.msg }}</span>
+        </p>
+
+        <p style="display:flex;flex-wrap:wrap;align-items:center;gap:1rem;margin-top:.25rem">
+          <button type="submit" data-track="form-submit" data-field="labels.submit" disabled="{{ sending }}" style="display:inline-flex;align-items:center;gap:.6rem;height:3.1rem;padding:0 1.5rem;border:0;border-radius:var(--radius-pill);background:var(--inverse-bg);color:var(--inverse-fg);font-weight:500;font-size:.98rem;cursor:pointer;opacity:{{ submitOpacity }};transition:transform var(--dur-1) var(--ease-out)" style-hover="transform:translateY(-1px)"><sc-if value="{{ sending }}" hint-placeholder-val="{{ false }}"><i aria-hidden="true" style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:kro-blink .8s infinite"></i></sc-if>{{ submitLabel }}</button>
+          <span style="font-family:var(--font-mono);font-size:.68rem;color:var(--muted)">POST /api/leads · no cookies</span>
+        </p>
+      </form>
+      </sc-if>
+
+      <p class="{{ msgInvalidClass }}" id="form-error-invalid" role="alert" data-slot="form.messages.invalid" style="display:{{ msgInvalid }};padding:1rem 1.2rem;border:1px solid var(--danger);border-radius:var(--radius-m);background:var(--surface);color:var(--fg)">{{ form.messages.invalid }}</p>
+      <p class="{{ msgRateClass }}" id="form-error-rate" role="alert" data-slot="form.messages.rate_limited" style="display:{{ msgRate }};padding:1rem 1.2rem;border:1px solid var(--danger);border-radius:var(--radius-m);background:var(--surface)">{{ rateText }}</p>
+      <p class="{{ msgServerClass }}" id="form-error-server" role="alert" data-slot="form.messages.server_error" style="display:{{ msgServer }};padding:1rem 1.2rem;border:1px solid var(--danger);border-radius:var(--radius-m);background:var(--surface)">{{ serverText }}</p>
+
+      <div class="{{ successClass }}" id="form-success" role="status" tabindex="-1" data-slot="form.success" style="display:{{ msgSuccess }};gap:1rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid var(--accent-line);border-radius:var(--radius-l);background:var(--surface);box-shadow:var(--shadow-1)">
+        <p style="font-family:var(--font-mono);font-size:.7rem;letter-spacing:.1em;color:var(--accent)">ACK · 201 CREATED</p>
+        <h3 data-field="title" style="font-size:1.5rem;font-weight:500;letter-spacing:-.02em">{{ successTitle }}</h3>
+        <p data-field="text" style="color:var(--fg-2)">{{ form.messages.success_text }}</p>
+        <p data-field="telegram" hidden="{{ tgHidden }}"><a href="https://t.me/" rel="noopener" data-track="form-continue-telegram" style="display:inline-flex;align-items:center;gap:.6rem;height:2.9rem;padding:0 1.3rem;border-radius:var(--radius-pill);background:var(--inverse-bg);color:var(--inverse-fg);font-weight:500">{{ form.messages.continue_telegram }} <span aria-hidden="true" style="font-family:var(--font-mono)">→</span></a></p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ===== FOOTER ===== -->
+<footer data-section="footer" style="position:relative;z-index:5;padding:2rem var(--gutter) calc(2rem + env(safe-area-inset-bottom));padding-left:calc({{ mainPad }} + var(--gutter));border-top:1px solid var(--line);background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem 2rem;font-family:var(--font-mono);font-size:.72rem;color:var(--muted)">
+  <ul data-slot="socials" style="display:flex;gap:.5rem">
+    <sc-for list="{{ socials }}" as="s" hint-placeholder-count="3">
+      <li data-component="social-button"><a href="{{ s.url }}" data-field="url" data-social="{{ s.id }}" data-track="social-{{ s.id }}" rel="me noopener" style="display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .7rem;border:1px solid var(--line);border-radius:var(--radius-pill)" style-hover="border-color:var(--fg);color:var(--fg)"><span data-field="label">{{ s.label }}</span></a></li>
+    </sc-for>
+  </ul>
+  <p style="display:flex;flex-wrap:wrap;gap:0 1.5rem"><span data-slot="site.footer.copyright">{{ copyright }}</span><a href="privacy.dc.html" style="text-decoration:underline;text-underline-offset:3px">{{ privacyTitle }}</a><span>{{ eggsCaption }}</span></p>
+  <a href="play.dc.html" data-track="game-entry" data-slot="site.footer.game_entry" title="{{ site.footer.game_entry }}" style="display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .7rem;border:1px solid var(--line);border-radius:var(--radius-s);color:var(--muted);letter-spacing:.06em" style-hover="border-color:var(--danger);color:var(--danger)"><i aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:var(--danger);animation:kro-blink 3s infinite"></i>{{ site.footer.game_entry }}</a>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;en&quot;,&quot;uk&quot;,&quot;ru&quot;],&quot;default&quot;:&quot;en&quot;,&quot;tsType&quot;:&quot;'ru'|'en'|'uk'&quot;,&quot;section&quot;:&quot;Preview&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;'system'|'light'|'dark'&quot;,&quot;section&quot;:&quot;Preview&quot;},&quot;formState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;errors&quot;,&quot;sending&quot;,&quot;success&quot;,&quot;invalid&quot;,&quot;rate&quot;,&quot;server&quot;],&quot;default&quot;:&quot;idle&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Form states&quot;},&quot;attachments&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Form states&quot;},&quot;staleProjects&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Projects&quot;}}">
+class Component extends DCLogic {
+  state = { data: null, lang: 'en', mobile: false, menuOpen: false, open: {}, query: '', tree: { lines: [], packets: [] }, compactOpen: false, method: 'email', formState: 'idle', leadId: 'K-0042', eggs: 0, active: '', linked: false };
+  heroRef = React.createRef(); heroText = React.createRef(); linkCap = React.createRef(); railDot = React.createRef();
+  treeRef = React.createRef(); treeSvg = React.createRef(); nodeRef = React.createRef();
+  curtainRef = React.createRef(); curtainRing = React.createRef(); curtainH = React.createRef(); curtainP = React.createRef();
+  catRefs = {}; groupRefs = {}; avatarClicks = 0;
+
+  ICONS = {
+    telegram: 'M21.5 4.5 3 11.2l6.2 2.3M21.5 4.5l-3 15-7.3-6M21.5 4.5 9.2 13.5v5.3l3-3.3',
+    email: 'M3 6h18v12H3zM3 7l9 6 9-6',
+    github: 'M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21',
+    network: 'M12 3v6m0 0H6a2 2 0 0 0-2 2v2m8-4h6a2 2 0 0 1 2 2v2M4 13v2m8-6v8m8-8v2M2 15h4v4H2zm8 0h4v4h-4zm8 0h4v4h-4z',
+    server: 'M3 4h18v6H3zm0 10h18v6H3zM7 7h.01M7 17h.01',
+    storage: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+    devops: 'M8 3a5 5 0 0 0 0 10h8a5 5 0 0 1 0 10H8m0-20 3-3M8 3l3 3m5 17-3-3m3 3-3 3',
+    os: 'M4 5h16v11H4zM2 19h20M9 16v3m6-3v3',
+    code: 'm8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16',
+  };
+  DIG = { 0: '01110100011001110101110011000101110', 1: '00100011000010000100001000010001110', 2: '01110100010000100010001000100011111', 3: '11111000100010000010000011000101110', 4: '00010001100101010010111110001000010', 5: '11111100001111000001000011000101110', 6: '00110010001000011110100011000101110', 7: '11111000010001000100010000100001000', 8: '01110100011000101110100011000101110', 9: '01110100011000101111000010001001100' };
+
+  async componentDidMount() {
+    this.mq = matchMedia('(max-width: 900px)'); this.onMq = () => this.setState({ mobile: this.mq.matches }); this.mq.addEventListener('change', this.onMq); this.onMq();
+    await this.load(this.props.lang ?? 'en');
+    this.onScroll = () => { if (!this.ticking) { this.ticking = true; requestAnimationFrame(() => { this.ticking = false; this.scrollFrame(); }); } };
+    addEventListener('scroll', this.onScroll, { passive: true }); addEventListener('resize', this.onScroll); this.scrollFrame();
+    this.onLink = (e) => { if (this.linkCap.current) this.linkCap.current.style.opacity = e.type === 'kro:link' ? 1 : 0; };
+    document.addEventListener('kro:link', this.onLink); document.addEventListener('kro:unlink', this.onLink);
+    document.addEventListener('kro:egg', (e) => this.setState({ eggs: e.detail.count }));
+    const start = () => import('../components/eggs/eggs.js').then((m) => { this.eggs = m; this.setState({ eggs: m.foundList().length }); const s = this.state.data?.site; m.initEggs({ flags: s?.flags?.easter_eggs, experience: this.state.data?.profile?.experience_years, texts: {} }); });
+    if (document.readyState === 'complete') setTimeout(start, 800); else addEventListener('load', () => setTimeout(start, 800));
+  }
+  componentWillUnmount() { removeEventListener('scroll', this.onScroll); removeEventListener('resize', this.onScroll); this.mq?.removeEventListener('change', this.onMq); }
+  componentDidUpdate(prev, ps) {
+    const lang = this.props.lang ?? 'en'; if (lang !== this.propLang) { this.propLang = lang; if (lang !== this.state.lang) this.load(lang); }
+    const theme = this.props.theme ?? 'dark'; if (theme !== this.appliedTheme) { this.appliedTheme = theme; document.documentElement.dataset.theme = theme; }
+    const fs = this.props.formState ?? 'idle'; if (fs !== this.propFormState) { this.propFormState = fs; this.setState({ formState: fs }); }
+    const snap = this.treeSnap || {}; const s = this.state; const openChanged = snap.open !== s.open;
+    if (openChanged || snap.mobile !== s.mobile || snap.data !== s.data || snap.query !== s.query) { this.treeSnap = { open: s.open, mobile: s.mobile, data: s.data, query: s.query }; clearTimeout(this.treeT); this.treeT = setTimeout(() => this.measureTree(), openChanged ? 660 : 60); }
+  }
+  async load(lang) {
+    this.loading = true;
+    const { loadMock } = await import('./lib/mock-data.js');
+    const data = await loadMock(lang); this.loading = false;
+    this.setState({ data, lang, open: {}, tree: { lines: [], packets: [] } });
+    document.documentElement.lang = lang;
+  }
+  // continuous values go straight to the DOM — no re-render per frame
+  scrollFrame() {
+    const y = scrollY, vh = innerHeight, hero = this.heroRef.current; if (!hero) return;
+    const p = Math.max(0, Math.min(1, y / (hero.offsetHeight - vh)));
+    const hands = hero.querySelector('kro-hands'); if (hands) hands.setAttribute('progress', p.toFixed(4));
+    if (this.heroText.current) { const k = Math.min(1, p / 0.55); this.heroText.current.style.transform = `translateY(${-k * 80}px)`; this.heroText.current.style.opacity = String(1 - k); this.heroText.current.style.pointerEvents = k > 0.9 ? 'none' : ''; }
+    if (this.railDot.current) { const h = document.documentElement.scrollHeight - vh; this.railDot.current.style.top = `calc(${(y / h) * 100}% - 3px)`; }
+    const c = this.curtainRef.current; if (c) { const r = c.getBoundingClientRect(); const t = Math.max(-1, Math.min(1, -r.top / vh)); if (this.curtainH.current) this.curtainH.current.style.transform = `translateY(${t * -60}px)`; if (this.curtainP.current) this.curtainP.current.style.transform = `translateY(${t * -30}px)`; if (this.curtainRing.current) this.curtainRing.current.style.transform = `translateY(calc(-50% + ${t * 120}px)) rotate(${t * 20}deg)`; }
+    const secs = ['services', 'skills', 'projects', 'contacts']; let active = ''; for (const id of secs) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top < vh * 0.45) active = id; }
+    if (active !== this.state.active) this.setState({ active });
+  }
+  // lines: core → every category pill; open pill → its rack units
+  measureTree() {
+    const box = this.treeRef.current, node = this.nodeRef.current; if (!box || !node) return;
+    const b = box.getBoundingClientRect(), n = node.getBoundingClientRect(), mobile = this.state.mobile;
+    const nx = n.left - b.left + n.width / 2, ny = n.top - b.top + (mobile ? n.height : n.height / 2), nxr = n.right - b.left;
+    const lines = [], packets = [];
+    const cats = this.state.data?.skills || [];
+    cats.forEach((c, i) => {
+      const el = this.catRefs[c.id]?.current; if (!el) return; const r = el.getBoundingClientRect();
+      const x2 = r.left - b.left, y2 = r.top - b.top + r.height / 2, open = !!this.state.open[c.id];
+      const d = mobile ? `M${nx},${ny} C${nx},${ny + 40} ${x2 + 24},${y2 - 40} ${x2 + 24},${y2 - r.height / 2}` : `M${nxr},${ny} C${nxr + 60},${ny} ${x2 - 60},${y2} ${x2},${y2}`;
+      const len = Math.hypot(x2 - nx, y2 - ny) * 1.3;
+      lines.push({ d, stroke: open ? 'var(--accent-line)' : 'var(--line-strong)', dash: Math.round(len) });
+      if (open) packets.push({ d, dur: (1.6 + i * 0.1).toFixed(2) + 's', delay: '0s' });
+      if (open) (c.children || []).forEach((g, j) => {
+        const ge = this.groupRefs[g.id]?.current; if (!ge) return; const gr = ge.getBoundingClientRect();
+        const gx = gr.left - b.left, gy = gr.top - b.top + Math.min(gr.height / 2, 22), sx = r.right - b.left, sy = y2;
+        const dd = mobile ? `M${x2 + 24},${r.bottom - b.top} L${x2 + 24},${gy} L${gx},${gy}` : `M${sx},${sy} C${sx + 40},${sy} ${gx - 40},${gy} ${gx},${gy}`;
+        lines.push({ d: dd, stroke: 'var(--accent-line)', dash: Math.round(Math.hypot(gx - sx, gy - sy) * 1.3) });
+        packets.push({ d: dd, dur: (1.2 + j * 0.15).toFixed(2) + 's', delay: (0.4 + j * 0.2).toFixed(2) + 's' });
+      });
+    });
+    const next = JSON.stringify({ lines, packets }); if (next !== this.treeJSON) { this.treeJSON = next; this.setState({ tree: { lines, packets } }); }
+  }
+  digits(n) { return String(n).split('').map((ch) => ({ dots: (this.DIG[ch] || this.DIG[0]).split('').map((b) => ({ c: b === '1' ? 'var(--dot)' : 'var(--dot-dim)' })) })); }
+  toggleTheme = () => { const root = document.documentElement; const cur = root.dataset.theme || 'dark'; const next = cur === 'dark' ? 'light' : 'dark'; root.dataset.theme = next; try { localStorage.setItem('theme', next); } catch {} this.forceUpdate(); };
+  avatarClick = (e) => { this.avatarClicks++; clearTimeout(this.avT); this.avT = setTimeout(() => (this.avatarClicks = 0), 1500); if (this.avatarClicks >= 5) { this.avatarClicks = 0; this.eggs?.rebootAvatar(e.currentTarget); } };
+  onSubmit = (e) => {
+    e.preventDefault(); const f = e.currentTarget; const errs = {}; const v = (n) => (f.elements[n]?.value || '').trim();
+    if (!v('name')) errs.name = 'required'; if (!v('contact_value')) errs.contact_value = 'required'; else if (this.state.method === 'email' && !/^\S+@\S+\.\S+$/.test(v('contact_value'))) errs.contact_value = 'invalid_email'; else if (this.state.method === 'telegram' && !/^@?[a-z0-9_]{5,32}$/i.test(v('contact_value'))) errs.contact_value = 'invalid_telegram';
+    if (!v('direction')) errs.direction = 'required'; if (v('description').length < 20) errs.description = 'description_length'; if (!f.elements.consent.checked) errs.consent = 'consent_required';
+    if (Object.keys(errs).length) { this.setState({ formState: 'errors', errs }); return; }
+    this.setState({ formState: 'sending', errs: {} }); setTimeout(() => { this.setState({ formState: 'success' }); document.dispatchEvent(new CustomEvent('krokosha:lead', { detail: { id: this.state.leadId } })); }, 1400);
+  };
+
+  renderVals() {
+    const { data, lang, mobile, open, query, tree, compactOpen, method, formState, eggs, active, menuOpen } = this.state;
+    const desktop = !mobile;
+    const d = data || {}; const site = d.site || {}; const profile = d.profile || {}; const form = site.contacts?.form || {};
+    const q = query.trim().toLowerCase();
+    const socials = (profile.socials || []).map((s) => ({ ...s, icon: this.ICONS[s.id] || this.ICONS.email, handle: s.url.replace('mailto:', '').replace('https://', ''), cta: site.hero?.cta?.[s.id] || s.label, bg: s.id === 'telegram' ? 'var(--inverse-bg)' : 'var(--surface)', fg: s.id === 'telegram' ? 'var(--inverse-fg)' : 'var(--fg)', border: s.id === 'telegram' ? 'var(--inverse-bg)' : 'var(--line-strong)', shadow: s.id === 'telegram' ? 'var(--shadow-1)' : 'none' }));
+    const primarySocials = socials.filter((s) => s.primary);
+    const cats = (d.skills || []).map((c) => {
+      this.catRefs[c.id] ||= React.createRef();
+      const groups = (c.children || []).map((g, j) => { this.groupRefs[g.id] ||= React.createRef(); const children = (g.children || []).map((sk) => { const hit = q && (sk.title.toLowerCase().includes(q) || (sk.note || '').toLowerCase().includes(q)); return { ...sk, hasNote: !!sk.note, op: q ? (hit ? 1 : 0.3) : 1, bg: hit ? 'var(--accent-soft)' : 'var(--bg)', border: hit ? 'var(--accent-line)' : 'var(--line)' }; }); return { ...g, children, ref: this.groupRefs[g.id], delay: (j * 70) + 'ms', hits: children.filter((x) => x.op === 1 && q).length }; });
+      const hits = groups.reduce((a, g) => a + g.hits, 0); const isOpen = q ? hits > 0 : !!open[c.id];
+      const count = groups.reduce((a, g) => a + g.children.length, 0);
+      return { ...c, groups, count, ref: this.catRefs[c.id], open: isOpen, rows: isOpen ? '1fr' : '0fr', unitOp: isOpen ? 1 : 0, unitX: isOpen ? '0' : '-14px', op: q && !hits ? 0.35 : 1, iconPath: this.ICONS[c.icon] || this.ICONS.code, bg: isOpen ? 'var(--inverse-bg)' : 'var(--surface)', fg: isOpen ? 'var(--inverse-fg)' : 'var(--fg)', border: isOpen ? 'var(--inverse-bg)' : 'var(--line-strong)', shadow: isOpen ? 'var(--shadow-1)' : 'none', dot: isOpen ? 'var(--accent)' : 'var(--line-strong)', toggle: () => this.setState((s) => ({ open: { ...s.open, [c.id]: !s.open[c.id] } })) };
+    });
+    const skillCount = cats.reduce((a, c) => a + c.count, 0);
+    const pub = d.projects?.public || []; const byTier = (t) => pub.filter((p) => p.tier === t).map((p) => ({ ...p, updated: this.fmt(p.updatedAt, lang), starsText: p.stars > 0 ? '★ ' + p.stars : '', language: p.language || '—', languageColor: p.languageColor || 'var(--line-strong)' }));
+    const compact = byTier('compact');
+    const errs = this.state.errs || {}; const fe = {}; for (const k of ['name', 'contact_value', 'direction', 'description', 'consent', 'files']) { const code = formState === 'errors' ? errs[k] : null; fe[k] = { invalid: !!code, border: code ? 'var(--danger)' : 'var(--line)', msg: code ? (form.errors?.[code] || '') : '' }; }
+    const email = (profile.socials || []).find((s) => s.id === 'email')?.url.replace('mailto:', '') || '';
+    const [consentBefore = '', consentAfter = ''] = String(form.labels?.consent || '').split('{privacy_link}');
+    const show = (k) => (formState === k ? 'block' : 'none');
+    const year = new Date().getFullYear();
+    const R = mobile ? 130 : 260; const ringDots = Array.from({ length: 96 }, (_, i) => ({ a: (i * 3.75).toFixed(2), r: (R - (i % 3 === 0 ? 0 : i % 3 === 1 ? 26 : 52)) + 'px', o: (0.3 + ((i * 7) % 5) / 8).toFixed(2) }));
+    return {
+      site, profile, socials, primarySocials, lang, desktop, mobile, menuOpen, toggleMenu: () => this.setState((s) => ({ menuOpen: !s.menuOpen })),
+      mainPad: desktop ? '3.5rem' : '0', handsLayout: mobile ? 'v' : 'h',
+      navItems: (site.nav || []).map((n) => ({ ...n, underline: active === n.anchor ? 'scaleX(1)' : 'scaleX(0)' })),
+      locales: (site.i18n?.locales || []).map((l) => ({ ...l, current: l.code === lang ? 'page' : undefined, bg: l.code === lang ? 'var(--inverse-bg)' : 'transparent', fg: l.code === lang ? 'var(--inverse-fg)' : 'var(--muted)', pick: () => this.load(l.code) })),
+      toggleTheme: this.toggleTheme, avatarClick: this.avatarClick,
+      heroRef: this.heroRef, heroText: this.heroText, linkCap: this.linkCap, railDot: this.railDot,
+      services: site.services || [], serviceCols: desktop ? 'minmax(8rem,18rem) 1fr' : '1fr', serviceMinH: desktop ? '62vh' : 'auto', serviceTextCols: desktop ? 'minmax(0,1fr) minmax(0,1fr)' : '1fr',
+      cats, skillsCountText: skillCount, skillsHeadline: lang === 'en' ? 'skills, one topology' : lang === 'uk' ? 'навичок в одній топології' : 'навыков в одной топологии', query, onSearch: (e) => this.setState({ query: e.target.value }), noResults: !!q && cats.every((c) => c.op < 1),
+      treeRef: this.treeRef, treeSvg: this.treeSvg, nodeRef: this.nodeRef, treeLines: tree.lines, packets: tree.packets, treeCols: desktop ? '10rem 1fr' : '1fr', nodeAlign: desktop ? 'start' : 'center', catCols: desktop ? 'minmax(12rem,16rem) minmax(0,1fr)' : '1fr',
+      statItems: [{ slot: 'profile.experience_years', value: profile.experience_years, digits: this.digits(profile.experience_years ?? 0), label: site.stats?.experience, labelSlot: 'site.stats.experience' }, { slot: 'projects.public.count', value: pub.length, digits: this.digits(pub.length), label: site.stats?.public_projects, labelSlot: 'site.stats.public_projects' }],
+      dotSize: mobile ? '10px' : '16px', dotGap: mobile ? '5px' : '8px',
+      curtainRef: this.curtainRef, curtainRing: this.curtainRing, curtainH: this.curtainH, curtainP: this.curtainP, ringDots,
+      publicCount: pub.length, stale: !!(this.props.staleProjects ?? d.projects?.stale), featured: byTier('featured'), standard: byTier('standard'), compact, compactCount: compact.length, compactOpen, compactRows: compactOpen ? '1fr' : '0fr', compactChevron: compactOpen ? 'rotate(180deg)' : 'none', compactCols: desktop ? 'minmax(0,1fr) 8rem 7rem' : 'minmax(0,1fr) auto', toggleCompact: () => this.setState((s) => ({ compactOpen: !s.compactOpen })),
+      privates: (d.projects?.private || []),
+      contactCols: desktop ? 'minmax(0,2fr) minmax(0,3fr)' : '1fr', contactSticky: desktop ? 'sticky' : 'static',
+      form, formVisible: formState !== 'success', formTexts: JSON.stringify({ errors: form.errors || {}, placeholders: form.placeholders || {}, sending: form.labels?.sending, success: form.messages?.success_title }),
+      methods: (form.contact_methods || []).map((m) => ({ ...m, checked: m.id === method, bg: m.id === method ? 'var(--inverse-bg)' : 'transparent', fg: m.id === method ? 'var(--inverse-fg)' : 'var(--fg)', pick: () => this.setState({ method: m.id }) })),
+      contactType: method === 'email' ? 'email' : method === 'phone' ? 'tel' : 'text', contactPlaceholder: form.placeholders?.[method] || '',
+      budgets: (form.budgets || []).map((b, i) => ({ i, label: b })), timelines: (form.timelines || []).map((b, i) => ({ i, label: b })), attachments: !!(this.props.attachments ?? form.attachments),
+      fe, consentBefore, consentAfter, sending: formState === 'sending', submitOpacity: formState === 'sending' ? 0.7 : 1, submitLabel: formState === 'sending' ? form.labels?.sending : form.labels?.submit,
+      msgInvalid: show('invalid'), msgRate: show('rate'), msgServer: show('server'), msgSuccess: formState === 'success' ? 'grid' : 'none',
+      msgInvalidClass: 'form-message' + (formState === 'invalid' ? ' is-shown' : ''), msgRateClass: 'form-message' + (formState === 'rate' ? ' is-shown' : ''), msgServerClass: 'form-message' + (formState === 'server' ? ' is-shown' : ''), successClass: 'form-message' + (formState === 'success' ? ' is-shown' : ''),
+      rateText: String(form.messages?.rate_limited || '').replace('{email}', email), serverText: String(form.messages?.server_error || '').replace('{email}', email), successTitle: String(form.messages?.success_title || '').replace('{id}', '#' + this.state.leadId), tgHidden: false,
+      onSubmit: this.onSubmit,
+      copyright: String(site.footer?.copyright || '').replace('{year}', year), privacyTitle: lang === 'en' ? 'Privacy' : lang === 'uk' ? 'Конфіденційність' : 'Конфиденциальность',
+      eggsCaption: eggs ? `eggs ${eggs}/7` : '',
+    };
+  }
+  fmt(iso, lang) { try { return new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(iso + 'T00:00:00Z')); } catch { return iso; } }
+}
+</script>
+</body>
+</html>

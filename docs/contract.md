@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.4** (2026-09-19). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]**.
+**Версия 1.5** (2026-09-22). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -10,6 +10,7 @@
 | 1.2 | **Три языка** (§6): `mock/` разложен по локалям `mock/{en,uk,ru}/`. В `site.json` добавлены `i18n`, `ui`, `not_found`, `projects.labels`, подписи/ошибки/сообщения формы. Реальные Telegram и email |
 | 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
 | 1.4 | **Файлы в форме** (§7), только при `form.attachments: true`: поле `files`, `enctype="multipart/form-data"`. В `site.json` добавлены `form.labels.{attachments, attachments_hint}` и `form.errors.{too_many_files, file_too_big, file_type}` |
+| 1.5 | **Интеграция дизайна v1.** Тексты, которые дизайн держал в коде, — теперь в `site.json`: `ui.{skills_headline, menu, socials, contents, draft}`, `not_found.game.*`, `footer.play_status`, `eggs.*` (§2.4). События пасхалок (§4) |
 
 ---
 
@@ -137,9 +138,10 @@
 | `projects` | `heading`, `note`, `private_heading`, `private_note`, `show_all_label`, `error_note`, **[v1.2]** `labels.{archived, updated, website, source}` |
 | `curtain` | `heading`, `text`, `cta` — тёмный занавес |
 | `contacts` | `heading`, `text`, `form.{enabled, attachments, reply_within_hours, directions[], contact_methods[], budgets[], timelines[]}`, **[v1.2]** `form.labels.*`, `form.placeholders.*`, `form.messages.*` (успех, ошибка сервера, rate-limit), `form.errors.*` (валидация). `reply_within_hours: null` → фразу `messages.success_reply` не показывать |
-| **[v1.2]** `ui` | `headings.{services, skills, stats}`, `skip_to_content`, `theme_toggle`, `language`, `skills_search`, `skills_no_results` |
-| **[v1.2]** `not_found` | 404: `title`, `text`, `game_hint`, `back` |
-| `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub` |
+| **[v1.2]** `ui` | `headings.{services, skills, stats}`, `skip_to_content`, `theme_toggle`, `language`, `skills_search`, `skills_no_results`; **[v1.5]** `skills_headline` (заголовок дерева навыков без числа: «skills, one topology» / «навичок в одній топології» — слово уже согласовано с числом навыков на странице), `menu` (кнопка меню на телефоне), `socials` (подпись левой рамки и нижней панели), `contents` (оглавление текстовой страницы), `draft` (метка черновика) |
+| **[v1.2]** `not_found` | 404: `title`, `text`, `game_hint`, `back`; **[v1.5]** `game.{prompt, warm, cold, found, port}` — игра «найди пакет». Технические подписи игры (`ping port 7 … timeout`, `tries 3`, `SW-CORE-01`, `LINK UP`) — часть оформления, одинаковы на всех языках |
+| `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub`; **[v1.5]** `play_status` — строка над заглушкой `/play` («HATCH SEALED · ACCESS LATER») |
+| **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found`, `all` (тосты), `night` (подпись «ночного режима»), `croc`, `croc5`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
 
 Значения с пометкой «черновик» в YAML — рабочие тексты, их будут править. Вёрстка не должна зависеть от их точной длины.
@@ -194,6 +196,8 @@
 | `egg-<id>` | найдена пасхалка: `egg-konami`, `egg-sudo`, `egg-croc`… |
 | `game-entry` | вход в мини-игру в футере |
 | **[v1.2]** `lang-<code>` | переключение языка: `lang-en`, `lang-uk`, `lang-ru` |
+
+**[v1.5] События на `document`.** `krokosha:egg` (`detail` — id пасхалки строкой: `konami`, `sudo`, `croc`, `croc5`, `cat`, `reboot`, `console`, `lost_packet`) — его слушает статистика (`/assets/analytics.js`, тип события `egg`). Внутренние события дизайна: `kro:egg` (`detail.{id, count, total}` — счётчик «eggs 2/8»), `kro:link` / `kro:unlink` (руки героя соприкоснулись и разошлись). Найденные пасхалки хранятся в `localStorage['krokosha:eggs']`.
 
 ---
 

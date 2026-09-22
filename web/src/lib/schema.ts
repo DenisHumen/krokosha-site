@@ -64,7 +64,11 @@ export const siteSchema = z.strictObject({
       )
       .length(LOCALES.length),
   }),
-  plurals: z.strictObject({ years: pluralForms, public_projects: pluralForms }),
+  plurals: z.strictObject({
+    years: pluralForms,
+    public_projects: pluralForms,
+    skills: pluralForms,
+  }),
   socials: z
     .array(
       z.strictObject({
@@ -133,14 +137,45 @@ export const siteSchema = z.strictObject({
     language: localized,
     skills_search: localized,
     skills_no_results: localized,
+    skills_headline: localized,
+    menu: localized,
+    socials: localized,
+    contents: localized,
+    draft: localized,
   }),
   not_found: z.strictObject({
     title: localized,
     text: localized,
     game_hint: localized,
     back: localized,
+    game: z.strictObject({
+      prompt: localized,
+      warm: localized,
+      cold: localized,
+      found: localized,
+      port: localized,
+    }),
   }),
-  footer: z.strictObject({ copyright: localized, game_entry: localized, play_stub: localized }),
+  footer: z.strictObject({
+    copyright: localized,
+    game_entry: localized,
+    play_stub: localized,
+    play_status: localized,
+  }),
+  eggs: z.strictObject({
+    found: localized,
+    all: localized,
+    night: localized,
+    croc: localized,
+    croc5: localized,
+    console: localized,
+    terminal: z.strictObject({
+      whoami: localized,
+      uptime: localized,
+      ping: localized,
+      rm: localized,
+    }),
+  }),
   seo: z.strictObject({
     title: localized,
     description: localized,
