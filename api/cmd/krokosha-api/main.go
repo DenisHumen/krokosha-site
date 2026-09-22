@@ -25,6 +25,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
@@ -87,6 +88,17 @@ func run() error {
 
 	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
 	location := ownerLocation(env.ContentDir, log)
+	// Where a visitor is from, by a local database (brief B5): nil when switched off, and a
+	// locator that waits for the file when geoipupdate has not brought it yet.
+	var locator *geo.Locator
+	var geoInfo func() geo.Info
+	if env.GeoIPDB != "" {
+		locator = geo.Open(env.GeoIPDB, log)
+		defer locator.Close()
+		geoInfo = locator.Info
+	} else {
+		log.Info("GEOIP_DB=off: countries and cities of visitors are not looked up")
+	}
 	stats := analytics.New(analytics.Options{
 		DB:       pool,
 		Cache:    store,
@@ -95,6 +107,7 @@ func run() error {
 		Location: location,
 		// The owner browsing their own site while signed in to the admin area is not a visitor.
 		IgnoreCookie: admin.CookieName,
+		Geo:          locator,
 	})
 	stats.Register(srv.Mux())
 
@@ -177,6 +190,7 @@ func run() error {
 		Outbox:     func(ctx context.Context) (outbox.Stats, error) { return outbox.ReadStats(ctx, pool, time.Now()) },
 		Inbox:      lettersStatus,
 		Mailbox:    env.Mail.Inbox,
+		Geo:        geoInfo,
 	})
 
 	accounts := auth.New(pool, store, log)

@@ -108,6 +108,14 @@
             {{- end -}}
           </dd></div>
           <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
+          <div><dt>База GeoIP</dt><dd>
+            {{- with $s.Geo}}
+              {{- if .Loaded}}<span class="dot dot-ok"></span>{{.Type}} от {{.Built.Format "02.01.2006"}}
+              {{- else}}<span class="dot"></span>не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>
+              {{- end}}
+            {{- else}}<span class="dot"></span>выключена (GEOIP_DB=off)
+            {{- end -}}
+          </dd></div>
         </dl>
       </div>
     </section>

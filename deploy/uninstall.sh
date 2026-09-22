@@ -41,11 +41,12 @@ main() {
 
   step "Stopping services"
   systemctl disable --now krokosha-sync.timer krokosha-rebuild.path krokosha-api.service \
-    krokosha-backup.timer krokosha-certwatch.timer 2>/dev/null || true
-  systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service 2>/dev/null || true
+    krokosha-backup.timer krokosha-certwatch.timer krokosha-geoipupdate.timer 2>/dev/null || true
+  systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service krokosha-geoipupdate.service 2>/dev/null || true
   rm -rf /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer \
     /etc/systemd/system/krokosha-backup.service /etc/systemd/system/krokosha-backup.timer \
     /etc/systemd/system/krokosha-certwatch.service /etc/systemd/system/krokosha-certwatch.timer \
+    /etc/systemd/system/krokosha-geoipupdate.service /etc/systemd/system/krokosha-geoipupdate.timer \
     /etc/systemd/system/krokosha-rebuild.path \
     /etc/systemd/system/krokosha-api.service /etc/systemd/system/krokosha-api.service.d
   systemctl daemon-reload
@@ -75,6 +76,10 @@ main() {
     rm -rf "$KROKOSHA_ETC"
     if [[ -n $data_dir && $data_dir == /* && $data_dir != / && -d $data_dir ]]; then
       rm -rf "$data_dir"
+    fi
+    # The MaxMind key and the database it fetched (the installer wrote both).
+    if grep -qs 'krokosha-site' /etc/GeoIP.conf; then
+      rm -f /etc/GeoIP.conf /var/lib/GeoIP/GeoLite2-*.mmdb
     fi
     ok "data root removed: database, settings and secrets are gone"
   else

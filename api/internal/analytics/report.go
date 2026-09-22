@@ -483,6 +483,7 @@ type Visit struct {
 	Browser    string
 	OS         string
 	Country    string
+	City       string
 	IPPrefix   string
 	Lang       string
 	MaxScroll  int
@@ -500,7 +501,7 @@ func (r *Reports) Visits(ctx context.Context, period Period, limit, offset int) 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT v.session_id, v.visitor, v.started_at, v.pages, v.view_ms, v.path, IF(v.any_ad = 1, 'ads', v.referrer_kind),
 		       COALESCE(v.referrer_host, ''), COALESCE(v.utm_source, ''), v.device, v.browser, v.os, COALESCE(v.country, ''),
-		       v.ip_prefix, COALESCE(v.lang, ''), v.deepest, v.last_view,
+		       COALESCE(v.city, ''), v.ip_prefix, COALESCE(v.lang, ''), v.deepest, v.last_view,
 		       (SELECT COUNT(*) FROM analytics_events e JOIN analytics_pageviews p ON p.id = e.pageview
 		         WHERE p.session_id = v.session_id AND e.type = 'click'),
 		       (SELECT COUNT(*) FROM analytics_events e JOIN analytics_pageviews p ON p.id = e.pageview
@@ -508,7 +509,7 @@ func (r *Reports) Visits(ctx context.Context, period Period, limit, offset int) 
 		           AND (e.target LIKE '%-telegram' OR e.target LIKE '%-email' OR e.target LIKE '%-github'))
 		FROM (
 			SELECT session_id, visitor, started_at, path, referrer_kind, referrer_host, utm_source, device, browser, os,
-			       country, ip_prefix, lang,
+			       country, city, ip_prefix, lang,
 			       COUNT(*) OVER w AS pages, SUM(duration_ms) OVER w AS view_ms, MAX(is_ad) OVER w AS any_ad,
 			       MAX(max_scroll) OVER w AS deepest, MAX(started_at) OVER w AS last_view,
 			       ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY started_at, id) AS position
@@ -527,7 +528,7 @@ func (r *Reports) Visits(ctx context.Context, period Period, limit, offset int) 
 		var session, visitor []byte
 		var contacts int
 		if err := rows.Scan(&session, &visitor, &visit.Started, &visit.Pages, &visit.ViewMs, &visit.Entry, &visit.Source,
-			&visit.Referrer, &visit.Campaign, &visit.Device, &visit.Browser, &visit.OS, &visit.Country,
+			&visit.Referrer, &visit.Campaign, &visit.Device, &visit.Browser, &visit.OS, &visit.Country, &visit.City,
 			&visit.IPPrefix, &visit.Lang, &visit.MaxScroll, &visit.LastSeenAt, &visit.Actions, &contacts); err != nil {
 			return nil, 0, err
 		}
@@ -563,8 +564,8 @@ func (r *Reports) Visit(ctx context.Context, id string) (*VisitDetail, error) {
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, visitor, started_at, path, IF(is_ad = 1, 'ads', referrer_kind), COALESCE(referrer_host, ''),
-		       COALESCE(utm_source, ''), device, browser, os, COALESCE(country, ''), ip_prefix, COALESCE(lang, ''),
-		       duration_ms, max_scroll
+		       COALESCE(utm_source, ''), device, browser, os, COALESCE(country, ''), COALESCE(city, ''), ip_prefix,
+		       COALESCE(lang, ''), duration_ms, max_scroll
 		FROM analytics_pageviews WHERE session_id = ? ORDER BY started_at, id`, session)
 	if err != nil {
 		return nil, err
@@ -579,7 +580,7 @@ func (r *Reports) Visit(ctx context.Context, id string) (*VisitDetail, error) {
 		var view Visit
 		var viewMs int64
 		if err := rows.Scan(&pageview, &visitor, &view.Started, &view.Entry, &view.Source, &view.Referrer, &view.Campaign,
-			&view.Device, &view.Browser, &view.OS, &view.Country, &view.IPPrefix, &view.Lang, &viewMs, &view.MaxScroll); err != nil {
+			&view.Device, &view.Browser, &view.OS, &view.Country, &view.City, &view.IPPrefix, &view.Lang, &viewMs, &view.MaxScroll); err != nil {
 			return nil, err
 		}
 		if len(ids) == 0 {

@@ -276,6 +276,12 @@ func TestChartsAndWords(t *testing.T) {
 			t.Errorf("describe(%q, %q) = %q, want %q", input[0], input[1], got, want)
 		}
 	}
+	// Countries come from the database as codes and are shown by the names of CLDR.
+	for code, want := range map[string]string{"UA": "Украина", "DE": "Германия", "US": "Соединенные Штаты", "": "не определена", "ZZ": "неизвестный регион", "??": "??"} {
+		if got := countryName(code); got != want {
+			t.Errorf("countryName(%q) = %q, want %q", code, got, want)
+		}
+	}
 	if svg := string(ring(140, "javascript:alert(1)")); !strings.Contains(svg, `stroke-dasharray="100.0 0.0"`) || !strings.Contains(svg, "ring-accent") {
 		t.Errorf("ring must clamp its input: %s", svg)
 	}

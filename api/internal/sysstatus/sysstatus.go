@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
@@ -45,6 +46,8 @@ type Options struct {
 	// Inbox tells how reading the service mailbox goes; nil — it is not read. Mailbox is its address.
 	Inbox   func(ctx context.Context) inbox.Status
 	Mailbox string
+	// Geo describes the GeoIP database; nil — geolocation is switched off.
+	Geo func() geo.Info
 }
 
 // Service collects the status.
@@ -181,6 +184,7 @@ type Status struct {
 	LogReadAt        time.Time
 	Outbox           outbox.Stats
 	Inbox            *inbox.Status // nil — answers by mail are not read
+	Geo              *geo.Info     // nil — geolocation is switched off
 	Backup           Backup
 	CertWatch        CertWatch
 	Mailbox          string
@@ -222,6 +226,10 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	if s.opts.Inbox != nil {
 		status := s.opts.Inbox(ctx)
 		out.Inbox, out.Mailbox = &status, s.opts.Mailbox
+	}
+	if s.opts.Geo != nil {
+		info := s.opts.Geo()
+		out.Geo = &info
 	}
 	out.Problems = problems(out, now)
 	return out
@@ -308,6 +316,10 @@ func problems(status *Status, now time.Time) []Problem {
 	}
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")
+	}
+	// GeoLite2 comes out twice a week; a database older than six weeks means geoipupdate stopped.
+	if info := status.Geo; info != nil && info.Loaded && now.Sub(info.Built) > 42*24*time.Hour {
+		add("warn", "База GeoIP собрана %s и не обновлялась: sudo systemctl status krokosha-geoipupdate.timer, sudo geoipupdate -v", info.Built.Format("02.01.2006"))
 	}
 	return out
 }

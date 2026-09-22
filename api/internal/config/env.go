@@ -46,6 +46,9 @@ type Env struct {
 	// AnalyticsKeepMonths (ANALYTICS_KEEP_MONTHS): raw page views and events older than this are
 	// removed, the sums of their days stay for good (brief B5). 12 by default; 0 — never removed.
 	AnalyticsKeepMonths int
+	// GeoIPDB (GEOIP_DB) is the MaxMind DB file the country and the city of a visitor are read
+	// from (brief B5); geoipupdate keeps it fresh. Empty (GEOIP_DB=off): geolocation is off.
+	GeoIPDB string
 	// Telegram is the bot requests are worked with in (brief B10.3). Without a token there is none.
 	Telegram Telegram
 
@@ -166,6 +169,9 @@ func LoadEnv(lookup func(string) (string, bool)) (*Env, error) {
 	}
 	env.Retention.SpamDays = number("LEADS_SPAM_DAYS", 30, 3650)
 	env.AnalyticsKeepMonths = number("ANALYTICS_KEEP_MONTHS", 12, 240)
+	if env.GeoIPDB = get("GEOIP_DB", "/var/lib/GeoIP/GeoLite2-City.mmdb"); strings.EqualFold(env.GeoIPDB, "off") {
+		env.GeoIPDB = ""
+	}
 	switch expired := strings.ToLower(get("LEADS_EXPIRED", "anonymize")); expired {
 	case "anonymize":
 	case "delete":

@@ -46,6 +46,12 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
                          without it the installer asks, and an empty answer means «later».
                          The token is checked with Telegram (getMe) and kept in $KROKOSHA_ENV only
   --telegram-api URL     another Bot API server (a self-hosted one; tests). Default: Telegram's own
+  --maxmind-account ID   MaxMind account for GeoLite2 (free: https://www.maxmind.com/en/geolite2/signup):
+                         the countries and cities of visitors in the statistics. Needs
+  --maxmind-key-file FILE
+                         a license key of that account on the first line of FILE. Both are kept
+                         in $KROKOSHA_ENV; geoipupdate fetches the database twice a week.
+                         Without them the countries stay unknown, everything else works
   --no-mail              do not set up the mail server (it needs HTTPS, about 500 MB of memory,
                          and a provider that lets port 25 out)
   --mailbox ADDRESS      a mailbox to create besides the service one, e.g. denis@DOMAIN: letters
@@ -68,6 +74,7 @@ DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SK
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
+MAXMIND_ACCOUNT='' MAXMIND_KEY_FILE=''
 MAIL='' MAILBOX='' MAIL_NAME='' MAILBOX_PASSWORD_FILE=''
 EXTRA_PORTS=()
 
@@ -87,6 +94,8 @@ while [[ $# -gt 0 ]]; do
     --admin-password-file) ADMIN_PASSWORD_FILE=${2:?--admin-password-file needs a value}; shift 2 ;;
     --telegram-token-file) TELEGRAM_TOKEN_FILE=${2:?--telegram-token-file needs a value}; shift 2 ;;
     --telegram-api) TELEGRAM_API=${2:?--telegram-api needs a value}; shift 2 ;;
+    --maxmind-account) MAXMIND_ACCOUNT=${2:?--maxmind-account needs a value}; shift 2 ;;
+    --maxmind-key-file) MAXMIND_KEY_FILE=${2:?--maxmind-key-file needs a value}; shift 2 ;;
     --no-mail) MAIL=no; shift ;;
     --mailbox) MAILBOX=${2:?--mailbox needs a value}; shift 2 ;;
     --mail-name) MAIL_NAME=${2:?--mail-name needs a value}; shift 2 ;;
@@ -175,6 +184,10 @@ MAILBOX=${MAILBOX,,}
 case $MAIL_NAME in *[\"\<\>\\]*) die "--mail-name must not contain quotes, angle brackets or backslashes" ;; esac
 MAIL_HOST="mail.$DOMAIN"
 [[ -z $TELEGRAM_API || $TELEGRAM_API =~ ^https?://[^[:space:]]+$ ]] || die "--telegram-api must be an address like https://api.telegram.org"
+[[ -z $MAXMIND_ACCOUNT || $MAXMIND_ACCOUNT =~ ^[0-9]{1,12}$ ]] || die "--maxmind-account is a number (the account ID shown at maxmind.com)"
+[[ -z $MAXMIND_KEY_FILE || -r $MAXMIND_KEY_FILE ]] || die "--maxmind-key-file: cannot read $MAXMIND_KEY_FILE"
+[[ -z $MAXMIND_KEY_FILE || -n $MAXMIND_ACCOUNT || -n $(env_get MAXMIND_ACCOUNT_ID) ]] || die "--maxmind-key-file needs --maxmind-account"
+[[ -z $MAXMIND_ACCOUNT || -n $MAXMIND_KEY_FILE || -n $(env_get MAXMIND_LICENSE_KEY) ]] || die "--maxmind-account needs --maxmind-key-file"
 
 WWW=$KROKOSHA_WWW
 SITE_URL="https://$DOMAIN"
@@ -273,6 +286,7 @@ packages=(nginx git curl ca-certificates xz-utils rsync openssl logrotate)
 [[ $TLS_MODE == letsencrypt ]] && packages+=(certbot)
 [[ $SKIP_FIREWALL == no ]] && packages+=(ufw)
 packages+=(fail2ban python3-systemd)
+[[ -n $MAXMIND_KEY_FILE || -n $(env_get MAXMIND_LICENSE_KEY) ]] && packages+=(geoipupdate)
 # MySQL, Redis and the mail server run in Docker. The distribution's own packages are used;
 # an already working Docker (any origin) is left alone.
 if ! have docker || ! docker compose version >/dev/null 2>&1; then
@@ -438,6 +452,13 @@ if [[ -n $telegram_token ]]; then
   env_set TELEGRAM_BOT_TOKEN "$telegram_token"
 fi
 [[ -z $TELEGRAM_API ]] || env_set TELEGRAM_API_URL "$TELEGRAM_API"
+# GeoLite2 (brief B5): the account and the key live here; /etc/GeoIP.conf is written from them.
+[[ -z $MAXMIND_ACCOUNT ]] || env_set MAXMIND_ACCOUNT_ID "$MAXMIND_ACCOUNT"
+if [[ -n $MAXMIND_KEY_FILE ]]; then
+  maxmind_key=$(head -n 1 "$MAXMIND_KEY_FILE" | tr -d '[:space:]')
+  [[ $maxmind_key =~ ^[A-Za-z0-9_]{16,}$ ]] || die "that does not look like a MaxMind license key (letters, digits and _)"
+  env_set MAXMIND_LICENSE_KEY "$maxmind_key"
+fi
 # Telegram delivers updates to HTTPS only; without it the site asks Telegram itself.
 if [[ $TLS_MODE == none ]]; then
   env_set TELEGRAM_MODE polling
@@ -516,7 +537,8 @@ install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
 for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
-  krokosha-backup.service krokosha-backup.timer krokosha-certwatch.service krokosha-certwatch.timer; do
+  krokosha-backup.service krokosha-backup.timer krokosha-certwatch.service krokosha-certwatch.timer \
+  krokosha-geoipupdate.service krokosha-geoipupdate.timer; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
 done
 # Where the API leaves requests for a rebuild and the build leaves its report (both run as the
@@ -878,6 +900,43 @@ systemctl enable --quiet --now krokosha-backup.timer krokosha-certwatch.timer
 ok "backup: $(systemctl show krokosha-backup.timer --property=NextElapseUSecRealtime --value); certificates: $(systemctl show krokosha-certwatch.timer --property=NextElapseUSecRealtime --value)"
 
 # ---------------------------------------------------------------------------------------------
+step "GeoIP: countries and cities of visitors (MaxMind GeoLite2)"
+# ---------------------------------------------------------------------------------------------
+
+# The API reads /var/lib/GeoIP/GeoLite2-City.mmdb (GEOIP_DB) and notices a new file by itself;
+# geoipupdate brings one twice a week. The key is in /etc/GeoIP.conf, readable by root only.
+geo_summary="not set up — countries of visitors stay unknown. Free key: https://www.maxmind.com/en/geolite2/signup, then sudo $0 --from-env --maxmind-account ID --maxmind-key-file FILE"
+if [[ -n $(env_get MAXMIND_LICENSE_KEY) ]]; then
+  geoip_conf=$(mktemp)
+  cat >"$geoip_conf" <<EOF
+# Written by krokosha-site/deploy/install.sh from $KROKOSHA_ENV; edit the settings there.
+AccountID $(env_get MAXMIND_ACCOUNT_ID)
+LicenseKey $(env_get MAXMIND_LICENSE_KEY)
+EditionIDs GeoLite2-City
+DatabaseDirectory /var/lib/GeoIP
+EOF
+  install_if_changed "$geoip_conf" /etc/GeoIP.conf 0600 || true
+  rm -f "$geoip_conf"
+  install -d -m 0755 /var/lib/GeoIP
+  systemctl enable --quiet --now krokosha-geoipupdate.timer
+  if [[ -f /var/lib/GeoIP/GeoLite2-City.mmdb ]]; then
+    geo_summary="GeoLite2-City of $(date -r /var/lib/GeoIP/GeoLite2-City.mmdb +%F), refreshed twice a week (krokosha-geoipupdate.timer)"
+    ok "$geo_summary"
+  elif systemctl start krokosha-geoipupdate.service 2>/dev/null && [[ -f /var/lib/GeoIP/GeoLite2-City.mmdb ]]; then
+    geo_summary="GeoLite2-City fetched, refreshed twice a week (krokosha-geoipupdate.timer)"
+    ok "$geo_summary"
+    # The API looks for the file every ten minutes; after an installation it may as well look now.
+    systemctl try-restart krokosha-api.service
+  else
+    geo_summary="the key is saved, but the database could not be fetched yet — see journalctl -u krokosha-geoipupdate; the timer tries again"
+    warn "$geo_summary"
+  fi
+else
+  systemctl disable --quiet --now krokosha-geoipupdate.timer 2>/dev/null || true
+  warn "no MaxMind key: $geo_summary"
+fi
+
+# ---------------------------------------------------------------------------------------------
 step "Firewall"
 # ---------------------------------------------------------------------------------------------
 
@@ -970,6 +1029,7 @@ cat >&2 <<EOF
   Update:     sudo $KROKOSHA_REPO/deploy/update.sh
   Roll back:  sudo $KROKOSHA_REPO/deploy/rollback.sh
   Backups:    $DATA_DIR/backups, every night   (now: sudo $KROKOSHA_REPO/deploy/backup.sh; back: sudo $KROKOSHA_REPO/deploy/restore.sh --from DIR)
+  GeoIP:      $geo_summary
   Logs:       journalctl -u krokosha-sync.service, /var/log/krokosha/
   Settings:   $KROKOSHA_ENV
   Data:       $DATA_DIR   (database, cache, settings — copy this directory to move the site)

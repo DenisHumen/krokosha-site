@@ -72,8 +72,15 @@ MOCK_TELEGRAM=$!
 trap 'kill "$MOCK_TELEGRAM" 2>/dev/null || true' EXIT
 bot_called() { grep -c "\"method\": \"$1\"" "$BOT_CALLS" || true; }
 
+# GeoLite2: a key MaxMind will not accept. The installer must keep it to itself, say that the
+# database could not be fetched, and go on.
+MAXMIND_KEY='CI0000_a_fake_key_that_must_not_show_up_in_logs'
+MAXMIND_KEY_FILE=$(mktemp)
+printf '%s\n' "$MAXMIND_KEY" >"$MAXMIND_KEY_FILE"
+
 echo "::group::First installation"
-install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 2>&1 | tee "$INSTALL_LOG"
+install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 \
+  --maxmind-account 999999 --maxmind-key-file "$MAXMIND_KEY_FILE" 2>&1 | tee "$INSTALL_LOG"
 echo "::endgroup::"
 
 echo "Site"
@@ -569,6 +576,22 @@ check "…the owner is told by mail and in Telegram, once a day" test "$(sql "SE
 check "…the letter arrives" mailcheck find "owner@$DOMAIN" "$MAILBOX_PASSWORD" 'certbot renew --dry-run'
 "$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
 
+echo "GeoIP"
+check "the MaxMind account and key are in the settings and in /etc/GeoIP.conf, for root only" bash -c "grep -q '^MAXMIND_ACCOUNT_ID=999999\$' /etc/krokosha/env && grep -q '^MAXMIND_LICENSE_KEY=$MAXMIND_KEY\$' /etc/krokosha/env && grep -q '^AccountID 999999\$' /etc/GeoIP.conf && grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && [[ \$(stat -c '%a %U' /etc/GeoIP.conf) == '600 root' ]]"
+check "…and the key shows up nowhere in the installer's output" bash -c "! grep -qF '$MAXMIND_KEY' '$INSTALL_LOG'"
+check "a key MaxMind refuses: the installer said so and went on" grep -q 'could not be fetched yet' "$INSTALL_LOG"
+check "the database is fetched twice a week" systemctl is-enabled --quiet krokosha-geoipupdate.timer
+check "the status screen says there is no database yet" grep -q 'не установлена — страны и города' <(admin_get "$ADMIN/status")
+# geoipupdate would bring the real file; one written by the test stands in for it, and the
+# service picks it up the way it picks up a fresh download.
+python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
+systemctl restart krokosha-api.service
+api_answers() { curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; }
+check "the API is back with the database" wait_for 30 api_answers
+check "a page view gets its country and city from the database" bash -c "[[ \$(beacon '${view/00112233aabbccdd/00112233aabbcc77}') == 204 ]] && sleep 3 && [[ \$(sql \"SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc77')\") == 'UA Kyiv' ]]"
+check "…the address itself is still not stored" test "$(sql "SELECT COUNT(*) FROM analytics_pageviews WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
+check "the overview names the country, the status screen names the database" bash -c "grep -q 'Украина' <(both_days /) && grep -q 'Test-City от 10.09.2026' <(admin_get '$ADMIN/status')"
+
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
 secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)
@@ -625,6 +648,7 @@ check "…with the secret that signs addresses and links, the path of the admin 
 check "…while the database password stays the new installation's own" test "$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)" = "$database_password"
 webhook_again() { [[ $(bot_called setWebhook) -gt $webhooks_before ]]; }
 check "the bot is back: the restored token was checked with Telegram, the webhook registered anew" wait_for 30 webhook_again
+check "the MaxMind key is back, /etc/GeoIP.conf is written again" bash -c "grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && systemctl is-enabled --quiet krokosha-geoipupdate.timer"
 check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)" = "$mail_before"
 check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
 check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
@@ -639,6 +663,7 @@ echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
 echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
+check "the MaxMind key and the database are gone with them" bash -c "[[ ! -e /etc/GeoIP.conf && ! -e /var/lib/GeoIP/GeoLite2-City.mmdb ]]"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"

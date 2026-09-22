@@ -1,0 +1,11 @@
+[Unit]
+Description=krokosha site: fetch a fresh GeoLite2 database (countries and cities of visitors)
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/GeoIP.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/geoipupdate
+TimeoutStartSec=20min
