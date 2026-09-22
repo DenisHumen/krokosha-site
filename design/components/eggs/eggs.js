@@ -4,16 +4,19 @@
  * nothing auto-starts under prefers-reduced-motion. Tracking: data-track="egg-<id>" via found().
  */
 const KEY = 'krokosha:eggs';
-const ALL = ['konami', 'sudo', 'croc', 'cat', 'reboot', 'console', 'croc5'];
+const ALL = ['konami', 'sudo', 'croc', 'cat', 'reboot', 'console', 'croc5', 'lost_packet'];
+export const TOTAL = ALL.length;
+let years = 9; // set by initEggs: the BIOS screen of the avatar counts the real years
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const css = (el, s) => { el.style.cssText += ';' + s; return el; };
-const mono = "font:12px/1.5 'Fira Code',ui-monospace,monospace";
+const mono = "font:12px/1.5 var(--font-mono, 'Fira Code', ui-monospace, monospace)"; // the site's own family name
 
 export function foundList() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
 export function found(id, texts = {}) {
   const list = foundList(); if (list.includes(id)) return list.length;
   list.push(id); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch {}
   document.dispatchEvent(new CustomEvent('kro:egg', { detail: { id, count: list.length, total: ALL.length } }));
+  document.dispatchEvent(new CustomEvent('krokosha:egg', { detail: id })); // statistics (contract §4)
   toast(`${texts.found || 'Пасхалка найдена'} · ${list.length}/${ALL.length}`);
   if (list.length >= ALL.length) setTimeout(() => toast(texts.all || 'Все пасхалки найдены. Ачивка: root@krokosha'), 1600);
   return list.length;
@@ -78,11 +81,12 @@ const CAT_SIT = [[
 ]];
 
 export function initEggs({ flags = {}, texts = {}, experience = 9 } = {}) {
+  years = experience;
   const on = (k) => flags.enabled !== false && flags[k] !== false;
   if (on('console_message')) {
     console.log('%c krokosha.xyz %c link up · 10Gbps · full-duplex ', 'background:#111;color:#fff;padding:4px 8px;border-radius:4px 0 0 4px;font-family:Fira Code,monospace', 'background:#6b4de6;color:#fff;padding:4px 8px;border-radius:0 4px 4px 0;font-family:Fira Code,monospace');
     window.krokosha = { hello: () => { found('console', texts); return 'ack · link up'; } };
-    console.log('%cкто читает консоль — тот уже почти коллега. krokosha.hello()  ·  или набери sudo на странице  ·  или ↑↑↓↓←→←→BA', 'color:#6a6a66;font-family:Fira Code,monospace');
+    console.log('%c' + (texts.console || 'кто читает консоль — тот уже почти коллега. krokosha.hello()  ·  или набери sudo на странице  ·  или ↑↑↓↓←→←→BA'), 'color:#6a6a66;font-family:Fira Code,monospace');
   }
   if (on('konami')) konami(texts);
   if (on('sudo_terminal')) sudo(texts, experience);
@@ -107,7 +111,7 @@ export function nightMode(texts) {
   for (let k = 0; k < 90; k++) { const d = css(document.createElement('i'), `flex:0 0 6px;height:3px;background:${colors[k % colors.length]};border-radius:1px;animation:kro-led ${(0.6 + (k * 37 % 13) / 10).toFixed(2)}s steps(2) infinite`); d.style.animationDelay = (k * 53 % 17) / 10 + 's'; leds.appendChild(d); }
   wrap.appendChild(leds);
   const glow = css(document.createElement('div'), 'position:absolute;inset:0;background:radial-gradient(60% 40% at 50% 0%,rgba(79,214,224,.08),transparent 70%)'); wrap.appendChild(glow);
-  const st = document.createElement('style'); st.textContent = '@keyframes kro-led{50%{opacity:.25}}'; wrap.appendChild(st);
+  // @keyframes kro-led lives in the site's stylesheet: the CSP allows no <style> elements.
   const cap = css(document.createElement('div'), `position:absolute;left:50%;top:14px;transform:translateX(-50%);color:#9a9a95;${mono}`); cap.textContent = texts.night || 'серверная · 03:14 · всё зелёное'; wrap.appendChild(cap);
   document.body.appendChild(wrap); found('konami', texts);
 }
@@ -122,22 +126,32 @@ function sudo(texts, experience) {
 export function openTerminal(texts, experience) {
   if (document.getElementById('kro-term')) return;
   const box = css(document.createElement('div'), `position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 84px);width:min(440px,calc(100vw - 32px));z-index:50;background:#111113;color:#ededea;border:1px solid #2c2c30;border-radius:10px;box-shadow:var(--shadow-2);${mono};font-size:12.5px;overflow:hidden`); box.id = 'kro-term';
-  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #2c2c30;color:#9a9a95"><span style="width:8px;height:8px;border-radius:50%;background:#5fd39a"></span>krokosha@edge: ~<button aria-label="close" style="margin-left:auto;background:none;border:0;color:#9a9a95;cursor:pointer;font:inherit">✕</button></div><pre style="margin:0;padding:12px;max-height:220px;overflow:auto;white-space:pre-wrap"></pre><div style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid #2c2c30"><span style="color:#9d86f0">$</span><input aria-label="terminal" style="flex:1;background:none;border:0;color:inherit;font:inherit;outline:none" autocomplete="off" spellcheck="false"></div>`;
-  const out = box.querySelector('pre'), inp = box.querySelector('input');
+  const el = (tag, style, parent) => { const e = css(document.createElement(tag), style); parent.appendChild(e); return e; };
+  const head = el('div', 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #2c2c30;color:#9a9a95', box);
+  el('span', 'width:8px;height:8px;border-radius:50%;background:#5fd39a', head);
+  head.appendChild(document.createTextNode('krokosha@edge: ~'));
+  const close = el('button', 'margin-left:auto;background:none;border:0;color:#9a9a95;cursor:pointer;font:inherit', head);
+  close.setAttribute('aria-label', 'close'); close.textContent = '✕';
+  const out = el('pre', 'margin:0;padding:12px;max-height:220px;overflow:auto;white-space:pre-wrap', box);
+  const line = el('div', 'display:flex;gap:8px;padding:8px 12px;border-top:1px solid #2c2c30', box);
+  el('span', 'color:#9d86f0', line).textContent = '$';
+  const inp = el('input', 'flex:1;background:none;border:0;color:inherit;font:inherit;outline:none', line);
+  inp.setAttribute('aria-label', 'terminal'); inp.autocomplete = 'off'; inp.spellcheck = false;
+  const term = texts.terminal || {};
   const print = (s) => { out.textContent += s + '\n'; out.scrollTop = out.scrollHeight; };
   print('[sudo] password for guest: ********\nOK. Try: whoami · ping denis · uptime · ls · help · exit');
   const cmds = {
-    whoami: () => 'guest (but curious). Denis is root here.',
-    uptime: () => `up ${experience} years, 0 incidents caused by coffee`,
-    'ping denis': () => 'PING denis (t.me/DenisHumen): 56 bytes\n64 bytes: icmp_seq=1 ttl=64 time=0.9 ms  ← он отвечает быстро',
+    whoami: () => term.whoami || 'guest (but curious). Denis is root here.',
+    uptime: () => term.uptime || `up ${experience} years, 0 incidents caused by coffee`,
+    'ping denis': () => `PING denis (${texts.telegram || 't.me/DenisHumen'}): 56 bytes\n64 bytes: icmp_seq=1 ttl=64 time=0.9 ms  ← ${term.ping || 'он отвечает быстро'}`,
     ls: () => 'networks/  servers/  devops/  highload-lan/  tooling/  .secrets (permission denied)',
     help: () => 'whoami · ping denis · uptime · ls · clear · exit',
     clear: () => { out.textContent = ''; return ''; },
     exit: () => { box.remove(); return ''; },
-    'rm -rf /': () => 'nice try. snapshot restored in 0.2 s',
+    'rm -rf /': () => term.rm || 'nice try. snapshot restored in 0.2 s',
   };
   inp.addEventListener('keydown', (e) => { if (e.key !== 'Enter') return; const c = inp.value.trim(); inp.value = ''; print('$ ' + c); const f = cmds[c]; print(f ? f() : `${c}: command not found`); });
-  box.querySelector('button').onclick = () => box.remove();
+  close.onclick = () => box.remove();
   document.body.appendChild(box); inp.focus(); found('sudo', texts);
 }
 
@@ -147,7 +161,7 @@ export function rebootAvatar(el, texts = {}) {
   const r = el.getBoundingClientRect();
   const scr = css(document.createElement('div'), `position:absolute;left:0;top:0;width:100%;height:100%;border-radius:inherit;background:#111113;color:#ededea;${mono};font-size:9px;line-height:1.35;padding:10px;overflow:hidden;z-index:2`);
   el.style.position = 'relative'; el.appendChild(scr);
-  const lines = ['KROKOSHA BIOS v9.0', 'CPU: 1 x Engineer @ 4.0GHz', 'Memory test: 9 years OK', 'Detecting links... eth0 10G', 'Booting denis.img ...', 'link up · full-duplex'];
+  const lines = ['KROKOSHA BIOS v9.0', 'CPU: 1 x Engineer @ 4.0GHz', `Memory test: ${years} years OK`, 'Detecting links... eth0 10G', 'Booting denis.img ...', 'link up · full-duplex'];
   let i = 0; const tick = () => { if (i < lines.length) { scr.textContent += lines[i++] + '\n'; setTimeout(tick, 260); } else setTimeout(() => { scr.remove(); delete el.dataset.rebooting; found('reboot', texts); }, 500); }; tick();
 }
 

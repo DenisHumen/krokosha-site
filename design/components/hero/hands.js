@@ -64,6 +64,8 @@
       addEventListener('pointermove', this.onMove, { passive: true }); addEventListener('pointerleave', this.onLeave);
       this.themeObs = new MutationObserver(() => { this.sprites.clear(); this.readColors(); });
       this.themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      // Glyphs drawn before the font arrived are drawn again with it.
+      document.fonts?.ready.then(() => this.sprites.clear());
       this.resize(); this.loop();
     }
     disconnectedCallback() {
@@ -74,6 +76,8 @@
     readColors() {
       const cs = getComputedStyle(this);
       this.colors = { fg: cs.getPropertyValue('--fg').trim() || '#111', muted: cs.getPropertyValue('--muted').trim() || '#777', accent: cs.getPropertyValue('--accent').trim() || '#6b4de6', bg: cs.getPropertyValue('--bg').trim() || '#eee' };
+      // The site serves Fira Code under its own family name: take the stack from the tokens.
+      this.fontFamily = cs.getPropertyValue('--font-mono').trim() || "'Fira Code', ui-monospace, monospace";
     }
     resize() {
       const r = this.getBoundingClientRect(); if (!r.width || !r.height) return;
@@ -129,7 +133,7 @@
       const key = glyph + size + tone; let s = this.sprites.get(key); if (s) return s;
       const px = [8, 10, 13][size] * this.dpr, pad = 4 * this.dpr, c = document.createElement('canvas');
       c.width = c.height = px + pad * 2; const g = c.getContext('2d');
-      g.font = `${size === 2 ? 600 : 400} ${px}px 'Fira Code', ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `${size === 2 ? 600 : 400} ${px}px ${this.fontFamily}`; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillStyle = tone === 'accent' ? this.colors.accent : this.colors.fg; g.fillText(glyph, c.width / 2, c.height / 2);
       this.sprites.set(key, s = c); return s;
     }
