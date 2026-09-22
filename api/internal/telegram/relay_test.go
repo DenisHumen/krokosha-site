@@ -430,3 +430,29 @@ func TestLettersInTelegram(t *testing.T) {
 		t.Error("the message about the returned letter is not remembered")
 	}
 }
+
+// An alert about the server is for those who manage it, not for everybody who answers clients.
+func TestAlertsGoToOwners(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	payload, _ := json.Marshal(outbox.Alert{Subject: "Резервная копия не сделана", Text: "backup.sh stopped at line 102 <exit code 1>"})
+	alert := outbox.Task{ID: 5, Channel: outbox.ChannelTelegram, Kind: outbox.KindAlert, Payload: payload}
+	if err := f.bot.Send(ctx, alert); !outbox.IsNotReady(err) {
+		t.Fatalf("an alert with no owner in the bot yet: %v", err)
+	}
+	f.join(olena, RoleMember)
+	if err := f.bot.Send(ctx, alert); !outbox.IsNotReady(err) {
+		t.Fatalf("an alert with members only: %v", err)
+	}
+	f.join(denis, RoleOwner)
+	f.api.Forget()
+	if err := f.bot.Send(ctx, alert); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.api.Sent(olena.ID)) != 0 {
+		t.Error("a member was told about the server")
+	}
+	if text := oneText(t, f.api.Sent(denis.ID)); !strings.Contains(text, "🛠 <b>Резервная копия не сделана</b>") || !strings.Contains(text, "&lt;exit code 1&gt;") {
+		t.Errorf("the alert: %q", text)
+	}
+}

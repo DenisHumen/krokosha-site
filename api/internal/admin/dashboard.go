@@ -144,7 +144,7 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	rename(overview.Sources, named(sourceNames, "—"))
 	rename(overview.Devices, named(deviceNames, "—"))
 	rename(overview.Languages, named(languageNames, "не указан"))
-	rename(overview.Countries, named(nil, "не определена"))
+	rename(overview.Countries, countryName)
 	rename(overview.Clicks, func(target string) string {
 		return strings.TrimPrefix(describe(analytics.TypeClick, target), "клик: ")
 	})

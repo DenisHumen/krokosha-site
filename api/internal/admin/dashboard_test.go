@@ -276,10 +276,46 @@ func TestChartsAndWords(t *testing.T) {
 			t.Errorf("describe(%q, %q) = %q, want %q", input[0], input[1], got, want)
 		}
 	}
+	// Countries come from the database as codes and are shown by the names of CLDR.
+	for code, want := range map[string]string{"UA": "Украина", "DE": "Германия", "US": "Соединенные Штаты", "": "не определена", "ZZ": "неизвестный регион", "??": "??"} {
+		if got := countryName(code); got != want {
+			t.Errorf("countryName(%q) = %q, want %q", code, got, want)
+		}
+	}
 	if svg := string(ring(140, "javascript:alert(1)")); !strings.Contains(svg, `stroke-dasharray="100.0 0.0"`) || !strings.Contains(svg, "ring-accent") {
 		t.Errorf("ring must clamp its input: %s", svg)
 	}
 	if svg := string(bar(-5, "cyan")); !strings.Contains(svg, `width="0.0"`) || !strings.Contains(svg, "bar-cyan") {
 		t.Errorf("bar must clamp its input: %s", svg)
+	}
+}
+
+// A period older than the raw data is shown from the sums of its days, and says so.
+func TestOverviewOfAPeriodOlderThanTheRawData(t *testing.T) {
+	s := newSite(t)
+	if _, err := s.db.Exec(`INSERT INTO analytics_daily (day, visitors, visits, ad_visits, pageviews, view_ms_sum, view_ms_count, actions,
+			scroll25, scroll50, scroll75, scroll100, aggregated_at) VALUES ('2025-01-15', 40, 44, 11, 97, 900000, 90, 12, 80, 60, 40, 20, NOW(3))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO analytics_daily_breakdown (day, dimension, name, n) VALUES
+			('2025-01-15', 'page', '/uk/', 61), ('2025-01-15', 'page', '/', 36), ('2025-01-15', 'source', 'ads', 11), ('2025-01-15', 'source', 'search', 33),
+			('2025-01-15', 'section', 'hero', 90), ('2025-01-15', 'section_ms', 'hero', 400000), ('2025-01-15', 'contact', 'telegram', 7)`); err != nil {
+		t.Fatal(err)
+	}
+	s.signIn()
+	for _, query := range []string{"?p=day&d=2025-01-15", "?p=month&d=2025-01-15", "?p=custom&from=2025-01-01&to=2025-03-31"} {
+		page := s.do(http.MethodGet, prefix+"/"+query, nil, nil)
+		if page.status != http.StatusOK {
+			t.Fatalf("%s: %d", query, page.status)
+		}
+		for _, want := range []string{"показаны дневные итоги", "/uk/", "97"} {
+			if !strings.Contains(page.body, want) {
+				t.Errorf("%s: the page lacks %q", query, want)
+			}
+		}
+	}
+	// A recent period says nothing of the kind.
+	if page := s.do(http.MethodGet, prefix+"/?p=week", nil, nil); strings.Contains(page.body, "показаны дневные итоги") {
+		t.Error("a recent week is shown as sums")
 	}
 }

@@ -15,7 +15,7 @@
           <div><dt>Устройство</dt><dd>{{device $v.Device}} · {{$v.Browser}} · {{$v.OS}}</dd></div>
           <div><dt>Язык страницы</dt><dd>{{language $v.Lang}}</dd></div>
           <div><dt>Сеть</dt><dd class="mono">{{$v.IPPrefix}}</dd></div>
-          <div><dt>Страна</dt><dd>{{country $v.Country}}</dd></div>
+          <div><dt>Страна</dt><dd>{{country $v.Country}}{{if $v.City}} · {{$v.City}}{{end}}</dd></div>
         </dl>
       </div>
     </section>

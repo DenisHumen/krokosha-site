@@ -524,3 +524,35 @@ func TestLettersOfAClientAndLettersThatCameBack(t *testing.T) {
 		t.Errorf("the client's address in another case: %d, %v", id, err)
 	}
 }
+
+// An alert about the server is a letter to the owner: what is wrong, and a link to the status screen.
+func TestAnAlertBecomesALetterToTheOwner(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	worker := outbox.NewWorker(f.db, quiet)
+	worker.SetClock(func() time.Time { return f.now })
+	worker.Register(outbox.ChannelEmail, &Mailer{
+		Store: NewStore(f.db, nil), Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"}, Form: formWithLabels, Location: time.UTC,
+	})
+	if err := outbox.EnqueueAlert(context.Background(), f.db, f.now, "cert:2026-09-19",
+		outbox.Alert{Subject: "Сертификат mail.krokosha.xyz истекает через 9 дней", Text: "certbot renew:\n<connection refused>"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.Deliver(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()
+	if len(received) != 1 || received[0].To[0] != "owner@krokosha.xyz" {
+		t.Fatalf("letters: %+v", received)
+	}
+	header, text, html := parts(t, received[0])
+	if subject(t, header) != "[krokosha.xyz] Сертификат mail.krokosha.xyz истекает через 9 дней" || header.Get("Auto-Submitted") != "auto-generated" {
+		t.Errorf("subject %q, Auto-Submitted %q", subject(t, header), header.Get("Auto-Submitted"))
+	}
+	if !strings.Contains(text, "<connection refused>") || !strings.Contains(text, "https://krokosha.xyz/_secret1/status") || !strings.Contains(html, "&lt;connection refused&gt;") {
+		t.Errorf("the letter:\n%s\n%s", text, html)
+	}
+}

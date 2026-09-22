@@ -203,6 +203,8 @@ export interface SeoTexts {
   serviceName: string;
   areaServed: string[];
   countryCode: string;
+  /** <meta> proofs for Google Search Console and Bing Webmaster Tools, if any. */
+  verification: { google?: string | undefined; bing?: string | undefined };
 }
 
 /** Texts of <head>; not part of site.json — the design does not need them. */
@@ -218,6 +220,7 @@ export function buildSeo(content: Content, lang: Locale, options: BuildOptions):
     serviceName: seo.service_name,
     areaServed: seo.area_served,
     countryCode: seo.country_code,
+    verification: site.seo.verification ?? {},
   };
 }
 

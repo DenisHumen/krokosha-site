@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 )
 
 // record is one accepted batch, ready to be stored.
@@ -23,6 +25,7 @@ type record struct {
 	utm        UTM
 	isAd       bool
 	ipPrefix   string
+	place      geo.Place
 	client     Client
 	durationMs int64
 	maxScroll  int64
@@ -121,9 +124,9 @@ func (w *writer) run(ctx context.Context) {
 const upsertPageview = `
 INSERT INTO analytics_pageviews
     (pageview_id, visitor, session_id, started_at, day, path, lang, referrer_host, referrer_kind,
-     utm_source, utm_medium, utm_campaign, utm_term, utm_content, is_ad, ip_prefix,
+     utm_source, utm_medium, utm_campaign, utm_term, utm_content, is_ad, ip_prefix, country, city,
      device, browser, os, duration_ms, max_scroll)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     id          = LAST_INSERT_ID(id),
     duration_ms = GREATEST(duration_ms, VALUES(duration_ms)),
@@ -141,7 +144,8 @@ func (w *writer) store(ctx context.Context, batch []record) error {
 			r.pageviewID[:], r.visitor[:], r.session[:], r.startedAt, r.day, r.path, nullable(r.lang),
 			nullable(r.refHost), r.refKind,
 			nullable(r.utm.Source), nullable(r.utm.Medium), nullable(r.utm.Campaign), nullable(r.utm.Term), nullable(r.utm.Content),
-			r.isAd, r.ipPrefix, r.client.Device, r.client.Browser, r.client.OS, r.durationMs, r.maxScroll)
+			r.isAd, r.ipPrefix, nullable(r.place.Country), nullable(r.place.City),
+			r.client.Device, r.client.Browser, r.client.OS, r.durationMs, r.maxScroll)
 		if err != nil {
 			return err
 		}

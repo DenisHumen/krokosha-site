@@ -131,7 +131,7 @@ func New(opts Options) (*Handler, error) {
 		"device":   named(deviceNames, "—"),
 		"language": named(languageNames, "не указан"),
 		"contact":  named(contactNames, "—"),
-		"country":  named(map[string]string{}, "не определена"),
+		"country":  countryName,
 		"plural":   plural,
 		"tone": func(index int) string { // the accents of the reference dashboard, in turn
 			return [...]string{"accent", "cyan", "pink"}[index%3]

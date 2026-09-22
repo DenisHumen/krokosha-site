@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/language"
+	"golang.org/x/text/language/display"
+
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 )
 
@@ -288,6 +291,23 @@ var (
 	languageNames = map[string]string{"en": "English", "uk": "Українська", "ru": "Русский", "": "не указан"}
 	contactNames  = map[string]string{"telegram": "Telegram", "email": "Почта", "github": "GitHub"}
 )
+
+// countryName says «Украина» for «UA» (the names of CLDR); a code it does not know stays a code.
+func countryName(code string) string {
+	if code == "" {
+		return "не определена"
+	}
+	region, err := language.ParseRegion(code)
+	if err != nil {
+		return code
+	}
+	if name := countryNames.Name(region); name != "" {
+		return name
+	}
+	return code
+}
+
+var countryNames = display.Russian.Regions()
 
 func named(names map[string]string, fallback string) func(string) string {
 	return func(id string) string {

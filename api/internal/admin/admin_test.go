@@ -105,11 +105,13 @@ func newSiteWith(t *testing.T, withMail bool) *site {
 		systemOptions.Inbox, systemOptions.Mailbox = s.letters.Status, testMailbox
 	}
 	system := sysstatus.New(systemOptions)
+	reports := analytics.NewReports(pool, time.UTC, func() time.Time { return reportDay })
+	reports.KeepRaw(12)
 	srv := server.New(server.Deps{Env: &config.Env{Listen: "127.0.0.1:0"}, DB: pool, Cache: store, Log: quiet, Started: time.Now()})
 	panel, err := New(Options{
 		Inbox: letters, Mailbox: testMailbox, KeepLettersDays: 30,
 		Prefix: prefix, SiteHost: "krokosha.xyz", Auth: accounts, Log: quiet, Version: "test",
-		Reports: analytics.NewReports(pool, time.UTC, func() time.Time { return reportDay }),
+		Reports: reports,
 		Feed:    func() (<-chan analytics.Live, func()) { return s.feed, func() {} },
 		Active:  func(context.Context, time.Duration) int { return 3 },
 		Traffic: nginxlog.NewReports(pool, time.UTC), System: system,

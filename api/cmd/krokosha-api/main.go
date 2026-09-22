@@ -25,6 +25,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
@@ -87,6 +88,17 @@ func run() error {
 
 	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
 	location := ownerLocation(env.ContentDir, log)
+	// Where a visitor is from, by a local database (brief B5): nil when switched off, and a
+	// locator that waits for the file when geoipupdate has not brought it yet.
+	var locator *geo.Locator
+	var geoInfo func() geo.Info
+	if env.GeoIPDB != "" {
+		locator = geo.Open(env.GeoIPDB, log)
+		defer locator.Close()
+		geoInfo = locator.Info
+	} else {
+		log.Info("GEOIP_DB=off: countries and cities of visitors are not looked up")
+	}
 	stats := analytics.New(analytics.Options{
 		DB:       pool,
 		Cache:    store,
@@ -95,6 +107,7 @@ func run() error {
 		Location: location,
 		// The owner browsing their own site while signed in to the admin area is not a visitor.
 		IgnoreCookie: admin.CookieName,
+		Geo:          locator,
 	})
 	stats.Register(srv.Mux())
 
@@ -177,6 +190,7 @@ func run() error {
 		Outbox:     func(ctx context.Context) (outbox.Stats, error) { return outbox.ReadStats(ctx, pool, time.Now()) },
 		Inbox:      lettersStatus,
 		Mailbox:    env.Mail.Inbox,
+		Geo:        geoInfo,
 	})
 
 	accounts := auth.New(pool, store, log)
@@ -212,13 +226,15 @@ func run() error {
 		log.Warn("TELEGRAM_BOT_TOKEN is not set: there is no bot; notifications for Telegram wait in the outbox")
 	}
 
+	reports := analytics.NewReports(pool, location, nil)
+	reports.KeepRaw(env.AnalyticsKeepMonths)
 	panel, err := admin.New(admin.Options{
 		Prefix:   env.AdminPath,
 		SiteHost: siteURL.Hostname(),
 		Auth:     accounts,
 		Log:      log,
 		Version:  version(),
-		Reports:  analytics.NewReports(pool, location, nil),
+		Reports:  reports,
 		Location: location,
 		Feed:     stats.Subscribe,
 		Active: func(ctx context.Context, window time.Duration) int {
@@ -279,6 +295,12 @@ func run() error {
 			letters.Run(ctx)
 		}()
 	}
+	// Finished days are summed up for good; raw page views older than the storage period go (brief B5).
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		analytics.Rollup{DB: pool, Location: location, Log: log, KeepMonths: env.AnalyticsKeepMonths}.Run(ctx)
+	}()
 	go func() {
 		defer workers.Done()
 		stats.Run(ctx)

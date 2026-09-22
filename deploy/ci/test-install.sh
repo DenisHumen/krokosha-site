@@ -72,9 +72,26 @@ MOCK_TELEGRAM=$!
 trap 'kill "$MOCK_TELEGRAM" 2>/dev/null || true' EXIT
 bot_called() { grep -c "\"method\": \"$1\"" "$BOT_CALLS" || true; }
 
+# IndexNow: the engines are a small pretend server that writes every submission down.
+INDEXNOW_CALLS=$(mktemp)
+chmod 0666 "$INDEXNOW_CALLS"
+python3 "$SOURCE/deploy/ci/mock-indexnow.py" "$INDEXNOW_CALLS" 8089 &
+MOCK_INDEXNOW=$!
+trap 'kill "$MOCK_TELEGRAM" "$MOCK_INDEXNOW" 2>/dev/null || true' EXIT
+submissions() { wc -l <"$INDEXNOW_CALLS" | tr -d ' '; }
+submission() { sed -n "${1}p" "$INDEXNOW_CALLS"; } # the Nth, as the engine received it
+
+# GeoLite2: a key MaxMind will not accept. The installer must keep it to itself, say that the
+# database could not be fetched, and go on.
+MAXMIND_KEY='CI0000_a_fake_key_that_must_not_show_up_in_logs'
+MAXMIND_KEY_FILE=$(mktemp)
+printf '%s\n' "$MAXMIND_KEY" >"$MAXMIND_KEY_FILE"
+
 echo "::group::First installation"
-install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 2>&1 | tee "$INSTALL_LOG"
+install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 \
+  --maxmind-account 999999 --maxmind-key-file "$MAXMIND_KEY_FILE" --indexnow-api http://127.0.0.1:8089/indexnow 2>&1 | tee "$INSTALL_LOG"
 echo "::endgroup::"
+INDEXNOW_KEY=$(sed -n 's/^INDEXNOW_KEY=//p' /etc/krokosha/env)
 
 echo "Site"
 check "home page is served over HTTPS" test "$(status "https://$DOMAIN/")" = 200
@@ -260,6 +277,47 @@ check "the «rebuild now» button is accepted" test "$(admin_post /status/rebuil
 site_was_rebuilt() { [[ $(readlink -f /var/www/krokosha/current) != "$before_rebuild" && ! -e /var/lib/krokosha/requests/rebuild ]]; }
 check "…and a new release is published within two minutes" wait_for 120 site_was_rebuilt
 check "the button is in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.rebuild'")" = 1
+
+echo "IndexNow"
+key_served() { [[ $INDEXNOW_KEY =~ ^[0-9a-f]{32}$ && $(body "https://$DOMAIN/$INDEXNOW_KEY.txt") == "$INDEXNOW_KEY" ]]; }
+check "the installer generated a key and the site serves it" key_served
+check "the first release told the engines about every page of the sitemap, with the key and where it is served" test "$(submission 1)" = "{\"host\": \"$DOMAIN\", \"key\": \"$INDEXNOW_KEY\", \"keyLocation\": \"https://$DOMAIN/$INDEXNOW_KEY.txt\", \"urlList\": [\"https://$DOMAIN/\", \"https://$DOMAIN/uk/\", \"https://$DOMAIN/ru/\"]}"
+check "…the rebuild above, with nothing changed, told them nothing" test "$(submissions)" = 1
+# A change of the English home page only: the engines hear about that page and about nothing
+# else (a page whose HTML is byte for byte the release before did not change).
+sed -i 's/en: "Networks & network hardware"/en: "Networks \& network hardware (CI)"/' /opt/krokosha/repo/content/site.yaml
+before_rebuild=$(readlink -f /var/www/krokosha/current)
+check "a rebuild after a change of one page" test "$(admin_post /status/rebuild --data-urlencode "csrf=$(csrf)")" = 303
+check "…publishes a new release" wait_for 120 site_was_rebuilt
+check "…and tells the engines about that page only" test "$(submissions) $(submission 2 | python3 -c 'import json, sys; print(*json.load(sys.stdin)["urlList"])')" = "2 https://$DOMAIN/"
+runuser -u krokosha -- git -C /opt/krokosha/repo checkout --quiet -- content/site.yaml
+
+echo "GeoIP"
+check "the MaxMind account and key are in the settings and in /etc/GeoIP.conf, for root only" bash -c "grep -q '^MAXMIND_ACCOUNT_ID=999999\$' /etc/krokosha/env && grep -q '^MAXMIND_LICENSE_KEY=$MAXMIND_KEY\$' /etc/krokosha/env && grep -q '^AccountID 999999\$' /etc/GeoIP.conf && grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && [[ \$(stat -c '%a %U' /etc/GeoIP.conf) == '600 root' ]]"
+check "…and the key shows up nowhere in the installer's output" bash -c "! grep -qF '$MAXMIND_KEY' '$INSTALL_LOG'"
+check "a key MaxMind refuses: the installer said so and went on" grep -q 'could not be fetched yet' "$INSTALL_LOG"
+check "the database is fetched twice a week" systemctl is-enabled --quiet krokosha-geoipupdate.timer
+geo_not_installed() {
+  local page
+  page=$(admin_get "$ADMIN/status")
+  grep -q 'не установлена — страны и города' <<<"$page" || { grep -o 'База GeoIP.\{0,160\}' <<<"$page" | head -n 2; return 1; }
+}
+check "the status screen says there is no database yet" geo_not_installed
+# geoipupdate would bring the real file; one written by the test stands in for it, and the
+# service picks it up the way it picks up a fresh download.
+python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
+systemctl restart krokosha-api.service
+api_answers() { curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; }
+check "the API is back with the database" wait_for 30 api_answers
+geo_recorded() {
+  [[ $(beacon "${view/00112233aabbccdd/00112233aabbcc77}") == 204 ]] || return 1
+  sleep 3
+  [[ $(sql "SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc77')") == 'UA Kyiv' ]]
+}
+check "a page view gets its country and city from the database" geo_recorded
+check "…the address itself is still not stored" test "$(sql "SELECT COUNT(*) FROM analytics_pageviews WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
+geo_shown() { grep -q 'Украина' <(both_days /) && grep -q 'Test-City от 10.09.2026' <(admin_get "$ADMIN/status"); }
+check "the overview names the country, the status screen names the database" geo_shown
 
 echo "Requests in the admin area"
 check "the list shows the requests sent above" grep -q '#K-0001' <(admin_get "$ADMIN/leads")
@@ -546,6 +604,29 @@ if [[ $HAVE_WG == yes ]]; then
   check "packet forwarding is still on" test "$(sysctl -n net.ipv4.ip_forward)" = 1
 fi
 
+echo "Backups and the certificate watch"
+check "the nightly backup and the daily look at the certificates are scheduled" bash -c "systemctl is-enabled --quiet krokosha-backup.timer && systemctl is-enabled --quiet krokosha-certwatch.timer"
+check "a backup by hand" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+first_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
+check "…has the database, the settings, the mail and the files of requests" bash -c "gzip -t '$first_backup/mysql.sql.gz' && zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .leads.' && tar -tzf '$first_backup/config.tar.gz' | grep -qx config/env && test -s '$first_backup/mail/config/postfix-accounts.cf' && test -d '$first_backup/attachments' && test -s '$first_backup/MANIFEST'"
+check "…for root's eyes only: the secrets are in it" test "$(stat -c '%U %a' /srv/krokosha/backups) $(stat -c '%a' "$first_backup/config.tar.gz")" = "root 700 600"
+check "…and reports to the status screen" grep -q '"ok":true' /var/lib/krokosha/status/backup.json
+sleep 1
+check "a second backup" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+second_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
+a_letter=$(cd "$first_backup" && find mail/data -type f -path '*/cur/*' -o -type f -path '*/new/*' | head -n 1)
+check "…shares the letters that did not change with the first: a month of backups takes the room of one" bash -c "[[ -n '$a_letter' && '$first_backup' != '$second_backup' && \$(stat -c %i '$first_backup/$a_letter') == \$(stat -c %i '$second_backup/$a_letter') ]]"
+check "…without being the same file as the live letter" bash -c "[[ \$(stat -c %i '/srv/krokosha/$a_letter') != \$(stat -c %i '$second_backup/$a_letter') ]]"
+check "old backups go: --keep-daily 1 leaves one" bash -c "sleep 1; '$SOURCE/deploy/backup.sh' --keep-daily 1 --keep-weekly 0 >/dev/null 2>&1 && [[ \$(find /srv/krokosha/backups -mindepth 1 -maxdepth 1 -type d | wc -l) == 1 ]]"
+check "the certificate watch finds what the site and the mail server really serve" bash -c "'$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"name\":\"site\",\"host\":\"$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"name\":\"mail\",\"host\":\"mail.$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"ok\":true' /var/lib/krokosha/status/certwatch.json"
+# A certificate «about to expire» that nothing renews (this one is self-signed): the watch
+# fails, says so on the status screen, and the owner hears about it — once.
+check "a certificate that expires and does not renew makes the watch fail" bash -c "! CERTWATCH_RENEW_BELOW_DAYS=100000 '$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"ok\":false' /var/lib/krokosha/status/certwatch.json"
+CERTWATCH_RENEW_BELOW_DAYS=100000 "$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
+check "…the owner is told by mail and in Telegram, once a day" test "$(sql "SELECT COUNT(*) FROM outbox WHERE kind = 'system.alert'")" = 2
+check "…the letter arrives" mailcheck find "owner@$DOMAIN" "$MAILBOX_PASSWORD" 'certbot renew --dry-run'
+"$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
+
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)
 secrets_before=$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)
@@ -578,10 +659,46 @@ check "site answers after the rollback" test "$(status "https://$DOMAIN/")" = 20
 check "rollback paused the timer" bash -c "! systemctl is-active --quiet krokosha-sync.timer"
 check "at most three releases are kept" test "$(find /var/www/krokosha/releases -mindepth 1 -maxdepth 1 -type d | wc -l)" -le 3
 
+# The worst day: the server is gone. A backup that was copied elsewhere, a new installation, restore.sh.
+echo "::group::A lost server: backup elsewhere, a new installation, restore"
+elsewhere=$(mktemp -d)
+"$SOURCE/deploy/backup.sh" --to "$elsewhere"
+saved=$elsewhere/$(readlink "$elsewhere/latest")
+facts() { sql "SELECT CONCAT((SELECT COUNT(*) FROM leads), ' requests, ', (SELECT COUNT(*) FROM lead_messages), ' messages, ', (SELECT COUNT(*) FROM lead_attachments), ' files, ', (SELECT COUNT(*) FROM admin_users), ' administrators, ', (SELECT COUNT(*) FROM bot_users), ' in the bot, ', (SELECT COUNT(*) FROM analytics_pageviews), ' page views')"; }
+facts_before=$(facts)
+kept_before=$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)
+mail_before=$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)
+files_before=$(find /srv/krokosha/attachments -type f | wc -l)
+webhooks_before=$(bot_called setWebhook)
+/opt/krokosha/repo/deploy/uninstall.sh --yes --purge
+install_site
+database_password=$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)
+echo "::endgroup::"
+echo "Restore"
+check "a new installation knows nothing of the old one" test "$(sql 'SELECT COUNT(*) FROM leads')" = 0
+check "…and has secrets of its own" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" != "$kept_before"
+check "restore.sh puts the backup back" bash -c "'$SOURCE/deploy/restore.sh' --from '$saved' --yes >'$elsewhere/restore.log' 2>&1 || { tail -n 30 '$elsewhere/restore.log'; exit 1; }"
+check "requests, conversations, files, administrators, the bot's people and the statistics are back" test "$(facts)" = "$facts_before"
+check "…with the secret that signs addresses and links, the path of the admin area, the password of the service mailbox" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" = "$kept_before"
+check "…while the database password stays the new installation's own" test "$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)" = "$database_password"
+webhook_again() { [[ $(bot_called setWebhook) -gt $webhooks_before ]]; }
+check "the bot is back: the restored token was checked with Telegram, the webhook registered anew" wait_for 30 webhook_again
+check "the MaxMind key is back, /etc/GeoIP.conf is written again" bash -c "grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && systemctl is-enabled --quiet krokosha-geoipupdate.timer"
+check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)" = "$mail_before"
+check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
+check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
+check "the administrator signs in with the old password" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
+check "…and finds the requests" grep -q '#K-0001' <(admin_get "$ADMIN/leads?status=all")
+check "the mail server is healthy, and the client's mailbox opens with its old password" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && python3 '$SOURCE/deploy/ci/mailcheck.py' login 'client@$DOMAIN' '$CLIENT_PASSWORD'"
+mailbox_read() { grep -q 'на связи' <(admin_get "$ADMIN/status"); }
+check "the service reads its mailbox again" wait_for 60 mailbox_read
+rm -rf "$elsewhere"
+
 echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
 echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
+check "the MaxMind key and the database are gone with them" bash -c "[[ ! -e /etc/GeoIP.conf && ! -e /var/lib/GeoIP/GeoLite2-City.mmdb ]]"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"

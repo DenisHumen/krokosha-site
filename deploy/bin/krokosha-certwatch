@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Looks, once a day, at the certificates that visitors and mail programs are really served
+# (brief B8.7) — not at files on disk: a renewed certificate that nginx or the mail server never
+# loaded is as expired as an old one. With less than two weeks left it asks certbot to renew now;
+# if that does not help, the owner is told — by mail and in Telegram — once a day until it does.
+#
+#   sudo /opt/krokosha/repo/deploy/bin/krokosha-certwatch            (krokosha-certwatch.timer runs it)
+#
+# What it found is written to /var/lib/krokosha/status/certwatch.json for the «system status»
+# screen of the admin area.
+set -Eeuo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=deploy/lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
+
+STATUS_FILE=$KROKOSHA_STATE/status/certwatch.json
+RENEW_BELOW_DAYS=${CERTWATCH_RENEW_BELOW_DAYS:-14} # the environment may say otherwise: the installer's test does
+
+# days_left HOST PORT — how long the certificate served there for that name is still valid.
+# Prints «DAYS NOT_AFTER»; fails when nothing answers or what answers is no certificate.
+days_left() {
+  local host=$1 port=$2 not_after epoch
+  not_after=$(timeout 30 openssl s_client -connect "127.0.0.1:$port" -servername "$host" </dev/null 2>/dev/null |
+    openssl x509 -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')
+  [[ -n $not_after ]] || return 1
+  epoch=$(date -u -d "$not_after" +%s)
+  printf '%s %s\n' "$(((epoch - $(date -u +%s)) / 86400))" "$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# look — fills the arrays below for every certificate there should be.
+names=() hosts=() days=() until=()
+look() {
+  names=() hosts=() days=() until=()
+  local name host port found
+  while read -r name host port; do
+    [[ -n $name ]] || continue
+    names+=("$name")
+    hosts+=("$host")
+    if found=$(days_left "$host" "$port"); then
+      days+=("${found%% *}")
+      until+=("${found#* }")
+    else
+      days+=(unknown)
+      until+=('')
+    fi
+  done <<<"$TARGETS"
+}
+
+# worst — the smallest number of days left; «unknown» counts as none at all.
+worst() {
+  local least=99999 value
+  for value in "${days[@]}"; do
+    [[ $value == unknown ]] && value=-1
+    ((value < least)) && least=$value
+  done
+  printf '%s\n' "$least"
+}
+
+report() { # report OK RENEWED ERROR
+  local ok=$1 renewed=$2 error=$3 list='' i
+  for i in "${!names[@]}"; do
+    list+=$(printf '%s{"name":"%s","host":"%s","days_left":%s,"not_after":"%s"}' "${list:+,}" "${names[i]}" "${hosts[i]}" \
+      "$([[ ${days[i]} == unknown ]] && echo null || echo "${days[i]}")" "${until[i]}")
+  done
+  error=${error//\\/\\\\}
+  error=${error//\"/\\\"}
+  error=${error//$'\n'/ }
+  install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$(dirname "$STATUS_FILE")" 2>/dev/null || true
+  printf '{"checked_at":"%s","ok":%s,"renewed":%s,"certificates":[%s],"error":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$renewed" "$list" "$error" >"$STATUS_FILE.tmp"
+  chmod 0644 "$STATUS_FILE.tmp"
+  mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
+}
+
+main() {
+  require_root
+  [[ -f $KROKOSHA_ENV ]] || die "the site is not installed here: $KROKOSHA_ENV not found"
+  local domain tls_mode mail mail_host
+  domain=$(env_get DOMAIN)
+  tls_mode=$(env_get TLS_MODE)
+  mail=$(env_get MAIL)
+  mail_host=$(env_get MAIL_HOST)
+  if [[ $tls_mode == none || -z $domain ]]; then
+    names=() hosts=() days=() until=()
+    report true false ""
+    ok "the site is served without TLS: nothing to watch"
+    return 0
+  fi
+  TARGETS="site $domain 443"
+  [[ $mail != yes || -z $mail_host ]] || TARGETS+=$'\n'"mail $mail_host 993"
+
+  step "Certificates in use"
+  look
+  local i
+  for i in "${!names[@]}"; do
+    if [[ ${days[i]} == unknown ]]; then
+      warn "${names[i]} (${hosts[i]}): nothing answers, or not with a certificate"
+    else
+      ok "${names[i]} (${hosts[i]}): ${days[i]} days left, until ${until[i]}"
+    fi
+  done
+  local left renewed=false output=''
+  left=$(worst)
+  if ((left >= RENEW_BELOW_DAYS)); then
+    report true false ""
+    return 0
+  fi
+
+  if [[ $tls_mode == letsencrypt ]] && have certbot; then
+    step "Less than $RENEW_BELOW_DAYS days left: asking certbot to renew now"
+    # The deploy hook of the installer reloads nginx and restarts the mail server.
+    if output=$(certbot renew --no-random-sleep-on-renew 2>&1); then
+      renewed=true
+      ok "certbot renew finished"
+    else
+      warn "certbot renew failed"
+    fi
+    sleep 5
+    look
+    left=$(worst)
+  else
+    output="TLS_MODE=$tls_mode: this certificate is not renewed automatically."
+  fi
+  if ((left >= RENEW_BELOW_DAYS)); then
+    report true "$renewed" ""
+    ok "renewed: $left days left now"
+    return 0
+  fi
+
+  local subject details
+  if ((left < 0)); then
+    subject="Сертификат $domain: не удаётся прочитать или срок истёк"
+  else
+    subject="Сертификат $domain истекает через $left дн. и не продлевается"
+  fi
+  details=$(
+    for i in "${!names[@]}"; do printf '%s (%s): осталось дней: %s\n' "${names[i]}" "${hosts[i]}" "${days[i]}"; done
+    printf '\nЧто ответил certbot:\n%s\n\nПроверить руками: sudo certbot renew --dry-run\n' "${output: -1500}"
+  )
+  report false "$renewed" "$subject"
+  warn "$subject"
+  # One alert a day while the trouble lasts.
+  if [[ -x $KROKOSHA_ROOT/bin/krokosha-cli ]]; then
+    printf '%s\n' "$details" | "$KROKOSHA_ROOT/bin/krokosha-cli" alert --key "cert:$(date -u +%F)" --subject "$subject" ||
+      warn "the alert could not be queued"
+  fi
+  return 1
+}
+
+main "$@"

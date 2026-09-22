@@ -15,10 +15,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
@@ -44,6 +46,8 @@ type Options struct {
 	// Inbox tells how reading the service mailbox goes; nil — it is not read. Mailbox is its address.
 	Inbox   func(ctx context.Context) inbox.Status
 	Mailbox string
+	// Geo describes the GeoIP database; nil — geolocation is switched off.
+	Geo func() geo.Info
 }
 
 // Service collects the status.
@@ -76,6 +80,37 @@ type Sync struct {
 	Step       string    `json:"step"`   // where it stopped: sync, dependencies, build, check, publish, done
 	GitHub     string    `json:"github"` // ok | failed
 	Release    string    `json:"release"`
+}
+
+// Backup is what deploy/backup.sh reports about its last run (status/backup.json).
+type Backup struct {
+	Known      bool      `json:"-"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	OK         bool      `json:"ok"`
+	Name       string    `json:"name"`
+	Bytes      int64     `json:"bytes"`
+	CopiedTo   string    `json:"copied_to"` // where a copy went besides this disk; "" — nowhere
+	Error      string    `json:"error"`
+}
+
+// CertWatch is what deploy/bin/krokosha-certwatch found when it last looked
+// (status/certwatch.json): the certificates that are really served, the mail server's included.
+type CertWatch struct {
+	Known        bool                 `json:"-"`
+	CheckedAt    time.Time            `json:"checked_at"`
+	OK           bool                 `json:"ok"`
+	Renewed      bool                 `json:"renewed"`
+	Certificates []WatchedCertificate `json:"certificates"`
+	Error        string               `json:"error"`
+}
+
+// WatchedCertificate is one of them. DaysLeft is nil when nothing answered with a certificate.
+type WatchedCertificate struct {
+	Name     string    `json:"name"` // site | mail
+	Host     string    `json:"host"`
+	DaysLeft *int      `json:"days_left"`
+	NotAfter time.Time `json:"-"`
 }
 
 // GitHubData describes content/generated/github.json, the input of the projects section.
@@ -149,6 +184,9 @@ type Status struct {
 	LogReadAt        time.Time
 	Outbox           outbox.Stats
 	Inbox            *inbox.Status // nil — answers by mail are not read
+	Geo              *geo.Info     // nil — geolocation is switched off
+	Backup           Backup
+	CertWatch        CertWatch
 	Mailbox          string
 	Version          string
 	Uptime           time.Duration
@@ -162,6 +200,8 @@ func (s *Service) Collect(ctx context.Context) *Status {
 
 	out.Sync = s.readSync()
 	out.GitHub = s.readGitHub()
+	out.Backup.Known = s.readReport("backup.json", &out.Backup)
+	out.CertWatch.Known = s.readReport("certwatch.json", &out.CertWatch)
 	out.RebuildRequested = s.RebuildRequested()
 	if target, err := os.Readlink(filepath.Join(s.opts.WWWDir, "current")); err == nil {
 		out.Release = filepath.Base(target)
@@ -186,6 +226,10 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	if s.opts.Inbox != nil {
 		status := s.opts.Inbox(ctx)
 		out.Inbox, out.Mailbox = &status, s.opts.Mailbox
+	}
+	if s.opts.Geo != nil {
+		info := s.opts.Geo()
+		out.Geo = &info
 	}
 	out.Problems = problems(out, now)
 	return out
@@ -244,6 +288,20 @@ func problems(status *Status, now time.Time) []Problem {
 			add("warn", "Высокая нагрузка: %.2f при %d ядрах (за 5 минут).", host.Load[1], host.CPUs)
 		}
 	}
+	switch backup := status.Backup; {
+	case backup.Known && !backup.OK:
+		add("error", "Последняя резервная копия не сделана: %s", backup.Error)
+	case backup.Known && now.Sub(backup.FinishedAt) > 50*time.Hour:
+		add("warn", "Резервная копия не делалась больше двух суток: таймер krokosha-backup.timer остановлен?")
+	case !backup.Known && status.Uptime > 36*time.Hour:
+		add("warn", "Резервные копии ещё ни разу не делались: sudo systemctl status krokosha-backup.timer")
+	}
+	switch watch := status.CertWatch; {
+	case watch.Known && !watch.OK:
+		add("error", "%s. Подробности: journalctl -u krokosha-certwatch", strings.TrimSuffix(watch.Error, "."))
+	case watch.Known && status.HTTPS && now.Sub(watch.CheckedAt) > 72*time.Hour:
+		add("warn", "Сертификаты не проверялись больше трёх суток: таймер krokosha-certwatch.timer остановлен?")
+	}
 	if status.Outbox.Failed > 0 {
 		add("error", "Не доставлено уведомлений за 30 дней: %d. Последняя ошибка: %s", status.Outbox.Failed, status.Outbox.LastError)
 	}
@@ -259,6 +317,10 @@ func problems(status *Status, now time.Time) []Problem {
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")
 	}
+	// GeoLite2 comes out twice a week; a database older than six weeks means geoipupdate stopped.
+	if info := status.Geo; info != nil && info.Loaded && now.Sub(info.Built) > 42*24*time.Hour {
+		add("warn", "База GeoIP собрана %s и не обновлялась: sudo systemctl status krokosha-geoipupdate.timer, sudo geoipupdate -v", info.Built.Format("02.01.2006"))
+	}
 	return out
 }
 
@@ -270,6 +332,12 @@ func (s *Service) readSync() Sync {
 	}
 	out.Known = true
 	return out
+}
+
+// readReport reads what a maintenance script left in the status directory.
+func (s *Service) readReport(name string, into any) bool {
+	raw, err := os.ReadFile(filepath.Join(s.opts.StateDir, "status", name))
+	return err == nil && json.Unmarshal(raw, into) == nil
 }
 
 func (s *Service) readGitHub() GitHubData {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
 // Things the bot says without being asked (brief B10.4): a second push about a new request
@@ -158,4 +159,43 @@ func (b *Bot) digest(ctx context.Context) {
 		return
 	}
 	b.broadcast(ctx, 0, "", strings.Join([]string{head, "", list}, "\n"), buttons)
+}
+
+// alert tells the owners that the server needs a look: a certificate that does not renew, a
+// backup that fails. Members who only work with requests are not bothered; nothing here is
+// about a person, so nothing has to be remembered for wiping.
+func (b *Bot) alert(ctx context.Context, task outbox.Task) error {
+	alert, err := outbox.ReadAlert(task)
+	if err != nil {
+		return err
+	}
+	recipients, err := b.opts.Access.Recipients(ctx)
+	if err != nil {
+		return err
+	}
+	shown, shortened := cut(alert.Text, 3000)
+	if shortened {
+		shown += "…"
+	}
+	text := "🛠 <b>" + Escape(alert.Subject) + "</b>\n\n" + Escape(shown)
+	owners := 0
+	var failed error
+	for _, member := range recipients {
+		if !member.Owner() {
+			continue
+		}
+		owners++
+		_, err := b.opts.API.Send(ctx, Outgoing{ChatID: member.TelegramID, Text: text})
+		var refused *APIError
+		if errors.As(err, &refused) && refused.Gone() {
+			continue // this owner blocked the bot: nobody to tell
+		}
+		if err != nil {
+			failed = errors.Join(failed, err)
+		}
+	}
+	if owners == 0 {
+		return outbox.NotReady(errors.New("no owner has joined the bot yet"))
+	}
+	return failed
 }

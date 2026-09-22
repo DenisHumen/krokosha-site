@@ -92,7 +92,30 @@
               {{- if .Unmatched}} · <a href="{{path "/inbox"}}">писем без заявки: {{.Unmatched}}</a>{{end}}
             {{- else}}<span class="dot"></span>не настроена — ответы клиентов письмом не читаются{{end -}}
           </dd></div>
+          <div><dt>Резервная копия</dt><dd>
+            {{- with $s.Backup}}
+              {{- if not .Known}}<span class="dot"></span>ещё не делалась — первая будет ночью
+              {{- else if .OK}}<span class="dot dot-ok"></span>{{ago .FinishedAt}} · {{bytes .Bytes}}{{if .CopiedTo}} · копия: <span class="mono">{{.CopiedTo}}</span>{{else}} · <span class="muted">только на этом диске</span>{{end}}
+              {{- else}}<span class="dot dot-error"></span>не сделана: {{.Error}}{{end}}
+            {{- end -}}
+          </dd></div>
+          <div><dt>Слежение за сертификатами</dt><dd>
+            {{- with $s.CertWatch}}
+              {{- if not .Known}}<span class="dot"></span>ещё не проверялись
+              {{- else}}<span class="dot {{if .OK}}dot-ok{{else}}dot-error{{end}}"></span>{{ago .CheckedAt}}{{if .Renewed}} · продлены{{end}}
+                {{- range .Certificates}} · {{if eq .Name "mail"}}почта{{else}}сайт{{end}}: {{if .DaysLeft}}{{plural .DaysLeft "день" "дня" "дней"}}{{else}}не отвечает{{end}}{{end}}
+              {{- end}}
+            {{- end -}}
+          </dd></div>
           <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
+          <div><dt>База GeoIP</dt><dd>
+            {{- with $s.Geo}}
+              {{- if .Loaded}}<span class="dot dot-ok"></span>{{.Type}} от {{.Built.Format "02.01.2006"}}
+              {{- else}}<span class="dot"></span>не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>
+              {{- end}}
+            {{- else}}<span class="dot"></span>выключена (GEOIP_DB=off)
+            {{- end -}}
+          </dd></div>
         </dl>
       </div>
     </section>

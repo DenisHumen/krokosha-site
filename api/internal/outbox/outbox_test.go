@@ -255,3 +255,43 @@ func TestQueueingIsPartOfTheCallersTransaction(t *testing.T) {
 	}
 	f.deliver(0) // the request was not saved — nobody is told about it either
 }
+
+// Alerts about the server go through the same queue — once per occasion, however often a
+// watchdog notices the same trouble.
+func TestAnAlertIsQueuedOncePerOccasion(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alert := Alert{Subject: " Сертификат не продлевается ", Text: "certbot renew: connection refused\n"}
+	for range 3 {
+		if err := EnqueueAlert(ctx, f.db, f.now, "cert:2026-09-19", alert); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := EnqueueAlert(ctx, f.db, f.now, "cert:2026-09-20", alert); err != nil {
+		t.Fatal(err)
+	}
+	var queued int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM outbox WHERE kind = ? AND lead_id IS NULL`, KindAlert).Scan(&queued); err != nil || queued != 4 {
+		t.Fatalf("queued = %d (two occasions × two channels), err = %v", queued, err)
+	}
+	if err := EnqueueAlert(ctx, f.db, f.now, "", alert); err == nil {
+		t.Error("an alert without a key was queued")
+	}
+	if err := EnqueueAlert(ctx, f.db, f.now, "key", Alert{Text: "no subject"}); err == nil {
+		t.Error("an alert without a subject was queued")
+	}
+
+	inbox := &mailbox{}
+	f.worker.Register(ChannelEmail, inbox)
+	f.deliver(4) // the two for Telegram wait for a bot
+	if len(inbox.got) != 2 {
+		t.Fatalf("delivered by mail: %d", len(inbox.got))
+	}
+	got, err := ReadAlert(inbox.got[0])
+	if err != nil || got.Subject != "Сертификат не продлевается" || got.Text != "certbot renew: connection refused" {
+		t.Errorf("the alert as the sender sees it: %+v, %v", got, err)
+	}
+	if _, err := ReadAlert(Task{Payload: []byte(`{"lead_id":1}`)}); !IsPermanent(err) {
+		t.Errorf("a task that is no alert: %v", err)
+	}
+}

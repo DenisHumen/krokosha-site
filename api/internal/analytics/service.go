@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 )
 
@@ -37,7 +38,10 @@ type Options struct {
 	// IgnoreCookie names the session cookie of the admin area: whoever carries it is the owner
 	// looking at their own site, not a visitor.
 	IgnoreCookie string
-	Now          func() time.Time
+	// Geo tells the country and the city of an address (brief B5). Nil, or without a database:
+	// they stay unknown.
+	Geo *geo.Locator
+	Now func() time.Time
 }
 
 // Service accepts event batches and stores them.
@@ -204,6 +208,8 @@ func (s *Service) buildRecord(ctx context.Context, batch *Batch, salt [32]byte, 
 	}
 	raw, _ := hex.DecodeString(batch.Pageview) // validated by ParseBatch
 	copy(rec.pageviewID[:], raw)
+	// The whole address is asked about, the answer is stored, the address is not.
+	rec.place = s.opts.Geo.Locate(ip)
 	rec.refKind, rec.refHost = ClassifyReferrer(batch.Referrer, s.opts.SiteHost)
 
 	var fresh [8]byte

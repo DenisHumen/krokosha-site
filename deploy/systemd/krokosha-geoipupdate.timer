@@ -1,0 +1,10 @@
+[Unit]
+Description=krokosha site: GeoLite2 update twice a week (MaxMind publishes on Tuesdays and Fridays)
+
+[Timer]
+OnCalendar=Wed,Sat *-*-* 05:10:00
+RandomizedDelaySec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

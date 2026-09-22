@@ -4,6 +4,9 @@
     <h1>{{.Data.Period.Title}}</h1>
     {{template "period" .Data.Period}}
   </div>
+  {{if $o.Aggregated}}
+    <p class="notice">Период старше срока хранения подробных данных: показаны дневные итоги, которые хранятся бессрочно. Часы визитов, список визитов и экспорт за это время недоступны; день, который ещё не закончился, в итоги не входит.</p>
+  {{end}}
 
   {{/* Three stacks, as in the reference: the timeline over two of them, the numbers on the right. */}}
   <div class="dashboard" data-live="{{path "/live"}}">
@@ -172,7 +175,7 @@
       <h2 class="card-title">География</h2>
       <div class="card-body">
         {{template "shares" $o.Countries}}
-        <p class="muted">Страна определяется по усечённому адресу, когда на сервере установлена база GeoIP.</p>
+        <p class="muted">Страна и город определяются на сервере по базе GeoIP, если она установлена (экран «Состояние»); сам адрес хранится усечённым.</p>
       </div>
     </section>
 

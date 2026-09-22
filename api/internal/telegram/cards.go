@@ -213,6 +213,9 @@ func (b *Bot) sayAbout(ctx context.Context, leadID int64, message Outgoing) {
 
 // Send delivers a task of the «telegram» channel (outbox.Sender).
 func (b *Bot) Send(ctx context.Context, task outbox.Task) error {
+	if task.Kind == outbox.KindAlert {
+		return b.alert(ctx, task)
+	}
 	var payload leads.TaskPayload
 	if err := json.Unmarshal(task.Payload, &payload); err != nil || payload.LeadID <= 0 {
 		return outbox.Permanent(fmt.Errorf("unreadable task payload: %s", task.Payload))
