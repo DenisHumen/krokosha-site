@@ -223,6 +223,20 @@ func TestAnonymousVisitorsSeeOnlyTheLoginForm(t *testing.T) {
 	if got := s.do(http.MethodGet, prefix+"/static/admin.css", nil, nil); got.status != http.StatusOK || !strings.Contains(got.header.Get("Content-Type"), "text/css") {
 		t.Errorf("stylesheet: %d %s", got.status, got.header.Get("Content-Type"))
 	}
+	// The fonts come from the admin area itself (the CSP allows nothing from elsewhere).
+	css := s.do(http.MethodGet, prefix+"/static/admin.css", nil, nil).body
+	if strings.Contains(css, "googleapis") || strings.Contains(css, "@import") {
+		t.Error("the stylesheet loads something from elsewhere")
+	}
+	for _, font := range []string{"geologica-latin", "geologica-cyrillic", "fira-code-latin", "fira-code-cyrillic"} {
+		path := "/static/fonts/" + font + "-wght-normal.woff2"
+		if !strings.Contains(css, strings.TrimPrefix(path, "/static/")) {
+			t.Errorf("admin.css does not use %s", path)
+		}
+		if got := s.do(http.MethodGet, prefix+path, nil, nil); got.status != http.StatusOK || got.header.Get("Content-Type") != "font/woff2" {
+			t.Errorf("font %s: %d %s", font, got.status, got.header.Get("Content-Type"))
+		}
+	}
 }
 
 func TestSignInAndOut(t *testing.T) {
