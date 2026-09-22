@@ -33,6 +33,9 @@ Usage:
   krokosha-cli bot <cmd>       the Telegram bot: check, invite, users, disable, enable
   krokosha-cli alert [flags]   queue a message about the server for its owner (mail and
                                Telegram); the details are read from standard input
+  krokosha-cli indexnow [flags]
+                               tell the search engines of IndexNow which pages of a new
+                               release changed (build-release.sh does it after every release)
 
 Run "krokosha-cli <command> -h" for the flags of a command.
 
@@ -64,6 +67,8 @@ func run() int {
 		err = runBot(ctx, args)
 	case "alert":
 		err = runAlert(ctx, args)
+	case "indexnow":
+		err = runIndexNow(ctx, args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

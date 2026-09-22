@@ -60,6 +60,10 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
   --mailbox-password-file FILE
                          the password of that mailbox on the first line of FILE, instead of
                          asking for it without echo; at least 12 characters
+  --no-indexnow          do not tell search engines about changed pages through IndexNow
+                         (Bing, DuckDuckGo, Yandex…). On by default: a key is generated once
+                         and served as /<key>.txt; every release submits the pages that changed
+  --indexnow-api URL     another IndexNow endpoint (tests). Default: https://api.indexnow.org/indexnow
   --repo URL             git repository to install from (default: $DEFAULT_REPO)
   --branch NAME          branch or tag (default: main)
   --from-env             take every setting from $KROKOSHA_ENV (what update.sh does)
@@ -75,6 +79,7 @@ REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
 MAXMIND_ACCOUNT='' MAXMIND_KEY_FILE=''
+INDEXNOW='' INDEXNOW_API=''
 MAIL='' MAILBOX='' MAIL_NAME='' MAILBOX_PASSWORD_FILE=''
 EXTRA_PORTS=()
 
@@ -96,6 +101,8 @@ while [[ $# -gt 0 ]]; do
     --telegram-api) TELEGRAM_API=${2:?--telegram-api needs a value}; shift 2 ;;
     --maxmind-account) MAXMIND_ACCOUNT=${2:?--maxmind-account needs a value}; shift 2 ;;
     --maxmind-key-file) MAXMIND_KEY_FILE=${2:?--maxmind-key-file needs a value}; shift 2 ;;
+    --no-indexnow) INDEXNOW=no; shift ;;
+    --indexnow-api) INDEXNOW_API=${2:?--indexnow-api needs a value}; shift 2 ;;
     --no-mail) MAIL=no; shift ;;
     --mailbox) MAILBOX=${2:?--mailbox needs a value}; shift 2 ;;
     --mail-name) MAIL_NAME=${2:?--mail-name needs a value}; shift 2 ;;
@@ -184,6 +191,10 @@ MAILBOX=${MAILBOX,,}
 case $MAIL_NAME in *[\"\<\>\\]*) die "--mail-name must not contain quotes, angle brackets or backslashes" ;; esac
 MAIL_HOST="mail.$DOMAIN"
 [[ -z $TELEGRAM_API || $TELEGRAM_API =~ ^https?://[^[:space:]]+$ ]] || die "--telegram-api must be an address like https://api.telegram.org"
+# IndexNow: on unless refused once (the refusal is remembered).
+: "${INDEXNOW:=$(env_get INDEXNOW)}"
+: "${INDEXNOW:=yes}"
+[[ -z $INDEXNOW_API || $INDEXNOW_API =~ ^https?://[^[:space:]]+$ ]] || die "--indexnow-api must be an address like https://api.indexnow.org/indexnow"
 [[ -z $MAXMIND_ACCOUNT || $MAXMIND_ACCOUNT =~ ^[0-9]{1,12}$ ]] || die "--maxmind-account is a number (the account ID shown at maxmind.com)"
 [[ -z $MAXMIND_KEY_FILE || -r $MAXMIND_KEY_FILE ]] || die "--maxmind-key-file: cannot read $MAXMIND_KEY_FILE"
 [[ -z $MAXMIND_KEY_FILE || -n $MAXMIND_ACCOUNT || -n $(env_get MAXMIND_ACCOUNT_ID) ]] || die "--maxmind-key-file needs --maxmind-account"
@@ -452,6 +463,15 @@ if [[ -n $telegram_token ]]; then
   env_set TELEGRAM_BOT_TOKEN "$telegram_token"
 fi
 [[ -z $TELEGRAM_API ]] || env_set TELEGRAM_API_URL "$TELEGRAM_API"
+# IndexNow (brief B7): the key is no secret — it is served by the site — but it must stay the
+# same, or the engines would have to learn a new one.
+env_set INDEXNOW "$INDEXNOW"
+if [[ $INDEXNOW == yes ]]; then
+  env_default INDEXNOW_KEY "$(openssl rand -hex 16)"
+else
+  env_set INDEXNOW_KEY ""
+fi
+[[ -z $INDEXNOW_API ]] || env_set INDEXNOW_API "$INDEXNOW_API"
 # GeoLite2 (brief B5): the account and the key live here; /etc/GeoIP.conf is written from them.
 [[ -z $MAXMIND_ACCOUNT ]] || env_set MAXMIND_ACCOUNT_ID "$MAXMIND_ACCOUNT"
 if [[ -n $MAXMIND_KEY_FILE ]]; then
@@ -1030,6 +1050,8 @@ cat >&2 <<EOF
   Roll back:  sudo $KROKOSHA_REPO/deploy/rollback.sh
   Backups:    $DATA_DIR/backups, every night   (now: sudo $KROKOSHA_REPO/deploy/backup.sh; back: sudo $KROKOSHA_REPO/deploy/restore.sh --from DIR)
   GeoIP:      $geo_summary
+  IndexNow:   $([[ $INDEXNOW == yes ]] && echo "on — the key is served as $SITE_URL/$(env_get INDEXNOW_KEY).txt; changed pages are submitted after every release" || echo "off (--no-indexnow)")
+  Search:     Google Search Console and Bing Webmaster Tools are connected by hand once: deploy/README.md, «Поисковики»
   Logs:       journalctl -u krokosha-sync.service, /var/log/krokosha/
   Settings:   $KROKOSHA_ENV
   Data:       $DATA_DIR   (database, cache, settings — copy this directory to move the site)

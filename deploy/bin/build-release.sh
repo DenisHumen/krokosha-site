@@ -93,12 +93,27 @@ step=publish
 release_name=$(date -u +%Y%m%d-%H%M%S)
 release="$WWW/releases/$release_name"
 cp -a dist "$release"
+# IndexNow (brief B7): the file that proves submissions come from this site.
+if [[ -n ${INDEXNOW_KEY:-} ]]; then
+  printf '%s' "$INDEXNOW_KEY" >"$release/$INDEXNOW_KEY.txt"
+fi
 chmod -R u=rwX,go=rX "$release"
+previous=$(readlink -f "$WWW/current" 2>/dev/null || true)
 ln -sfn "$release" "$WWW/current.new"
 mv -T "$WWW/current.new" "$WWW/current"
 log "published $release"
 
-# 5. Keep the last releases for rollback.
+# 5. The search engines of IndexNow (Bing and the ones on its index, Yandex…) hear which pages
+#    changed since the previous release; Google reads the sitemap. Not being able to tell them
+#    is logged, not fatal: the next release tells them again.
+if [[ -n ${INDEXNOW_KEY:-} ]]; then
+  step=indexnow
+  tell=(--release "$release")
+  [[ -z $previous ]] || tell+=(--previous "$previous")
+  "$ROOT/bin/krokosha-cli" indexnow "${tell[@]}" || log "IndexNow: the engines were not told this time"
+fi
+
+# 6. Keep the last releases for rollback.
 live=$(readlink -f "$WWW/current")
 find "$WWW/releases" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n "+$((KEEP_RELEASES + 1))" |
   while read -r old; do

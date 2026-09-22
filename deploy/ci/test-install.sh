@@ -72,6 +72,15 @@ MOCK_TELEGRAM=$!
 trap 'kill "$MOCK_TELEGRAM" 2>/dev/null || true' EXIT
 bot_called() { grep -c "\"method\": \"$1\"" "$BOT_CALLS" || true; }
 
+# IndexNow: the engines are a small pretend server that writes every submission down.
+INDEXNOW_CALLS=$(mktemp)
+chmod 0666 "$INDEXNOW_CALLS"
+python3 "$SOURCE/deploy/ci/mock-indexnow.py" "$INDEXNOW_CALLS" 8089 &
+MOCK_INDEXNOW=$!
+trap 'kill "$MOCK_TELEGRAM" "$MOCK_INDEXNOW" 2>/dev/null || true' EXIT
+submissions() { wc -l <"$INDEXNOW_CALLS" | tr -d ' '; }
+submission() { sed -n "${1}p" "$INDEXNOW_CALLS"; } # the Nth, as the engine received it
+
 # GeoLite2: a key MaxMind will not accept. The installer must keep it to itself, say that the
 # database could not be fetched, and go on.
 MAXMIND_KEY='CI0000_a_fake_key_that_must_not_show_up_in_logs'
@@ -80,8 +89,9 @@ printf '%s\n' "$MAXMIND_KEY" >"$MAXMIND_KEY_FILE"
 
 echo "::group::First installation"
 install_site --allow 8443/tcp --telegram-token-file "$BOT_TOKEN_FILE" --telegram-api http://127.0.0.1:8088 \
-  --maxmind-account 999999 --maxmind-key-file "$MAXMIND_KEY_FILE" 2>&1 | tee "$INSTALL_LOG"
+  --maxmind-account 999999 --maxmind-key-file "$MAXMIND_KEY_FILE" --indexnow-api http://127.0.0.1:8089/indexnow 2>&1 | tee "$INSTALL_LOG"
 echo "::endgroup::"
+INDEXNOW_KEY=$(sed -n 's/^INDEXNOW_KEY=//p' /etc/krokosha/env)
 
 echo "Site"
 check "home page is served over HTTPS" test "$(status "https://$DOMAIN/")" = 200
@@ -576,21 +586,47 @@ check "…the owner is told by mail and in Telegram, once a day" test "$(sql "SE
 check "…the letter arrives" mailcheck find "owner@$DOMAIN" "$MAILBOX_PASSWORD" 'certbot renew --dry-run'
 "$SOURCE/deploy/bin/krokosha-certwatch" >/dev/null 2>&1 || true
 
+echo "IndexNow"
+# The session was ended above («signing out ends the session»): the admin area is needed again.
+check "the administrator signs in again" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
+check "the installer generated a key and the site serves it" bash -c "[[ \$(body 'https://$DOMAIN/$INDEXNOW_KEY.txt') == '$INDEXNOW_KEY' && '$INDEXNOW_KEY' =~ ^[0-9a-f]{32}\$ ]]"
+check "the first release told the engines about every page of the sitemap, with the key and where it is served" test "$(submission 1)" = "{\"host\": \"$DOMAIN\", \"key\": \"$INDEXNOW_KEY\", \"keyLocation\": \"https://$DOMAIN/$INDEXNOW_KEY.txt\", \"urlList\": [\"https://$DOMAIN/\", \"https://$DOMAIN/uk/\", \"https://$DOMAIN/ru/\"]}"
+check "…the rebuild above, with nothing changed, told them nothing" test "$(submissions)" = 1
+# A change of the English home page only: the engines hear about that page and about nothing
+# else (a page whose HTML is byte for byte the release before did not change).
+sed -i 's/en: "Networks & network hardware"/en: "Networks \& network hardware (CI)"/' /opt/krokosha/repo/content/site.yaml
+before_rebuild=$(readlink -f /var/www/krokosha/current)
+check "a rebuild after a change of one page" test "$(admin_post /status/rebuild --data-urlencode "csrf=$(csrf)")" = 303
+check "…publishes a new release" wait_for 120 site_was_rebuilt
+check "…and tells the engines about that page only" test "$(submissions) $(submission 2 | python3 -c 'import json, sys; print(*json.load(sys.stdin)["urlList"])')" = "2 https://$DOMAIN/"
+runuser -u krokosha -- git -C /opt/krokosha/repo checkout --quiet -- content/site.yaml
+
 echo "GeoIP"
 check "the MaxMind account and key are in the settings and in /etc/GeoIP.conf, for root only" bash -c "grep -q '^MAXMIND_ACCOUNT_ID=999999\$' /etc/krokosha/env && grep -q '^MAXMIND_LICENSE_KEY=$MAXMIND_KEY\$' /etc/krokosha/env && grep -q '^AccountID 999999\$' /etc/GeoIP.conf && grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && [[ \$(stat -c '%a %U' /etc/GeoIP.conf) == '600 root' ]]"
 check "…and the key shows up nowhere in the installer's output" bash -c "! grep -qF '$MAXMIND_KEY' '$INSTALL_LOG'"
 check "a key MaxMind refuses: the installer said so and went on" grep -q 'could not be fetched yet' "$INSTALL_LOG"
 check "the database is fetched twice a week" systemctl is-enabled --quiet krokosha-geoipupdate.timer
-check "the status screen says there is no database yet" grep -q 'не установлена — страны и города' <(admin_get "$ADMIN/status")
+geo_not_installed() {
+  local page
+  page=$(admin_get "$ADMIN/status")
+  grep -q 'не установлена — страны и города' <<<"$page" || { grep -o 'База GeoIP.\{0,160\}' <<<"$page" | head -n 2; return 1; }
+}
+check "the status screen says there is no database yet" geo_not_installed
 # geoipupdate would bring the real file; one written by the test stands in for it, and the
 # service picks it up the way it picks up a fresh download.
 python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
 systemctl restart krokosha-api.service
 api_answers() { curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; }
 check "the API is back with the database" wait_for 30 api_answers
-check "a page view gets its country and city from the database" bash -c "[[ \$(beacon '${view/00112233aabbccdd/00112233aabbcc77}') == 204 ]] && sleep 3 && [[ \$(sql \"SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc77')\") == 'UA Kyiv' ]]"
+geo_recorded() {
+  [[ $(beacon "${view/00112233aabbccdd/00112233aabbcc77}") == 204 ]] || return 1
+  sleep 3
+  [[ $(sql "SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc77')") == 'UA Kyiv' ]]
+}
+check "a page view gets its country and city from the database" geo_recorded
 check "…the address itself is still not stored" test "$(sql "SELECT COUNT(*) FROM analytics_pageviews WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
-check "the overview names the country, the status screen names the database" bash -c "grep -q 'Украина' <(both_days /) && grep -q 'Test-City от 10.09.2026' <(admin_get '$ADMIN/status')"
+geo_shown() { grep -q 'Украина' <(both_days /) && grep -q 'Test-City от 10.09.2026' <(admin_get "$ADMIN/status"); }
+check "the overview names the country, the status screen names the database" geo_shown
 
 echo "::group::Second run: must change nothing and break nothing"
 before=$(readlink -f /var/www/krokosha/current)

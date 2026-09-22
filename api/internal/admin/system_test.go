@@ -100,6 +100,28 @@ func TestStatusScreenAndRebuildButton(t *testing.T) {
 	if strings.Contains(page.body, "Сертификат") {
 		t.Error("a certificate card on a site without HTTPS")
 	}
+	// The reports of the night: a backup, and the certificate watch with one host that answered
+	// and one that did not (days_left null). The page must draw both.
+	for name, report := range map[string]string{
+		"backup.json":    `{"started_at":"2026-09-22T03:30:00Z","finished_at":"2026-09-22T03:31:10Z","ok":true,"name":"20260922-033000","bytes":3600000,"copied_to":"","error":""}`,
+		"certwatch.json": `{"checked_at":"2026-09-22T04:40:00Z","ok":true,"renewed":false,"certificates":[{"name":"site","host":"krokosha.xyz","days_left":61,"not_after":"2026-11-22T00:00:00Z"},{"name":"mail","host":"mail.krokosha.xyz","days_left":null,"not_after":""}],"error":""}`,
+	} {
+		if err := os.MkdirAll(filepath.Join(s.state, "status"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(s.state, "status", name), []byte(report), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page = s.do(http.MethodGet, prefix+"/status", nil, nil)
+	if page.status != http.StatusOK {
+		t.Fatalf("status with the reports of the night: %d", page.status)
+	}
+	for _, want := range []string{"сайт: 61 день", "почта: не отвечает", "3,4 МБ", "только на этом диске"} {
+		if !strings.Contains(page.body, want) {
+			t.Errorf("the status screen lacks %q", want)
+		}
+	}
 
 	request := filepath.Join(s.state, "requests", "rebuild")
 	if got := s.do(http.MethodPost, prefix+"/status/rebuild", url.Values{"csrf": {"forged"}}, nil); got.status != http.StatusForbidden {
