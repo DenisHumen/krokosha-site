@@ -9,8 +9,9 @@
 # its own database and cache passwords, and keeps them. What comes from the backup: the database,
 # the mail (letters, mailboxes, the DKIM key), the files of requests, and the settings that must
 # stay what they were — the secret that signs reply addresses and links, the path of the admin
-# area, the password of the service mailbox, the bot's token. The installer then runs once more,
-# so that nginx, the mail server and the API pick all of it up.
+# area, the password of the service mailbox, the bot's token and the address of the Bot API server
+# it was made for. The installer then runs once more, so that nginx, the mail server and the API
+# pick all of it up.
 #
 # Everything the installed site has in those places is REPLACED.
 set -Eeuo pipefail
@@ -19,11 +20,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=deploy/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; }
 
 # Settings that travel with a backup. Everything else — passwords of the local database and
 # cache, paths, the domain, the way TLS is done — belongs to the installation.
-RESTORED_KEYS='^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD|MAILBOX|MAIL_NAME|TELEGRAM_BOT_TOKEN|TELEGRAM_MODE|TELEGRAM_REMIND_MINUTES|TELEGRAM_DIGEST_AT|GITHUB_TOKEN|LEADS_[A-Z_]+|ANALYTICS_[A-Z_]+|BACKUP_[A-Z_]+|INDEXNOW_KEY|MAXMIND_[A-Z_]+)='
+RESTORED_KEYS='^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD|MAILBOX|MAIL_NAME|TELEGRAM_BOT_TOKEN|TELEGRAM_API_URL|TELEGRAM_MODE|TELEGRAM_REMIND_MINUTES|TELEGRAM_DIGEST_AT|GITHUB_TOKEN|LEADS_[A-Z_]+|ANALYTICS_[A-Z_]+|BACKUP_[A-Z_]+|INDEXNOW_KEY|MAXMIND_[A-Z_]+)='
 
 main() {
   require_root

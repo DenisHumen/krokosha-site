@@ -135,11 +135,18 @@ func writeDatabase(t *testing.T, path string, networks map[string]map[string]any
 		"build_epoch": uint64(1789000000), "database_type": "Test-City", "description": map[string]any{"en": "written by a test"},
 		"ip_version": uint16(4), "languages": []any{"en"}, "node_count": uint32(len(inner)), "record_size": uint16(24), //nolint:gosec // a handful of nodes
 	}))
+	replace(t, path, out.Bytes())
+}
+
+// replace puts a file in place the way geoipupdate does: written beside, then renamed over the
+// old one, which stays readable for whoever has it open (mapped into memory).
+func replace(t *testing.T, path string, content []byte) {
+	t.Helper()
 	temporary := path + ".new"
-	if err := os.WriteFile(temporary, out.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(temporary, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(temporary, path); err != nil { // the way geoipupdate replaces the file
+	if err := os.Rename(temporary, path); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -164,14 +171,14 @@ func TestLocate(t *testing.T) {
 		t.Fatal("the database was not opened")
 	}
 	for address, want := range map[string]Place{
-		"203.0.113.7":         {Country: "UA", City: "Kyiv"},
-		"203.0.113.255":       {Country: "UA", City: "Kyiv"},
-		"::ffff:203.0.113.7":  {Country: "UA", City: "Kyiv"}, // how a dual-stack listener sees an IPv4 visitor
-		"198.51.100.1":        {Country: "DE"},
-		"198.51.100.200":      {},                            // the other half of that network is nobody's
-		"8.8.8.8":             {},
-		"2001:db8::1":         {}, // this database knows IPv4 only
-		"10.0.0.1":            {},
+		"203.0.113.7":        {Country: "UA", City: "Kyiv"},
+		"203.0.113.255":      {Country: "UA", City: "Kyiv"},
+		"::ffff:203.0.113.7": {Country: "UA", City: "Kyiv"}, // how a dual-stack listener sees an IPv4 visitor
+		"198.51.100.1":       {Country: "DE"},
+		"198.51.100.200":     {}, // the other half of that network is nobody's
+		"8.8.8.8":            {},
+		"2001:db8::1":        {}, // this database knows IPv4 only
+		"10.0.0.1":           {},
 	} {
 		if got := locator.Locate(net.ParseIP(address)); got != want {
 			t.Errorf("%s: %+v, want %+v", address, got, want)
@@ -207,9 +214,7 @@ func TestANewDatabaseIsNoticed(t *testing.T) {
 	}
 
 	// A file that is no database does not take the old one away.
-	if err := os.WriteFile(path, []byte("not a database"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	replace(t, path, []byte("not a database"))
 	_ = os.Chtimes(path, time.Now().Add(2*time.Hour), time.Now().Add(2*time.Hour))
 	locator.checked = time.Time{}
 	if got := locator.Locate(net.ParseIP("203.0.113.7")); got.Country != "PL" {

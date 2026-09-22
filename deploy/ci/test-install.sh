@@ -611,6 +611,7 @@ facts_before=$(facts)
 kept_before=$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)
 mail_before=$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)
 files_before=$(find /srv/krokosha/attachments -type f | wc -l)
+webhooks_before=$(bot_called setWebhook)
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
 install_site
 database_password=$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)
@@ -622,6 +623,8 @@ check "restore.sh puts the backup back" bash -c "'$SOURCE/deploy/restore.sh' --f
 check "requests, conversations, files, administrators, the bot's people and the statistics are back" test "$(facts)" = "$facts_before"
 check "…with the secret that signs addresses and links, the path of the admin area, the password of the service mailbox" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" = "$kept_before"
 check "…while the database password stays the new installation's own" test "$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)" = "$database_password"
+webhook_again() { [[ $(bot_called setWebhook) -gt $webhooks_before ]]; }
+check "the bot is back: the restored token was checked with Telegram, the webhook registered anew" wait_for 30 webhook_again
 check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)" = "$mail_before"
 check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
 check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
