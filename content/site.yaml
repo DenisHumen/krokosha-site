@@ -330,6 +330,11 @@ seo:                                    # черновик; ключевые з�
     - { en: "Ukraine", uk: "Україна", ru: "Украина" }
     - { en: "Remote, worldwide", uk: "Віддалено, весь світ", ru: "Удалённо, весь мир" }
   country_code: UA
+  # Подтверждение владения для Google Search Console и Bing Webmaster Tools мета-тегом — если
+  # удобнее, чем TXT-запись в DNS (deploy/README.md, «Поисковики»). Пусто — тегов нет.
+  # verification:
+  #   google: "…"                       # content= из тега google-site-verification
+  #   bing: "…"                         # content= из тега msvalidate.01
 
 flags:
   skills:

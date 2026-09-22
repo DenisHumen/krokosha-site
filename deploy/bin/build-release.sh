@@ -98,7 +98,12 @@ if [[ -n ${INDEXNOW_KEY:-} ]]; then
   printf '%s' "$INDEXNOW_KEY" >"$release/$INDEXNOW_KEY.txt"
 fi
 chmod -R u=rwX,go=rX "$release"
-previous=$(readlink -f "$WWW/current" 2>/dev/null || true)
+# The release that was live until now (none on the first run: readlink -f would print the path
+# of the missing link itself, which by then points at the new release).
+previous=''
+if [[ -L $WWW/current ]]; then
+  previous=$(readlink -f "$WWW/current")
+fi
 ln -sfn "$release" "$WWW/current.new"
 mv -T "$WWW/current.new" "$WWW/current"
 log "published $release"

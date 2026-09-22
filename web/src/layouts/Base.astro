@@ -35,6 +35,10 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {seo.verification.google && (
+      <meta name="google-site-verification" content={seo.verification.google} />
+    )}
+    {seo.verification.bing && <meta name="msvalidate.01" content={seo.verification.bing} />}
     {noindex ? (
       <meta name="robots" content="noindex, follow" />
     ) : (

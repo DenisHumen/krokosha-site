@@ -148,6 +148,19 @@ export const siteSchema = z.strictObject({
     service_name: localized,
     area_served: z.array(localized),
     country_code: z.string().regex(/^[A-Z]{2}$/, 'expected an ISO 3166-1 alpha-2 code'),
+    // Proofs of ownership for the webmaster tools, when the DNS record is not an option (deploy/README.md).
+    verification: z
+      .strictObject({
+        google: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{8,128}$/)
+          .optional(),
+        bing: z
+          .string()
+          .regex(/^[0-9A-Fa-f]{16,64}$/)
+          .optional(),
+      })
+      .optional(),
   }),
   flags: z.strictObject({
     skills: z.strictObject({ show_unconfirmed: z.boolean() }),

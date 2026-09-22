@@ -45,6 +45,13 @@ describe('siteSchema', () => {
     expect(broken((site) => (site.plurals.years.uk = ['рік', 'роки']))).toBe(false);
   });
 
+  it('takes the verification tokens of the webmaster tools as they are issued, nothing else', () => {
+    expect(broken((site) => (site.seo.verification = { google: 'AbC-123_xyz789' }))).toBe(true);
+    expect(broken((site) => (site.seo.verification = { bing: 'ABCDEF0123456789' }))).toBe(true);
+    expect(broken((site) => (site.seo.verification = { google: '<script>' }))).toBe(false);
+    expect(broken((site) => (site.seo.verification = { yandex: 'abc' }))).toBe(false);
+  });
+
   it('accepts a number of hours or a TODO marker for reply_within_hours', () => {
     expect(broken((site) => (site.contacts.form.reply_within_hours = 24))).toBe(true);
     expect(broken((site) => (site.contacts.form.reply_within_hours = 'TODO(Денис)'))).toBe(true);
