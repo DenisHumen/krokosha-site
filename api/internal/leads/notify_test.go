@@ -75,7 +75,7 @@ func TestFromFormToMailbox(t *testing.T) {
 		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
 		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
 		Form:     formWithLabels, Location: time.UTC,
-		TelegramURL: func(lead *Lead) string { return "https://t.me/krokosha_bot?start=c_" + lead.PublicToken },
+		TelegramURL: func(lead *Lead) string { return "https://krokosha.xyz" + TelegramPath + lead.PublicToken },
 	}
 	worker := outbox.NewWorker(f.db, quiet)
 	worker.SetClock(func() time.Time { return f.now })
@@ -139,13 +139,23 @@ func TestFromFormToMailbox(t *testing.T) {
 	if header.Get("Auto-Submitted") != "auto-replied" {
 		t.Error("the confirmation does not say it is automatic: mail robots may answer it")
 	}
-	for _, want := range []string{"Здравствуйте, Иван Петров!", "#K-0001", "Сети и оборудование", "MikroTik и два VLAN", "https://t.me/krokosha_bot?start=c_"} {
+	// What was chosen, in the client's language; the link to the bot on the site's own address;
+	// signed by a person.
+	for _, want := range []string{"Здравствуйте, Иван Петров!", "#K-0001", "Ваша заявка", "Сети и оборудование", "срочно", "$1–3k",
+		"Ivan.Petrov@company.com", "сохранено вместе с заявкой", "https://krokosha.xyz/api/leads/telegram?t=", "Denis Humen"} {
 		if !strings.Contains(text, want) || !strings.Contains(html, strings.ReplaceAll(want, "&", "&amp;")) {
-			t.Errorf("the confirmation lacks %q", want)
+			t.Errorf("the confirmation lacks %q:\n%s", want, text)
 		}
+	}
+	// …and nothing the visitor typed freely: the letter goes to whatever address was entered.
+	if strings.Contains(text+html, "MikroTik") || strings.Contains(text+html, "t.me/") {
+		t.Errorf("the confirmation repeats the description or links to t.me:\n%s", text)
 	}
 	if strings.Contains(text, "_secret1") || strings.Contains(html, "_secret1") || strings.Contains(text, "203.0.113") {
 		t.Error("the client's letter leaks the admin area or an address")
+	}
+	if !strings.Contains(html, `<html lang="ru"><head>`) || !strings.Contains(html, "<title>Заявка #K-0001 принята — krokosha.xyz</title>") {
+		t.Errorf("the HTML of the confirmation has no language or title:\n%s", html[:min(len(html), 400)])
 	}
 	if sent := f.count(`SELECT COUNT(*) FROM outbox WHERE channel = 'email' AND status = 'sent'`); sent != 2 {
 		t.Errorf("tasks marked as sent: %d", sent)
@@ -187,11 +197,21 @@ func TestLettersEscapeWhatVisitorsType(t *testing.T) {
 		if strings.Contains(letter.HTML, "<script>") || strings.Contains(letter.HTML, "<img src=x") || strings.Contains(letter.HTML, `href="javascript:`) || strings.Contains(letter.HTML, "</td></table><a") {
 			t.Errorf("markup typed by a visitor reached the HTML of a letter to %s", letter.To.Address)
 		}
-		if !strings.Contains(letter.HTML, "&lt;script&gt;") || !strings.Contains(letter.HTML, "🙂") || !strings.Contains(letter.Text, `<script>alert("xss")</script>`) {
-			t.Errorf("the text must arrive whole, only harmless (letter to %s)", letter.To.Address)
-		}
 		if strings.ContainsAny(letter.Subject, "\r\n") {
 			t.Error("a line break in a subject")
+		}
+		switch letter.To.Address {
+		case "owner@krokosha.xyz": // the owner reads the text whole, only harmless
+			if !strings.Contains(letter.HTML, "&lt;script&gt;") || !strings.Contains(letter.HTML, "🙂") || !strings.Contains(letter.Text, `<script>alert("xss")</script>`) {
+				t.Error("the text must reach the owner whole, only harmless")
+			}
+		default: // the confirmation repeats none of it, and a «name» that is no name is left out
+			if strings.Contains(letter.Text+letter.HTML, "xss") || strings.Contains(letter.Text+letter.HTML, "Бобби") || strings.Contains(letter.Text+letter.HTML, "onerror") {
+				t.Errorf("the confirmation repeats what the visitor typed:\n%s", letter.Text)
+			}
+			if letter.To.Name != "" || !strings.HasPrefix(letter.Text, "Здравствуйте!") {
+				t.Errorf("the confirmation greets %q, addressed to %q", strings.SplitN(letter.Text, "\n", 2)[0], letter.To.Name)
+			}
 		}
 	}
 
@@ -328,11 +348,16 @@ func TestLettersNameTheFiles(t *testing.T) {
 	}
 	for _, letter := range received {
 		_, text, html := parts(t, letter)
-		if !strings.Contains(text, "Схема & план.pdf (77 Б), plan.png (2,0 МБ)") {
-			t.Errorf("the plain letter to %v does not name the files:\n%s", letter.To, text)
-		}
-		if !strings.Contains(html, "Схема &amp; план.pdf (77 Б), plan.png (2,0 МБ)") {
-			t.Errorf("the HTML letter to %v: files missing or not escaped:\n%s", letter.To, html)
+		if letter.To[0] == "owner@krokosha.xyz" {
+			if !strings.Contains(text, "Схема & план.pdf (77 Б), plan.png (2,0 МБ)") {
+				t.Errorf("the plain notification does not name the files:\n%s", text)
+			}
+			if !strings.Contains(html, "Схема &amp; план.pdf (77 Б), plan.png (2,0 МБ)") {
+				t.Errorf("the HTML notification: files missing or not escaped:\n%s", html)
+			}
+		} else if !strings.Contains(text, "Файлы: 2") || strings.Contains(text+html, "plan.png") {
+			// The client is told how many; names of files are the visitor's text too.
+			t.Errorf("the confirmation about the files:\n%s", text)
 		}
 		if strings.Contains(strings.ToLower(text+html), "content-disposition: attachment") {
 			t.Error("a file travelled by mail")
@@ -554,5 +579,72 @@ func TestAnAlertBecomesALetterToTheOwner(t *testing.T) {
 	}
 	if !strings.Contains(text, "<connection refused>") || !strings.Contains(text, "https://krokosha.xyz/_secret1/status") || !strings.Contains(html, "&lt;connection refused&gt;") {
 		t.Errorf("the letter:\n%s\n%s", text, html)
+	}
+}
+
+// A letter to the address typed into the form may call the visitor by name only if the name reads
+// as one.
+func TestGreetingName(t *testing.T) {
+	for name, want := range map[string]string{
+		"Иван Петров":                "Иван Петров",
+		"  Олена   Коваль-Шевченко ": "Олена Коваль-Шевченко",
+		"O'Brien":                      "O'Brien",
+		"José":                         "José",
+		"":                             "",
+		"visit spam.example":           "",
+		"Win $1000 now":                "",
+		"http://spam.example":          "",
+		"Denis @krokosha":              "",
+		"one two three four five":      "",
+		strings.Repeat("Александр", 5): "",
+		`<img src=x onerror=alert(1)>"Бобби"`: "",
+	} {
+		if got := greetingName(name); got != want {
+			t.Errorf("greetingName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// IDs of letters stay the same for every attempt, but are this installation's own: requests are
+// numbered from one again after a reinstall.
+func TestLetterIDsAreSignedForThisInstallation(t *testing.T) {
+	here := &Mailer{SiteHost: "krokosha.xyz", Secret: []byte("secret of this installation")}
+	there := &Mailer{SiteHost: "krokosha.xyz", Secret: []byte("secret of the installation before")}
+	id := here.messageID(2, "autoreply")
+	if !strings.HasPrefix(id, "lead-2.autoreply.") || !strings.HasSuffix(id, "@krokosha.xyz") || len(id) != len("lead-2.autoreply.")+8+len("@krokosha.xyz") {
+		t.Errorf("id = %q", id)
+	}
+	if here.messageID(2, "autoreply") != id {
+		t.Error("the id changes between attempts")
+	}
+	if there.messageID(2, "autoreply") == id || here.messageID(3, "autoreply") == id || here.messageID(2, "notify") == id {
+		t.Error("ids repeat across installations or letters")
+	}
+	if got := (&Mailer{SiteHost: "krokosha.xyz"}).messageID(2, "notify"); got != "lead-2.notify@krokosha.xyz" {
+		t.Errorf("without a secret: %q", got)
+	}
+}
+
+// «Continue in Telegram» in a letter leads through the site's own address to the bot — and never
+// anywhere else.
+func TestTheLetterLinkLeadsToTheBot(t *testing.T) {
+	f := newFixture(t)
+	lead := f.seed(nil)
+	token := f.created[0].PublicToken
+
+	got := f.do(http.MethodGet, TelegramPath+token, nil, nil)
+	if got.status != http.StatusFound || got.location != "https://t.me/krokosha_bot?start=c_"+token {
+		t.Errorf("a request's link: %d → %q", got.status, got.location)
+	}
+	for _, token := range []string{"", "not-a-token", "AAAAAAAAAAAAAAAAAAAAAA", token + "x", "https://evil.example/"} {
+		if got := f.do(http.MethodGet, TelegramPath+token, nil, nil); got.status != http.StatusFound || got.location != "/" {
+			t.Errorf("token %q: %d → %q, want the site", token, got.status, got.location)
+		}
+	}
+	if _, err := f.db.Exec(`UPDATE leads SET status = 'spam' WHERE id = ?`, lead); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.do(http.MethodGet, TelegramPath+token, nil, nil); got.status != http.StatusFound || got.location != "/ru/" {
+		t.Errorf("a request taken for spam: %d → %q, want the site", got.status, got.location)
 	}
 }

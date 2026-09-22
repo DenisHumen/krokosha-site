@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -15,7 +16,9 @@ import (
 // Texts and translations are resolved by the Astro build, not here.
 type Site struct {
 	Profile struct {
-		AvatarSource string `yaml:"avatar_source"`
+		Name         Localized `yaml:"name"`
+		Nickname     string    `yaml:"nickname"`
+		AvatarSource string    `yaml:"avatar_source"`
 	} `yaml:"profile"`
 	GitHub struct {
 		User string `yaml:"user"`
@@ -24,6 +27,20 @@ type Site struct {
 	Contacts struct {
 		Form Form `yaml:"form"`
 	} `yaml:"contacts"`
+}
+
+// SenderName is the name letters are signed with when the installer was given none: the owner
+// as the site presents them, «Denis (Krokosha)». A letter from a bare address looks like a robot's.
+func (s Site) SenderName() string {
+	name, nickname := strings.TrimSpace(s.Profile.Name.In("en")), strings.TrimSpace(s.Profile.Nickname)
+	switch {
+	case name != "" && nickname != "" && name != nickname:
+		return name + " (" + nickname + ")"
+	case name != "":
+		return name
+	default:
+		return nickname
+	}
 }
 
 // Projects mirrors content/projects.yaml (without private_projects, which only the site renders).

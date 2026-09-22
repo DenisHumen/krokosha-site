@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -128,13 +129,24 @@ func run() error {
 		}
 		return "https://t.me/" + bot.Username() + "?start=" + telegram.ClientPrefix + lead.PublicToken
 	}
+	// Letters link to the bot through the site's own address (leads.TelegramPath), which sends on
+	// to the same place: mail filters judge a letter by where its links lead.
+	letterTelegramURL := func(lead *leads.Lead) string {
+		if telegramURL(lead) == "" {
+			return ""
+		}
+		return strings.TrimRight(env.SiteURL, "/") + leads.TelegramPath + lead.PublicToken
+	}
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
 		notifyTo, _ := mail.ParseAddress(env.Mail.NotifyTo)
+		if from.Name == "" {
+			from.Name = senderName(env.ContentDir) // a letter from a bare address looks like a robot's
+		}
 		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname(), Envelope: env.Mail.Inbox}
 		deliveries.Register(outbox.ChannelEmail, &leads.Mailer{
 			Store: leadStore, Deliver: smtp.Send, From: *from, NotifyTo: *notifyTo, SiteHost: siteURL.Hostname(),
-			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location, TelegramURL: telegramURL,
+			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location, TelegramURL: letterTelegramURL,
 			Inbox: env.Mail.Inbox, Secret: []byte(env.Secret),
 		})
 	} else {
@@ -333,6 +345,16 @@ func ownerLocation(contentDir string, log *slog.Logger) *time.Location {
 		return time.UTC
 	}
 	return location
+}
+
+// senderName is what letters are signed with when MAIL_FROM carries no name: the owner as the
+// site presents them (content/site.yaml → profile), or nothing if the content cannot be read.
+func senderName(contentDir string) string {
+	content, err := config.LoadContent(contentDir)
+	if err != nil {
+		return ""
+	}
+	return content.Site.SenderName()
 }
 
 func newLogger(level string) *slog.Logger {
