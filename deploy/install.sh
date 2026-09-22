@@ -710,6 +710,8 @@ write_site() { # http-only | https
     else
       render "$DEPLOY/nginx/site-http-only.conf.tmpl"
     fi
+    # The certificate names mail.<domain> too: its challenges must be answered on port 80.
+    [[ $SERVE_MAIL_NAME == yes ]] && render "$DEPLOY/nginx/site-mail-acme.conf.tmpl"
     true
   } >"$tmp"
   install_if_changed "$tmp" /etc/nginx/sites-available/krokosha.conf || true
