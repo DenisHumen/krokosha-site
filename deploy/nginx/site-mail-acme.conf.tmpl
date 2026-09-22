@@ -1,0 +1,20 @@
+
+# Port 80 for the mail server's name. One certificate covers the site and mail.<domain>, so Let's
+# Encrypt must reach its challenge under this name too — when the certificate is issued and every
+# time it is renewed. Anything else under this name goes to the site.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@MAIL_HOST@@;
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root @@WWW@@/acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://@@DOMAIN@@/;
+    }
+}

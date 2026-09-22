@@ -106,6 +106,15 @@ check "unknown page is a 404" test "$(status "https://$DOMAIN/nope/")" = 404
 check "404 under /uk/ is in Ukrainian" grep -q '<html lang="uk"' <(body "https://$DOMAIN/uk/nope/")
 check "404 under /ru/ is in Russian" grep -q '<html lang="ru"' <(body "https://$DOMAIN/ru/nope/")
 check "robots.txt" grep -q "^Sitemap: https://$DOMAIN/sitemap.xml" <(body "https://$DOMAIN/robots.txt")
+# Let's Encrypt checks every name of the certificate over plain HTTP — mail.<domain> included,
+# at issue and at every renewal. A name that port 80 does not answer fails the whole certificate.
+acme_probe=/var/www/krokosha/acme/.well-known/acme-challenge/ci-probe
+install -D -m 0644 /dev/null "$acme_probe" && echo ci-acme >"$acme_probe"
+for name in "$DOMAIN" "www.$DOMAIN" "mail.$DOMAIN"; do
+  check "Let's Encrypt can reach its challenge under $name" test "$(curl -s --max-time 5 -H "Host: $name" http://127.0.0.1/.well-known/acme-challenge/ci-probe)" = ci-acme
+done
+rm -f "$acme_probe"
+check "…while the mail name leads nowhere else than the site" test "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 5 -H "Host: mail.$DOMAIN" http://127.0.0.1/anything)" = "301 https://$DOMAIN/"
 check "sitemap.xml" grep -q "<loc>https://$DOMAIN/uk/</loc>" <(body "https://$DOMAIN/sitemap.xml")
 check "requests for another host name get no answer" bash -c "! curl -s --max-time 5 -o /dev/null http://127.0.0.1/"
 check "dotfiles are not served" test "$(status "https://$DOMAIN/.env")" = 404
