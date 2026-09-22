@@ -145,7 +145,7 @@ func (r Rollup) sumUp(ctx context.Context, day string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, table := range []string{"analytics_daily", "analytics_daily_breakdown"} {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE day = ?`, day); err != nil { // the names are the two constants above
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE day = ?`, day); err != nil { //nolint:gosec // the names are the two constants above
 			return err
 		}
 	}
@@ -160,9 +160,10 @@ func (r Rollup) sumUp(ctx context.Context, day string) error {
 		return err
 	}
 	for _, breakdown := range breakdownQueries {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO analytics_daily_breakdown (day, dimension, name, n)
-			SELECT ?, ?, LEFT(name, 200), n FROM (SELECT * FROM (`+renamed(breakdown.query)+`) AS counted ORDER BY n DESC, name LIMIT ?) AS largest`,
-			day, breakdown.dimension, day, breakdownRows); err != nil {
+		// The query is one of the constants of breakdownQueries; the day is a parameter.
+		query := `INSERT INTO analytics_daily_breakdown (day, dimension, name, n) SELECT ?, ?, LEFT(name, 200), n ` + //nolint:gosec // see above
+			`FROM (SELECT * FROM (` + renamed(breakdown.query) + `) AS counted ORDER BY n DESC, name LIMIT ?) AS largest`
+		if _, err := tx.ExecContext(ctx, query, day, breakdown.dimension, day, breakdownRows); err != nil {
 			return err
 		}
 	}

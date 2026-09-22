@@ -28,6 +28,8 @@ Not collected: keystrokes, form input, session recordings, browser fingerprints.
 
 If **Do Not Track** or **Global Privacy Control** is enabled in your browser, no statistics are sent at all.
 
+Detailed page-view records are kept for 12 months and then deleted; only daily totals remain (how many visits, from which countries, which sections were viewed) — nothing in them relates to an individual visitor.
+
 ## Server logs
 
 Like any web server, this one keeps a technical request log (address, time, requested page, browser). Logs are used for security and diagnostics and are kept for 30 days.

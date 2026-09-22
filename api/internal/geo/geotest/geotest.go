@@ -96,7 +96,7 @@ func Database(networks map[string]map[string]any) []byte {
 			case child != nil:
 				value = child.index
 			}
-			out.Write([]byte{byte(value >> 16), byte(value >> 8), byte(value)})
+			out.Write([]byte{byte(value >> 16), byte(value >> 8), byte(value)}) //nolint:gosec // 24-bit records of a database of a few nodes
 		}
 	}
 	out.Write(make([]byte, 16))
@@ -113,11 +113,11 @@ func Database(networks map[string]map[string]any) []byte {
 func control(kind, size int) []byte {
 	switch {
 	case kind > 7: // extended type: the number goes into a byte of its own
-		return append(control(0, size)[:1], append([]byte{byte(kind - 7)}, control(0, size)[1:]...)...)
+		return append(control(0, size)[:1], append([]byte{byte(kind - 7)}, control(0, size)[1:]...)...) //nolint:gosec // kinds are small constants
 	case size < 29:
-		return []byte{byte(kind<<5 | size)}
+		return []byte{byte(kind<<5 | size)} //nolint:gosec // kind < 8, size < 29
 	default:
-		return []byte{byte(kind<<5 | 29), byte(size - 29)}
+		return []byte{byte(kind<<5 | 29), byte(size - 29)} //nolint:gosec // sizes of a test record
 	}
 }
 
