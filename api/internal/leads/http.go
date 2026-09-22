@@ -82,6 +82,35 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/leads/challenge", h.challenge)
 	mux.HandleFunc("POST /api/leads", h.submit)
 	mux.HandleFunc("GET /api/leads/thanks", h.thanks)
+	mux.HandleFunc("GET /api/leads/telegram", h.telegram)
+}
+
+// TelegramPath is the site's own address that leads on to the bot, followed by the request's
+// token: what letters link to instead of the bot itself (see telegram).
+const TelegramPath = "/api/leads/telegram?t="
+
+// telegram sends a client who clicked «continue in Telegram» in a letter on to the bot. Letters
+// link here, on the site's own domain, and not to t.me: mail filters judge a letter by where its
+// links lead, and a young domain whose letters send people to Telegram looks like the spam that
+// does exactly that. A request that is gone, is spam, or has no bot to go to brings the visitor
+// to the site instead — never anywhere a link could be made to point.
+func (h *Handler) telegram(w http.ResponseWriter, r *http.Request) {
+	header := w.Header()
+	header.Set("Cache-Control", "no-store")
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("X-Robots-Tag", "noindex")
+	lead, err := h.opts.Store.ByToken(r.Context(), r.URL.Query().Get("t"))
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	target := langPrefix(lead.Lang)
+	if lead.Status != StatusSpam {
+		if bot := h.opts.TelegramURL(lead); bot != "" {
+			target = bot
+		}
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // addressKey keeps addresses out of the cache: the counters are keyed by a keyed hash.
