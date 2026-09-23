@@ -45,7 +45,7 @@
   "location": "Ukraine",
   "socials": [
     { "id": "telegram", "label": "Telegram", "url": "https://t.me/DenisHumen", "primary": true },
-    { "id": "email", "label": "Email", "url": "mailto:denis@krokosha.xyz", "primary": true },
+    { "id": "email", "label": "Email", "url": "mailto:denis@krokosha.com", "primary": true },
     { "id": "github", "label": "GitHub", "url": "https://github.com/DenisHumen" }
   ]
 }

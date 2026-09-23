@@ -10,7 +10,7 @@ This site doesn't use cookies for analytics, doesn't use third-party trackers an
 
 ## Who processes the data
 
-Denis (Krokosha), owner of krokosha.xyz. Contact for data questions: denis@krokosha.xyz.
+Denis (Krokosha), owner of krokosha.com. Contact for data questions: denis@krokosha.com.
 
 ## Anonymous visit statistics
 
@@ -53,7 +53,7 @@ Advertising pixels (Google Ads, Meta) are not used on this site at the moment. I
 
 ## Your rights
 
-You can request a copy of your data, its correction or deletion — email denis@krokosha.xyz. Requests are handled within a reasonable time; deletion covers the request, correspondence and attachments.
+You can request a copy of your data, its correction or deletion — email denis@krokosha.com. Requests are handled within a reasonable time; deletion covers the request, correspondence and attachments.
 
 ## Changes
 

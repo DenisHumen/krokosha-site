@@ -38,7 +38,7 @@ describe('siteSchema', () => {
     expect(broken((site) => (site.socials[0].url = 'javascript:alert(1)'))).toBe(false);
     expect(broken((site) => (site.socials[0].url = 'http://t.me/DenisHumen'))).toBe(false);
     expect(broken((site) => (site.socials[0].url = 'https://t.me/DenisHumen'))).toBe(true);
-    expect(broken((site) => (site.socials[1].url = 'mailto:denis@krokosha.xyz'))).toBe(true);
+    expect(broken((site) => (site.socials[1].url = 'mailto:denis@krokosha.com'))).toBe(true);
   });
 
   it('requires all plural forms', () => {

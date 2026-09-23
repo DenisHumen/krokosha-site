@@ -196,7 +196,7 @@ test.describe('contact form', () => {
     {
       status: 500,
       block: '#form-error-server',
-      text: "Couldn't send the request. Please email me: denis@krokosha.xyz",
+      text: "Couldn't send the request. Please email me: denis@krokosha.com",
     },
   ]) {
     test(`explains a failure of the server: ${status}`, async ({ page, problems }) => {

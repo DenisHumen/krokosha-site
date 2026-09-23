@@ -9,19 +9,19 @@ import {
   serializeJsonLd,
 } from '../../src/lib/seo.ts';
 
-const SITE = 'https://krokosha.xyz';
+const SITE = 'https://krokosha.com';
 
 describe('alternateLinks', () => {
   it('lists every language plus x-default → default locale', () => {
     expect(alternateLinks(SITE, '')).toEqual([
-      { hreflang: 'en', href: 'https://krokosha.xyz/' },
-      { hreflang: 'uk', href: 'https://krokosha.xyz/uk/' },
-      { hreflang: 'ru', href: 'https://krokosha.xyz/ru/' },
-      { hreflang: 'x-default', href: 'https://krokosha.xyz/' },
+      { hreflang: 'en', href: 'https://krokosha.com/' },
+      { hreflang: 'uk', href: 'https://krokosha.com/uk/' },
+      { hreflang: 'ru', href: 'https://krokosha.com/ru/' },
+      { hreflang: 'x-default', href: 'https://krokosha.com/' },
     ]);
     expect(alternateLinks(SITE, 'privacy')[1]).toEqual({
       hreflang: 'uk',
-      href: 'https://krokosha.xyz/uk/privacy/',
+      href: 'https://krokosha.com/uk/privacy/',
     });
   });
 
@@ -66,8 +66,8 @@ describe('homeJsonLd', () => {
   it('links the person to social profiles, not to mailto:', () => {
     const person = node('Person')!;
     expect(person.sameAs).toEqual(['https://t.me/DenisHumen', 'https://github.com/DenisHumen']);
-    expect(person.email).toBe('denis@krokosha.xyz');
-    expect(person.url).toBe('https://krokosha.xyz/uk/');
+    expect(person.email).toBe('denis@krokosha.com');
+    expect(person.url).toBe('https://krokosha.com/uk/');
   });
 
   it('claims only confirmed skills', () => {
@@ -93,7 +93,7 @@ describe('homeJsonLd', () => {
 
   it('points service offers at the landing anchors', () => {
     const offers = node('ProfessionalService')!.hasOfferCatalog.itemListElement;
-    expect(offers[0].itemOffered.url).toBe('https://krokosha.xyz/uk/#networks');
+    expect(offers[0].itemOffered.url).toBe('https://krokosha.com/uk/#networks');
   });
 });
 
@@ -104,12 +104,12 @@ describe('breadcrumbsJsonLd', () => {
       { name: 'Политика', page: 'privacy' },
     ]);
     expect(crumbs.itemListElement).toEqual([
-      { '@type': 'ListItem', position: 1, name: 'Krokosha', item: 'https://krokosha.xyz/ru/' },
+      { '@type': 'ListItem', position: 1, name: 'Krokosha', item: 'https://krokosha.com/ru/' },
       {
         '@type': 'ListItem',
         position: 2,
         name: 'Политика',
-        item: 'https://krokosha.xyz/ru/privacy/',
+        item: 'https://krokosha.com/ru/privacy/',
       },
     ]);
   });

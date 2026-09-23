@@ -24,6 +24,10 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
 
   --domain DOMAIN        the site's host name (www.DOMAIN is served too if it points here)
   --email EMAIL          administrator's address (Let's Encrypt account, later: alerts)
+  --old-domain NAME      the name the site had before (a new --domain makes the previous one that by
+                         itself): while NAME points here, its pages redirect to the same pages at
+                         DOMAIN and its addresses get mail; the mailboxes move to DOMAIN with their
+                         passwords and letters. It is let go once it points elsewhere, or with «none»
 
   --tls MODE             letsencrypt (default) | selfsigned (tests) | none (HTTP only)
   --agree-tos            accept the Let's Encrypt Subscriber Agreement without being asked
@@ -78,7 +82,7 @@ Environment: GITHUB_TOKEN — optional read-only token for the GitHub API, store
 EOF
 }
 
-DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
+DOMAIN='' OLD_DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SKIP_DNS=''
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
@@ -90,6 +94,7 @@ EXTRA_PORTS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) DOMAIN=${2:?--domain needs a value}; shift 2 ;;
+    --old-domain) OLD_DOMAIN=${2:?--old-domain needs a value}; shift 2 ;;
     --email) ADMIN_EMAIL=${2:?--email needs a value}; shift 2 ;;
     --tls) TLS_MODE=${2:?--tls needs a value}; shift 2 ;;
     --agree-tos) AGREE_TOS=yes; shift ;;
@@ -162,12 +167,26 @@ fi
 : "${REPO_URL:=$DEFAULT_REPO}"
 : "${REPO_BRANCH:=main}"
 
-[[ -n $DOMAIN ]] || ask DOMAIN "Domain of the site (for example krokosha.xyz)"
+[[ -n $DOMAIN ]] || ask DOMAIN "Domain of the site (for example krokosha.com)"
 [[ -n $ADMIN_EMAIL ]] || ask ADMIN_EMAIL "Administrator's email"
 DOMAIN=${DOMAIN,,}
 
 valid_domain "$DOMAIN" || die "not a valid domain name: $DOMAIN"
 valid_email "$ADMIN_EMAIL" || die "not a valid email address: $ADMIN_EMAIL"
+# A new name for the site: the one it had until now becomes its old name (deploy/README.md,
+# «Смена домена»). An old name is remembered until it is let go.
+PREVIOUS_DOMAIN=$(env_get DOMAIN)
+OLD_BEFORE=$(env_get OLD_DOMAIN)
+if [[ -z $OLD_DOMAIN ]]; then
+  OLD_DOMAIN=$OLD_BEFORE
+  [[ -z $PREVIOUS_DOMAIN || $PREVIOUS_DOMAIN == "$DOMAIN" ]] || OLD_DOMAIN=$PREVIOUS_DOMAIN
+fi
+OLD_DOMAIN=${OLD_DOMAIN,,}
+[[ $OLD_DOMAIN != none && $OLD_DOMAIN != "$DOMAIN" ]] || OLD_DOMAIN=''
+[[ -z $OLD_DOMAIN ]] || valid_domain "$OLD_DOMAIN" || die "--old-domain: not a valid domain name: $OLD_DOMAIN"
+# Old names that are being let go: their redirect, mail addresses and certificates are cleaned up.
+FORGOTTEN_DOMAINS=()
+[[ -z $OLD_BEFORE || $OLD_BEFORE == "$OLD_DOMAIN" || $OLD_BEFORE == "$DOMAIN" ]] || FORGOTTEN_DOMAINS+=("$OLD_BEFORE")
 case $TLS_MODE in letsencrypt | selfsigned | none) ;; *) die "--tls must be letsencrypt, selfsigned or none" ;; esac
 [[ $DATA_DIR == /* && $DATA_DIR != / ]] || die "--data-dir must be an absolute path"
 DATA_DIR=${DATA_DIR%/}
@@ -190,6 +209,8 @@ if [[ $MAIL == yes && $TLS_MODE == none ]]; then
 fi
 : "${MAILBOX:=$(env_get MAILBOX)}"
 MAILBOX=${MAILBOX,,}
+# The site moves: the owner's mailbox moves with it (see «Mail server» below).
+[[ -z $PREVIOUS_DOMAIN || $MAILBOX != *"@$PREVIOUS_DOMAIN" ]] || MAILBOX=${MAILBOX%@*}@$DOMAIN
 [[ -z $MAILBOX || $MAILBOX =~ ^[a-z0-9][a-z0-9._-]*@${DOMAIN//./\\.}$ ]] || die "--mailbox must be an address at $DOMAIN, e.g. denis@$DOMAIN"
 [[ $MAILBOX != "leads@$DOMAIN" ]] || die "--mailbox: leads@$DOMAIN is the service mailbox of the site; choose another address"
 [[ -z $MAILBOX_PASSWORD_FILE || -r $MAILBOX_PASSWORD_FILE ]] || die "--mailbox-password-file: cannot read $MAILBOX_PASSWORD_FILE"
@@ -264,6 +285,16 @@ else
     ok "www.$DOMAIN points to this server"
   else
     warn "www.$DOMAIN does not point here: it will not be served"
+  fi
+  # The old name serves for as long as it points here: a domain nobody renews stops one day.
+  if [[ -n $OLD_DOMAIN ]]; then
+    if resolves_here "$OLD_DOMAIN"; then
+      ok "$OLD_DOMAIN, the old name, points here too: its pages go to $DOMAIN, its mail arrives"
+    else
+      warn "$OLD_DOMAIN, the old name, points here no more: it is let go — its redirect, mail addresses and certificate"
+      FORGOTTEN_DOMAINS+=("$OLD_DOMAIN")
+      OLD_DOMAIN=''
+    fi
   fi
 fi
 
@@ -428,6 +459,7 @@ step "Settings ($KROKOSHA_ENV)"
 # The API reads these settings when it starts: if they change, it has to be restarted.
 env_before=$(sha256sum "$KROKOSHA_ENV" 2>/dev/null || true)
 env_set DOMAIN "$DOMAIN"
+env_set OLD_DOMAIN "$OLD_DOMAIN"
 env_set ADMIN_EMAIL "$ADMIN_EMAIL"
 env_set SITE_URL "$SITE_URL"
 env_set TLS_MODE "$TLS_MODE"
@@ -712,6 +744,9 @@ write_headers() { # with_hsts: HSTS only with a real certificate, otherwise an e
 # shellcheck disable=SC2034
 SERVER_NAMES=$DOMAIN
 [[ $SERVE_WWW == yes ]] && SERVER_NAMES="$DOMAIN www.$DOMAIN"
+# The old name, and the certificate it is served with over HTTPS (none: port 80 only).
+# shellcheck disable=SC2034
+OLD_NAMES="$OLD_DOMAIN www.$OLD_DOMAIN mail.$OLD_DOMAIN" OLD_TLS_CERT='' OLD_TLS_KEY=''
 
 write_site() { # http-only | https
   {
@@ -726,6 +761,10 @@ write_site() { # http-only | https
     fi
     # The certificate names mail.<domain> too: its challenges must be answered on port 80.
     [[ $SERVE_MAIL_NAME == yes ]] && render "$DEPLOY/nginx/site-mail-acme.conf.tmpl"
+    if [[ -n $OLD_DOMAIN ]]; then
+      render "$DEPLOY/nginx/site-old.conf.tmpl"
+      [[ -n $OLD_TLS_CERT ]] && render "$DEPLOY/nginx/site-old-tls.conf.tmpl"
+    fi
     true
   } >"$tmp"
   install_if_changed "$tmp" /etc/nginx/sites-available/krokosha.conf || true
@@ -755,20 +794,30 @@ case $TLS_MODE in
     ;;
   selfsigned)
     TLS_CERT=$KROKOSHA_ETC/tls/selfsigned.crt TLS_KEY=$KROKOSHA_ETC/tls/selfsigned.key
-    if [[ ! -f $TLS_CERT ]] || ! cert_covers "$TLS_CERT" "$MAIL_HOST"; then
+    # One certificate for everything, the old name included while there is one.
+    tls_names="DNS:$DOMAIN,DNS:www.$DOMAIN,DNS:$MAIL_HOST"
+    [[ -z $OLD_DOMAIN ]] || tls_names+=",DNS:$OLD_DOMAIN,DNS:www.$OLD_DOMAIN,DNS:mail.$OLD_DOMAIN"
+    if [[ ! -f $TLS_CERT ]] || ! cert_covers "$TLS_CERT" "$MAIL_HOST" || { [[ -n $OLD_DOMAIN ]] && ! cert_covers "$TLS_CERT" "$OLD_DOMAIN"; }; then
       install -d -m 0750 -o root -g root "$KROKOSHA_ETC/tls"
       openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 \
-        -subj "/CN=$DOMAIN" -addext "subjectAltName=DNS:$DOMAIN,DNS:www.$DOMAIN,DNS:$MAIL_HOST" \
+        -subj "/CN=$DOMAIN" -addext "subjectAltName=$tls_names" \
         -keyout "$TLS_KEY" -out "$TLS_CERT" 2>/dev/null
       chmod 0600 "$TLS_KEY"
       NGINX_RESTART=yes
     fi
+    # shellcheck disable=SC2034 # read by render()
+    [[ -z $OLD_DOMAIN ]] || OLD_TLS_CERT=$TLS_CERT OLD_TLS_KEY=$TLS_KEY
     write_headers no
     write_site https
     warn "serving https://$DOMAIN with a SELF-SIGNED certificate — for tests only"
     ;;
   letsencrypt)
     TLS_CERT=/etc/letsencrypt/live/$DOMAIN/fullchain.pem TLS_KEY=/etc/letsencrypt/live/$DOMAIN/privkey.pem
+    # The old name keeps the certificate it had (it renews while the name points here).
+    if [[ -n $OLD_DOMAIN && -f /etc/letsencrypt/live/$OLD_DOMAIN/fullchain.pem ]]; then
+      # shellcheck disable=SC2034 # read by render()
+      OLD_TLS_CERT=/etc/letsencrypt/live/$OLD_DOMAIN/fullchain.pem OLD_TLS_KEY=/etc/letsencrypt/live/$OLD_DOMAIN/privkey.pem
+    fi
     # One certificate for the site and the mail server. An existing one that lacks the mail
     # server's name is reissued with it («--expand»).
     if [[ ! -f $TLS_CERT ]] || { [[ $SERVE_MAIL_NAME == yes ]] && ! cert_covers "$TLS_CERT" "$MAIL_HOST"; }; then
@@ -791,6 +840,16 @@ case $TLS_MODE in
     write_headers yes
     write_site https
     ok "serving https://$DOMAIN, certificate renews automatically"
+    [[ -z $OLD_DOMAIN ]] || ok "$OLD_DOMAIN, the old name: every page redirects to the same one at $DOMAIN$([[ -n $OLD_TLS_CERT ]] || echo ' (over plain HTTP only: there is no certificate for it)')"
+    # Certificates of old names let go would only fail to renew from now on.
+    for gone in "${FORGOTTEN_DOMAINS[@]}"; do
+      [[ -d /etc/letsencrypt/live/$gone ]] || continue
+      if certbot delete --cert-name "$gone" --non-interactive >/dev/null 2>&1; then
+        ok "the certificate of $gone, the old name let go, is deleted"
+      else
+        warn "the certificate of $gone could not be deleted: sudo certbot delete --cert-name $gone"
+      fi
+    done
     ;;
 esac
 rm -f "$tmp"
@@ -821,6 +880,39 @@ else
     hash=$(openssl passwd -6 -stdin) || die "cannot hash the password of $address"
     printf '%s|{SHA512-CRYPT}%s\n' "$address" "$hash" >>"$accounts"
   }
+  aliases=$MAIL_DIR/config/postfix-virtual.cf
+  touch "$aliases"
+
+  # The site has moved to DOMAIN: its mailboxes move with it — each keeps its password and its
+  # letters. The mail server stands still meanwhile, so that nothing writes into a moving mailbox.
+  moved=()
+  if [[ -n $PREVIOUS_DOMAIN && $PREVIOUS_DOMAIN != "$DOMAIN" ]] && grep -q "^[^|]*@${PREVIOUS_DOMAIN//./\\.}|" "$accounts"; then
+    compose --profile mail stop mail >/dev/null 2>&1 || true
+    previous_re=${PREVIOUS_DOMAIN//./\\.}
+    mapfile -t addresses < <(cut -d'|' -f1 "$accounts")
+    for address in "${addresses[@]}"; do
+      [[ $address == *"@$PREVIOUS_DOMAIN" ]] || continue
+      name=${address%@*}
+      if grep -q "^$name@${DOMAIN//./\\.}|" "$accounts"; then
+        warn "$name@$DOMAIN exists already: $address stays as it is"
+        continue
+      fi
+      sed -i "s/^$name@$previous_re|/$name@$DOMAIN|/" "$accounts"
+      if [[ -d $MAIL_DIR/data/$PREVIOUS_DOMAIN/$name ]]; then
+        # Owned by the mail server's own user, like the directory of the previous domain.
+        [[ -d $MAIL_DIR/data/$DOMAIN ]] || install -d -m 0755 -o "$(stat -c %u "$MAIL_DIR/data/$PREVIOUS_DOMAIN")" \
+          -g "$(stat -c %g "$MAIL_DIR/data/$PREVIOUS_DOMAIN")" "$MAIL_DIR/data/$DOMAIN"
+        mv "$MAIL_DIR/data/$PREVIOUS_DOMAIN/$name" "$MAIL_DIR/data/$DOMAIN/$name"
+      fi
+      moved+=("$name@$DOMAIN")
+    done
+    rmdir "$MAIL_DIR/data/$PREVIOUS_DOMAIN" 2>/dev/null || true
+    # Aliases that led to the moved mailboxes lead to them at their new addresses.
+    sed -i "s/ \([^ @]*\)@$previous_re\$/ \1@$DOMAIN/" "$aliases"
+    [[ ! -f $MAIL_DIR/config/dovecot-quotas.cf ]] || sed -i "s/^\([^:@]*\)@$previous_re:/\1@$DOMAIN:/" "$MAIL_DIR/config/dovecot-quotas.cf"
+    ok "mailboxes moved from $PREVIOUS_DOMAIN with their passwords and letters: ${moved[*]:-none}"
+  fi
+
   grep -q "^leads@$DOMAIN|" "$accounts" || env_get MAIL_SERVICE_PASSWORD | add_mailbox "leads@$DOMAIN"
   if [[ -n $MAILBOX ]] && ! grep -q "^$MAILBOX|" "$accounts"; then
     if [[ -n $MAILBOX_PASSWORD_FILE ]]; then
@@ -844,13 +936,21 @@ else
     unset mailbox_password mailbox_again
   fi
   # postmaster@ and abuse@ are expected to exist (RFC 2142); they land in the owner's mailbox.
-  aliases=$MAIL_DIR/config/postfix-virtual.cf
-  touch "$aliases"
   alias_target=$MAILBOX
   grep -q "^$MAILBOX|" "$accounts" 2>/dev/null || alias_target="leads@$DOMAIN"
   for name in postmaster abuse; do
     grep -q "^$name@$DOMAIN " "$aliases" || printf '%s@%s %s\n' "$name" "$DOMAIN" "$alias_target" >>"$aliases"
   done
+  # Mail to the old name reaches the same mailboxes, for as long as the name points here.
+  for gone in "${FORGOTTEN_DOMAINS[@]}"; do
+    sed -i "/^[^ ]*@${gone//./\\.} /d" "$aliases"
+  done
+  if [[ -n $OLD_DOMAIN ]]; then
+    while IFS='|' read -r address _; do
+      [[ $address == *"@$DOMAIN" ]] || continue
+      grep -q "^${address%@*}@${OLD_DOMAIN//./\\.} " "$aliases" || printf '%s@%s %s\n' "${address%@*}" "$OLD_DOMAIN" "$address" >>"$aliases"
+    done <"$accounts"
+  fi
 
   # The certificate is the site's own; the container sees the directory it lives in.
   case $TLS_MODE in
@@ -875,6 +975,48 @@ else
       die "cannot make the DKIM key (docker exec krokosha-mail-1 setup config dkim …)"
   fi
   [[ -s $dkim_dns ]] || die "the DKIM key was made, but $dkim_dns is missing"
+  # Which domains are signed. docker-mailserver writes this file for the first domain only and never
+  # adds another, so it is written here — in its words: the site's domain, and the old name while
+  # there is one (its key stays where it was).
+  signing=$MAIL_DIR/config/rspamd/override.d/dkim_signing.conf
+  tmp=$(mktemp)
+  {
+    cat <<'CONF'
+# documentation: https://rspamd.com/doc/modules/dkim_signing.html
+
+enabled = true;
+
+sign_authenticated = true;
+sign_local = false;
+try_fallback = false;
+
+use_domain = "header";
+use_redis = false; # don't change unless Redis also provides the DKIM keys
+use_esld = true;
+allow_username_mismatch = true;
+
+check_pubkey = true; # you want to use this in the beginning
+
+domain {
+CONF
+    for signed in "$DOMAIN" "$OLD_DOMAIN"; do
+      [[ -n $signed && -s $MAIL_DIR/config/rspamd/dkim/rsa-2048-mail-$signed.private.txt ]] || continue
+      printf '    %s {\n        path = "/tmp/docker-mailserver/rspamd/dkim/rsa-2048-mail-%s.private.txt";\n        selector = "mail";\n    }\n' "$signed" "$signed"
+    done
+    printf '}\n\n'
+  } >"$tmp"
+  if install_if_changed "$tmp" "$signing" 0644; then
+    # rspamd reads it when the mail server starts.
+    docker restart krokosha-mail-1 >/dev/null
+    for _ in $(seq 1 90); do
+      [[ $(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1 2>/dev/null) == healthy ]] && break
+      sleep 2
+    done
+    [[ $(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1 2>/dev/null) == healthy ]] ||
+      die "the mail server did not come back after its DKIM settings changed: docker logs krokosha-mail-1"
+    ok "outgoing mail is signed with DKIM for $DOMAIN${OLD_DOMAIN:+ and $OLD_DOMAIN}"
+  fi
+  rm -f "$tmp"
 
   # What has to be entered at the DNS provider — kept in a file, shown at the end.
   # (getent fails for a name that does not resolve — behind NAT, in tests: that is an answer, not an error)
@@ -911,6 +1053,15 @@ RECORDS
   rm -f "$tmp"
 
   install_if_changed "$DEPLOY/bin/krokosha-mailbox" /usr/local/bin/krokosha-mailbox 0755 || true
+  # The API started with the new addresses before its mailbox moved there, and signs in to it once
+  # only (a wrong password is not retried: the mail server's fail2ban would ban the host). Again now.
+  if [[ ${#moved[@]} -gt 0 ]]; then
+    systemctl try-restart krokosha-api.service
+    for _ in $(seq 1 30); do
+      curl --silent --fail --max-time 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
   mail_summary="$MAIL_HOST — mailboxes: $(cut -d'|' -f1 "$accounts" | paste -sd ' ')   (sudo krokosha-mailbox list | add | passwd | del)"
   ok "the mail server runs; mailboxes: $(cut -d'|' -f1 "$accounts" | paste -sd ' ')"
 fi
@@ -1126,9 +1277,13 @@ else
   admin_url="$SITE_URL$ADMIN_PATH/   (keep this address to yourself)"
 fi
 
+old_summary="none"
+[[ -z $OLD_DOMAIN ]] || old_summary="$OLD_DOMAIN — its pages redirect here and its addresses get mail, for as long as it points to this server"
+
 cat >&2 <<EOF
 
   Site:       $SITE_URL
+  Old name:   $old_summary
   Admin area: $admin_url
   Accounts:   sudo krokosha-cli admin list | create LOGIN | passwd LOGIN | totp-reset LOGIN
   Bot:        $bot_summary

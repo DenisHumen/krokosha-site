@@ -1,0 +1,15 @@
+
+# The old name over HTTPS, with the certificate it had: browsers that remember it (bookmarks, HSTS)
+# are sent on to the same page at @@DOMAIN@@.
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name @@OLD_NAMES@@;
+    server_tokens off;
+
+    ssl_certificate     @@OLD_TLS_CERT@@;
+    ssl_certificate_key @@OLD_TLS_KEY@@;
+    include snippets/krokosha-tls.conf;
+
+    return 301 https://@@DOMAIN@@$request_uri;
+}

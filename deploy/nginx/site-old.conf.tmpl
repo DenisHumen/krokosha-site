@@ -1,0 +1,20 @@
+
+# @@OLD_DOMAIN@@ is the site's old name: every page there answers with a permanent redirect to the
+# same page at @@DOMAIN@@, for as long as the name points here (install.sh lets it go after that).
+# Let's Encrypt still reaches its challenges under it, so that its certificate renews meanwhile.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@OLD_NAMES@@;
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root @@WWW@@/acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://@@DOMAIN@@$request_uri;
+    }
+}

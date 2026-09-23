@@ -92,6 +92,21 @@ sudo /opt/krokosha/repo/deploy/restore.sh --from /srv/krokosha/backups/latest
 5. Когда DNS обновился: `sudo /opt/krokosha/repo/deploy/install.sh --from-env --tls letsencrypt --agree-tos` — настоящий сертификат. (Если в копии был `letsencrypt.tar.gz`, `restore.sh` уже положил старые сертификаты на место, и продление продолжится само.)
 6. Старый сервер: `uninstall.sh --purge`, когда всё проверено.
 
+## Смена домена
+
+Сайт переезжает на новое имя одной командой — когда записи `A` нового домена (`@`, `www`, `mail`) уже указывают на сервер:
+
+```bash
+sudo /opt/krokosha/repo/deploy/install.sh --from-env --domain НОВЫЙ-ДОМЕН
+```
+
+- **Новый домен — основной.** Сертификат Let's Encrypt на него, `www.` и `mail.`; канонические адреса, sitemap, IndexNow и вебхук Telegram — на новом имени. Админка — по тому же секретному пути, войти заново: cookie сессии привязан к имени.
+- **Прежний домен — старое имя** (`OLD_DOMAIN` в настройках). Каждая его страница отвечает постоянным редиректом `301` на ту же страницу нового, по HTTP и по HTTPS — со своим прежним сертификатом, который продлевается, пока имя указывает на сервер.
+- **Почта переезжает целиком.** Ящики переименовываются в новый домен вместе с паролями и письмами (`denis@старый` → `denis@новый`), письма на старые адреса — и на адреса ответов по заявкам — приходят в те же ящики. Почтовый сервер называет себя `mail.НОВЫЙ-ДОМЕН`, для нового домена создаётся ключ DKIM и подписываются письма обоих имён. Что внести в DNS нового домена — в конце вывода и в `/srv/krokosha/mail/DNS.txt`. Ключ DKIM можно сделать заранее, чтобы запись была в DNS к моменту переезда: `docker exec krokosha-mail-1 setup config dkim keysize 2048 selector mail domain НОВЫЙ-ДОМЕН` (установщик возьмёт готовый).
+- **Руками:** PTR у хостера — на `mail.НОВЫЙ-ДОМЕН`; в почтовых программах — сервер `mail.НОВЫЙ-ДОМЕН` и логин по новому адресу; в Google Search Console — «Изменение адреса» в настройках ресурса старого домена (оба домена подтверждены), в Bing Webmaster Tools — «Site Move».
+
+Старое имя отпускается само: при очередном запуске установщика (`update.sh`), когда оно больше не указывает на этот сервер, пропадают его редирект, почтовые адреса и сертификат. Отпустить сразу: `--old-domain none`.
+
 ## Сертификаты и оповещения
 
 Штатное продление — `certbot.timer`. Сверх него раз в сутки в 04:40 [`bin/krokosha-certwatch`](bin/krokosha-certwatch) (`krokosha-certwatch.timer`) смотрит **не на файлы, а на то, что реально отдают** nginx (`:443`) и почтовый сервер (`:993`): продлённый сертификат, который никто не перечитал, ничем не лучше просроченного. Меньше 14 дней (`CERTWATCH_RENEW_BELOW_DAYS`) — тут же `certbot renew`, hook перезагружает nginx и перезапускает почту. Не продлилось — владелец получает письмо и сообщение в Telegram с ответом certbot, на экране «Статус системы» появляется ошибка.
@@ -140,8 +155,8 @@ sudo systemd-run --pipe --wait --uid=krokosha --gid=krokosha -p EnvironmentFile=
 ## Поисковики
 
 - **IndexNow** — включён по умолчанию (`--no-indexnow` выключает). Установщик один раз генерирует ключ (`INDEXNOW_KEY`), сайт отдаёт его как `/<ключ>.txt`, а [`build-release.sh`](bin/build-release.sh) после каждого релиза сообщает на `api.indexnow.org`, **какие страницы изменились** (сборка воспроизводима: страница, чьё HTML совпало с прошлым релизом, не менялась). Оттуда узнают Bing (и через его индекс DuckDuckGo, Ecosia и другие), Yandex, Naver, Seznam. Google в IndexNow не участвует.
-- **Google Search Console** — один раз руками: [search.google.com/search-console](https://search.google.com/search-console) → «Добавить ресурс» → тип **Домен** (`krokosha.xyz`) → подтвердить TXT-записью в DNS (или тип «Префикс URL» с HTML-тегом — тег добавляется в `content/site.yaml`, ключ `verification.google`, и попадает в `<head>` при следующей сборке). После подтверждения: «Файлы Sitemap» → `https://krokosha.xyz/sitemap.xml`. Там же потом видны запросы, позиции и ошибки индексации.
-- **Bing Webmaster Tools** — [bing.com/webmasters](https://www.bing.com/webmasters): проще всего «Импортировать из Google Search Console» (даёт доступ к уже подтверждённому ресурсу), иначе — та же TXT-запись или мета-тег (`verification.bing` в `content/site.yaml`). Sitemap туда тоже добавить: `https://krokosha.xyz/sitemap.xml`. Bing показывает и приём IndexNow («IndexNow» в меню).
+- **Google Search Console** — один раз руками: [search.google.com/search-console](https://search.google.com/search-console) → «Добавить ресурс» → тип **Домен** (`krokosha.com`) → подтвердить TXT-записью в DNS (или тип «Префикс URL» с HTML-тегом — тег добавляется в `content/site.yaml`, ключ `verification.google`, и попадает в `<head>` при следующей сборке). После подтверждения: «Файлы Sitemap» → `https://krokosha.com/sitemap.xml`. Там же потом видны запросы, позиции и ошибки индексации.
+- **Bing Webmaster Tools** — [bing.com/webmasters](https://www.bing.com/webmasters): проще всего «Импортировать из Google Search Console» (даёт доступ к уже подтверждённому ресурсу), иначе — та же TXT-запись или мета-тег (`verification.bing` в `content/site.yaml`). Sitemap туда тоже добавить: `https://krokosha.com/sitemap.xml`. Bing показывает и приём IndexNow («IndexNow» в меню).
 - `robots.txt` и `sitemap.xml` собираются сайтом сами; админка в них не упоминается.
 
 ## Как устроен релиз
