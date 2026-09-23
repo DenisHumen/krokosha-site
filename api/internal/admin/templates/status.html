@@ -108,6 +108,16 @@
             {{- end -}}
           </dd></div>
           <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
+          <div><dt>Карта интернета</dt><dd>
+            {{- with $s.Map}}
+              {{- if not .Known}}<span class="dot"></span>не прочитать
+              {{- else if .LastOK.ID}}<span class="dot {{if gt .Last.ID .LastOK.ID}}dot-warn{{else}}dot-ok{{end}}"></span>{{ago .LastOK.Finished}} · сетей: {{count .LastOK.Networks}} · связей: {{count .LastOK.Links}}
+                {{- if or .LastOK.Added .LastOK.Gone .LastOK.Changed}} · за последний раз: +{{count .LastOK.Added}} −{{count .LastOK.Gone}}{{if .LastOK.Changed}}, изменились: {{count .LastOK.Changed}}{{end}}{{end}}
+              {{- else if .Last.ID}}<span class="dot dot-warn"></span>{{if .Last.Finished.IsZero}}строится с {{time .Last.Started}}{{else}}не построилась: {{.Last.Error}}{{end}}
+              {{- else}}<span class="dot"></span>ещё не строилась — <span class="mono">sudo systemctl start krokosha-netmap.service</span>
+              {{- end}}
+            {{- end -}}
+          </dd></div>
           <div><dt>База GeoIP</dt><dd>
             {{- with $s.Geo}}
               {{- if .Loaded}}<span class="dot dot-ok"></span>{{.Type}} от {{.Built.Format "02.01.2006"}}

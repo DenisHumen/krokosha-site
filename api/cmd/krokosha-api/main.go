@@ -31,6 +31,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	krokoshamail "github.com/DenisHumen/krokosha-site/api/internal/mail"
+	"github.com/DenisHumen/krokosha-site/api/internal/netmap"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
@@ -207,6 +208,15 @@ func run() error {
 
 	accounts := auth.New(pool, store, log)
 
+	// The map of the internet of /map (docs/netmap.md): the map `krokosha-cli netmap sync` leaves in
+	// MySQL every night, loaded again whenever a newer one is there; routes are kept in Redis.
+	var mapGeo netmap.Locator // stays a nil interface without GeoIP: a nil pointer inside one is not nil
+	if locator != nil {
+		mapGeo = locator
+	}
+	maps := netmap.NewService(netmap.ServiceOptions{Geo: mapGeo, Limit: store, Cache: store, ClientIP: server.ClientIP, Log: log})
+	maps.Register(srv.Mux())
+
 	// The Telegram bot (brief B10.3). Who has access is kept whether or not there is a token:
 	// invitations can be prepared first. Without a token nothing talks to Telegram.
 	botAccess := telegram.NewAccess(pool, nil)
@@ -325,6 +335,11 @@ func run() error {
 	go func() {
 		defer workers.Done()
 		accessLog.Run(ctx)
+	}()
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		netmap.Watch(ctx, pool, maps, netmap.WatchEvery, log)
 	}()
 
 	err = srv.Run(ctx)

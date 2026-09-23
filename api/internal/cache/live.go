@@ -130,8 +130,27 @@ func (c *Cache) Set(ctx context.Context, key, data string, ttl time.Duration) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.values[key] = &value{data: data, expires: c.now().Add(ttl)}
+	now := c.now()
+	// Without Redis the values live in this process: the expired ones are swept out when there
+	// are many, and past the limit nothing more is kept — a value is a favour, not a promise.
+	if len(c.values) >= sweepValuesAt {
+		for k, v := range c.values {
+			if !now.Before(v.expires) {
+				delete(c.values, k)
+			}
+		}
+		if _, known := c.values[key]; !known && len(c.values) >= maxValuesInMemory {
+			return
+		}
+	}
+	c.values[key] = &value{data: data, expires: now.Add(ttl)}
 }
+
+// How many values the memory of the process keeps while Redis is away.
+const (
+	sweepValuesAt     = 4096
+	maxValuesInMemory = 16384
+)
 
 // Get returns the value stored under key, if it is still alive.
 func (c *Cache) Get(ctx context.Context, key string) (string, bool) {

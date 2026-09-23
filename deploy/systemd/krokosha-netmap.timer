@@ -1,0 +1,12 @@
+[Unit]
+Description=krokosha site: the map of the internet, rebuilt every night
+
+[Timer]
+# RouteViews publishes the tables of midnight UTC within an hour or two; the site builds at
+# 00:10 and 06:10, the backup at 03:30 — the map comes between them.
+OnCalendar=*-*-* 02:20:00 UTC
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

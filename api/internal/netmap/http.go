@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,7 @@ type Service struct {
 type ServiceOptions struct {
 	Geo      Locator                          // where an address is
 	Limit    Limiter                          // requests per visitor; nil — no limit
+	Cache    Cache                            // answers kept for a while; nil — none
 	ClientIP func(ctx context.Context) net.IP // the visitor, as nginx tells it
 	Log      *slog.Logger
 }
@@ -37,6 +39,15 @@ type ServiceOptions struct {
 type Limiter interface {
 	Allow(ctx context.Context, key string, limit int, per time.Duration) bool
 }
+
+// Cache keeps answers for a while (cache.Cache is one: Redis).
+type Cache interface {
+	Get(ctx context.Context, key string) (string, bool)
+	Set(ctx context.Context, key, data string, ttl time.Duration)
+}
+
+// routeTTL is how long a route is kept: the map changes once a day, and its time is in the key.
+const routeTTL = 10 * time.Minute
 
 // How often a visitor may ask, per minute.
 const (
@@ -99,9 +110,13 @@ func (s *Service) send(w http.ResponseWriter, value any, cache string) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	s.write(w, body, cache)
+}
+
+func (s *Service) write(w http.ResponseWriter, body []byte, cache string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", cache)
-	_, _ = w.Write(append(body, '\n'))
+	_, _ = w.Write(append(body, '\n')) //nolint:gosec // JSON this service encoded, served as JSON: nothing is rendered
 }
 
 // allowed counts a request of the visitor against a limit.
@@ -167,6 +182,14 @@ func (s *Service) route(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, *bad)
 		return
 	}
+	// The same two addresses on the same map give the same route: the answer is kept a while.
+	key := "net:route:" + strconv.FormatInt(m.Built.Unix(), 10) + ":" + from.String() + ":" + to.String()
+	if s.opts.Cache != nil {
+		if body, ok := s.opts.Cache.Get(r.Context(), key); ok {
+			s.write(w, []byte(body), routeCaching)
+			return
+		}
+	}
 	route, err := m.Route(from, to, s.opts.Geo)
 	switch {
 	case errors.Is(err, ErrNotRouted):
@@ -180,8 +203,20 @@ func (s *Service) route(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.send(w, m.routeJSON(route), "public, max-age=600")
+	body, err := json.Marshal(m.routeJSON(route))
+	if err != nil {
+		s.opts.Log.Error("netmap: an answer cannot be encoded", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if s.opts.Cache != nil {
+		s.opts.Cache.Set(r.Context(), key, string(body), routeTTL)
+	}
+	s.write(w, body, routeCaching)
 }
+
+// routeCaching lets browsers keep a route as long as the service does.
+const routeCaching = "public, max-age=600"
 
 // RouteJSON is a route as the page reads it.
 type RouteJSON struct {

@@ -41,14 +41,16 @@ main() {
 
   step "Stopping services"
   systemctl disable --now krokosha-sync.timer krokosha-rebuild.path krokosha-api.service \
-    krokosha-backup.timer krokosha-certwatch.timer krokosha-geoipupdate.timer krokosha-dbip.timer 2>/dev/null || true
+    krokosha-backup.timer krokosha-certwatch.timer krokosha-geoipupdate.timer krokosha-dbip.timer \
+    krokosha-netmap.timer 2>/dev/null || true
   systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service krokosha-geoipupdate.service \
-    krokosha-dbip.service 2>/dev/null || true
+    krokosha-dbip.service krokosha-netmap.service 2>/dev/null || true
   rm -rf /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer \
     /etc/systemd/system/krokosha-backup.service /etc/systemd/system/krokosha-backup.timer \
     /etc/systemd/system/krokosha-certwatch.service /etc/systemd/system/krokosha-certwatch.timer \
     /etc/systemd/system/krokosha-geoipupdate.service /etc/systemd/system/krokosha-geoipupdate.timer \
     /etc/systemd/system/krokosha-dbip.service /etc/systemd/system/krokosha-dbip.timer \
+    /etc/systemd/system/krokosha-netmap.service /etc/systemd/system/krokosha-netmap.timer \
     /etc/systemd/system/krokosha-rebuild.path \
     /etc/systemd/system/krokosha-api.service /etc/systemd/system/krokosha-api.service.d
   systemctl daemon-reload

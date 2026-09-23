@@ -170,3 +170,77 @@ func TestServiceMeAndLimits(t *testing.T) {
 		t.Errorf("the third request of the minute: %d %v", status, body)
 	}
 }
+
+// mapCache is a cache in a map, with what was asked of it.
+type mapCache struct {
+	mu     sync.Mutex
+	values map[string]string
+	hits   int
+}
+
+func (c *mapCache) Get(_ context.Context, key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	value, ok := c.values[key]
+	if ok {
+		c.hits++
+	}
+	return value, ok
+}
+
+func (c *mapCache) Set(_ context.Context, key, data string, _ time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.values[key] = data
+}
+
+func TestServiceKeepsRoutes(t *testing.T) {
+	store := &mapCache{values: map[string]string{}}
+	service := NewService(ServiceOptions{
+		Cache:    store,
+		ClientIP: func(context.Context) net.IP { return net.ParseIP("203.0.113.9") },
+	})
+	mux := http.NewServeMux()
+	service.Register(mux)
+	m := testWorld(t)
+	for _, r := range []struct {
+		prefix string
+		asn    uint32
+	}{{"81.0.0.0/24", 6000}, {"82.0.0.0/24", 7000}} {
+		prefix := netip.MustParsePrefix(r.prefix)
+		last := prefix.Addr().As4()
+		last[3] = 255
+		m.Prefixes.add(prefix.Addr(), netip.AddrFrom4(last), r.asn)
+	}
+	m.Prefixes.sort()
+	service.Use(m)
+
+	get := func() string {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/net/route?from=81.0.0.10&to=82.0.0.20", nil))
+		if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != routeCaching {
+			t.Fatalf("route: %d %v", recorder.Code, recorder.Header())
+		}
+		return recorder.Body.String()
+	}
+	first := get()
+	if len(store.values) != 1 || store.hits != 0 {
+		t.Fatalf("after the first route: %d kept, %d hits", len(store.values), store.hits)
+	}
+	for key, value := range store.values {
+		if !strings.HasPrefix(key, "net:route:") || !strings.HasSuffix(key, ":81.0.0.10:82.0.0.20") || value+"\n" != first {
+			t.Errorf("kept: %q = %q", key, value)
+		}
+	}
+	if second := get(); second != first || store.hits != 1 {
+		t.Errorf("the second route: %d hits, the same answer %v", store.hits, second == first)
+	}
+	// A new map is a new key: yesterday's routes are not given for today's map.
+	next := *m
+	next.Built = m.Built.Add(24 * time.Hour)
+	service.Use(&next)
+	get()
+	if len(store.values) != 2 {
+		t.Errorf("%d routes kept after a new map", len(store.values))
+	}
+}

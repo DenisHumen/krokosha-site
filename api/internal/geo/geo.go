@@ -123,22 +123,8 @@ func (l *Locator) reload(now time.Time) {
 
 // Locate looks an address up. Private and unknown addresses give an empty Place.
 func (l *Locator) Locate(ip net.IP) Place {
-	if l == nil || l.path == "" {
-		return Place{}
-	}
-	l.mu.RLock()
-	stale := time.Since(l.checked) > recheckEvery
-	l.mu.RUnlock()
-	if stale {
-		l.reload(time.Now())
-	}
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
-		return Place{}
-	}
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.db == nil {
 		return Place{}
 	}
 	var record struct {
@@ -149,7 +135,7 @@ func (l *Locator) Locate(ip net.IP) Place {
 			Names map[string]string `maxminddb:"names"`
 		} `maxminddb:"city"`
 	}
-	if err := l.db.Lookup(addr.Unmap()).Decode(&record); err != nil {
+	if !l.lookup(addr, &record) {
 		return Place{}
 	}
 	place := Place{Country: record.Country.ISOCode, City: cut(record.City.Names["en"], maxCityBytes)}
@@ -157,6 +143,37 @@ func (l *Locator) Locate(ip net.IP) Place {
 		place.Country = ""
 	}
 	return place
+}
+
+// Where is the point an address is at, for the map of the internet (internal/netmap); ok is
+// false when the database has no coordinates for it.
+func (l *Locator) Where(addr netip.Addr) (lat, lon float64, ok bool) {
+	var record struct {
+		Location struct {
+			Latitude  *float64 `maxminddb:"latitude"`
+			Longitude *float64 `maxminddb:"longitude"`
+		} `maxminddb:"location"`
+	}
+	if !l.lookup(addr, &record) || record.Location.Latitude == nil || record.Location.Longitude == nil {
+		return 0, 0, false
+	}
+	return *record.Location.Latitude, *record.Location.Longitude, true
+}
+
+// lookup decodes the record of an address, from the newest file.
+func (l *Locator) lookup(addr netip.Addr, into any) bool {
+	if l == nil || l.path == "" {
+		return false
+	}
+	l.mu.RLock()
+	stale := time.Since(l.checked) > recheckEvery
+	l.mu.RUnlock()
+	if stale {
+		l.reload(time.Now())
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.db != nil && l.db.Lookup(addr.Unmap()).Decode(into) == nil
 }
 
 // cut shortens text to at most limit bytes without breaking a character.

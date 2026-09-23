@@ -43,6 +43,11 @@ func ptr(value float64) *float64 { return &value }
 // plain peering 9100 ━ 9200.
 func testWorld(t *testing.T) *Model {
 	t.Helper()
+	return Build(worldSources())
+}
+
+// worldSources are what testWorld is built from, for tests that change the world.
+func worldSources() Sources {
 	links := []Link{
 		NewLink(1000, 2000, RelPeer, SourceBGP),
 		NewLink(1000, 3000, RelProvider, SourceBGP),
@@ -100,11 +105,11 @@ func testWorld(t *testing.T) *Model {
 		netip.MustParsePrefix("198.51.100.0/24"): paris,
 		netip.MustParsePrefix("1.1.1.0/24"):      {-33.87, 151.21}, // an anycast address «in Sydney»
 	}
-	return Build(Sources{
+	return Sources{
 		Links: links, Prefixes: prefixes, PeeringDB: pdb, Geo: geo,
 		Names: map[uint32]AS{6000: {Name: "SIX", Country: "UA"}, 7000: {Name: "SEVEN", Country: "FR"}},
 		Now:   func() time.Time { return time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC) },
-	})
+	}
 }
 
 func node(t *testing.T, m *Model, asn uint32) *Node {

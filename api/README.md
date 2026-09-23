@@ -210,6 +210,19 @@ krokosha-cli indexnow --release DIR [--previous DIR] [--all]
 
 Читает `sitemap.xml` релиза, сравнивает страницы с предыдущим релизом байт в байт (сборка воспроизводима) и сообщает изменившиеся на `INDEXNOW_API` (по умолчанию `https://api.indexnow.org/indexnow`) с ключом `INDEXNOW_KEY`, который сайт отдаёт как `/<ключ>.txt`. Ничего не изменилось — ничего не отправляется. Вызывается из `deploy/bin/build-release.sh` после каждого релиза с окружением `krokosha-sync.service`; отказ там не фатален — следующий релиз расскажет снова (`internal/indexnow`).
 
+## `krokosha-cli netmap`
+
+Карта интернета страницы `/map` ([docs/netmap.md](../docs/netmap.md)), пакет `internal/netmap`:
+
+```bash
+krokosha-cli netmap sync                        # ночная работа (krokosha-netmap.timer): источники → модель → изменения в MySQL → обзор
+krokosha-cli netmap fetch|build                 # то же по частям, без MySQL
+krokosha-cli netmap route [flags] FROM TO       # маршрут в терминале
+krokosha-cli netmap serve --me IP               # /api/net/* без остального API — для работы над страницей
+```
+
+API отвечает на `GET /api/net/route`, `/api/net/as/{asn}`, `/api/net/search`, `/api/net/me` (лимиты — в Redis, маршруты кэшируются там же на 10 минут) и раз в 30 секунд проверяет `netmap_sync`: появилась новая удачная карта — загружает её из MySQL (~1,4 с) и подменяет старую.
+
 ## `krokosha-cli sync`
 
 Пишет в `content/generated/`:
@@ -236,7 +249,7 @@ krokosha-cli indexnow --release DIR [--previous DIR] [--all]
 api/
 ├── cmd/
 │   ├── krokosha-api/     точка входа сервиса
-│   └── krokosha-cli/     CLI: sync, admin, bot (проверка токена, приглашения, доступ), alert, indexnow
+│   └── krokosha-cli/     CLI: sync, admin, bot (проверка токена, приглашения, доступ), alert, indexnow, netmap
 ├── dev/                  запуск админки на своей машине с демо-данными (не для сервера)
 ├── internal/
 │   ├── config/           content/*.yaml (то, что нужно Go) и /etc/krokosha/env
@@ -247,6 +260,7 @@ api/
 │   ├── analytics/        приём /api/e, валидация, дневная соль; отчёты для админки (report.go); дневные итоги и очистка сырых данных (rollup.go, report_daily.go)
 │   ├── geo/              страна и город по локальной базе MaxMind DB (DB-IP, GeoLite2); geotest — крошечная база для тестов
 │   ├── indexnow/         какие страницы релиза изменились → IndexNow
+│   ├── netmap/           карта интернета /map: источники, модель, маршруты, обзор для страницы, хранение в MySQL, API
 │   ├── admin/            страницы админки: вход, обзор, визиты, заявки, SSE-лента, экспорт CSV, SVG-графики (шаблоны и статика встроены в бинарник)
 │   ├── leads/            заявки: проверка формы, антиспам, proof-of-work, хранение, письма; crm.go — статусы, «взять», ответы, заметки, шаблоны, воронка; files.go — вложения; retention.go — срок хранения
 │   ├── outbox/           надёжная доставка уведомлений: одна транзакция с заявкой, повторы, идемпотентность; alert.go — оповещения владельца
