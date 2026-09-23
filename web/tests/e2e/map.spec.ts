@@ -257,9 +257,8 @@ test.describe('the map of the internet', () => {
     await expect(rows.nth(2).locator('.hop-delay')).toHaveText('21 ms');
     await expect(rows.nth(3).locator('.hop-answered')).toHaveText('3/3the address itself');
     await expect(measured).toContainText('TCP handshakes with port 443: 5 of 5, 90 ms');
-    await expect(
-      page.getByRole('button', { name: "Measure from this site's server" }),
-    ).toBeHidden();
+    // The button itself goes (found by what it is, not by its label, which changed meanwhile).
+    await expect(page.locator('[data-route-trace]')).toBeHidden();
 
     // Either way can be put on the map.
     const model = page.locator('[data-show="model"]');
