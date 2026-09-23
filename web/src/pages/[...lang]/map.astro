@@ -949,6 +949,12 @@ const breadcrumbs = breadcrumbsJsonLd(origin, lang, [
     text-underline-offset: 0.2em;
   }
 
+  /* The citation ends with a long address: on a phone it breaks anywhere rather than widen the page. */
+  .citation,
+  .credits li {
+    overflow-wrap: anywhere;
+  }
+
   .citation {
     font-size: 0.7rem;
     line-height: 1.5;

@@ -348,6 +348,17 @@ test.describe('the map of the internet', () => {
     expectProblems(problems, /404/);
   });
 
+  test('fits the screen: nothing makes the page scroll sideways', async ({ page }) => {
+    await mockMap(page);
+    await page.goto('/ru/map/?from=me&to=1.1.1.1'); // the longest texts, a route and its table
+    await expect(page.locator('[data-route-result] tbody tr')).toHaveCount(4);
+    const [scroll, client] = await page.evaluate(() => [
+      document.documentElement.scrollWidth,
+      document.documentElement.clientWidth,
+    ]);
+    expect(scroll).toBeLessThanOrEqual(client);
+  });
+
   test('speaks the language of its address', async ({ page }) => {
     await mockMap(page);
     await page.goto('/uk/map/?from=me&to=1.1.1.1');
