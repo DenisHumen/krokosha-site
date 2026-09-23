@@ -6,17 +6,23 @@ import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import Base from '../../layouts/Base.astro';
 import { getPageData } from '../../lib/page-data.ts';
 import { localeStaticPaths } from '../../lib/routes.ts';
+import { serializeJsonLd } from '../../lib/seo.ts';
 
 export const getStaticPaths = localeStaticPaths;
 
 const lang = localeFromParam(Astro.params.lang);
 const data = await getPageData(lang);
-const { not_found, flags } = data.site;
+const { not_found, flags, eggs } = data.site;
 const game = flags.easter_eggs.enabled && flags.easter_eggs.lost_packet_404;
 const words = {
   warm: not_found.game.warm,
   cold: not_found.game.cold,
   found: not_found.game.found,
+};
+// The found packet is an achievement like the eggs of the home page (design/components/eggs/eggs.js).
+const achievement = {
+  flags: flags.easter_eggs,
+  texts: { found: eggs.found, achievements: eggs.achievements },
 };
 ---
 
@@ -64,6 +70,12 @@ const words = {
           </div>
         </div>
         <p class="log mono" aria-live="polite" data-game-log></p>
+        <script
+          is:inline
+          type="application/json"
+          id="kro-eggs"
+          set:html={serializeJsonLd(achievement)}
+        ></script>
       </div>
     )}
 
@@ -76,10 +88,17 @@ const words = {
 
 <script>
   // The packet hides behind a random port; the ports around it are «warm». A found packet is an
-  // easter egg: it goes into the same list as the others (design/components/eggs/eggs.js).
+  // easter egg: it goes into the same list as the others and shows its achievement
+  // (design/components/eggs/eggs.js).
+  type EggsModule = typeof import('../../../../design/components/eggs/eggs.js');
+
   const board = document.querySelector<HTMLElement>('[data-game]');
   if (board) {
     const words = JSON.parse(board.dataset['words'] ?? '{}') as Record<string, string>;
+    const achievement = JSON.parse(document.getElementById('kro-eggs')?.textContent ?? '{}') as {
+      flags?: Record<string, boolean>;
+      texts?: Record<string, unknown>;
+    };
     const ports = [...board.querySelectorAll<HTMLButtonElement>('[data-port]')];
     const log = board.querySelector<HTMLElement>('[data-game-log]');
     const tries = board.querySelector<HTMLElement>('[data-game-tries]');
@@ -89,10 +108,14 @@ const words = {
     const distance = (i: number) =>
       Math.abs((i % 8) - (target % 8)) + Math.abs(Math.floor(i / 8) - Math.floor(target / 8));
     let count = 0;
+    // The eggs arrive with the first ping, so that the banner and its sound are ready by the find.
+    let eggs: Promise<EggsModule> | null = null;
+    const load = () => (eggs ??= import('../../../../design/components/eggs/eggs.js'));
 
     for (const port of ports) {
       port.addEventListener('click', () => {
         const i = Number(port.dataset['port']);
+        void load();
         count += 1;
         if (tries) tries.textContent = String(count);
         port.disabled = true;
@@ -111,17 +134,10 @@ const words = {
           log.classList.add('found');
           log.textContent = words['found'] ?? '';
         }
-        try {
-          const key = 'krokosha:eggs';
-          const list = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
-          if (!list.includes('lost_packet')) {
-            list.push('lost_packet');
-            localStorage.setItem(key, JSON.stringify(list));
-          }
-        } catch {
-          // Storage is blocked: the packet is found all the same.
-        }
-        document.dispatchEvent(new CustomEvent('krokosha:egg', { detail: 'lost_packet' }));
+        void load().then((module) => {
+          module.configure({ flags: achievement.flags ?? {} });
+          module.found('lost_packet', achievement.texts ?? {});
+        });
       });
     }
   }

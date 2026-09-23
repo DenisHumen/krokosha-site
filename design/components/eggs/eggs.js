@@ -2,30 +2,36 @@
  * Easter eggs (brief A6). Loaded lazily after `load`. Every egg is gated by site.flags.easter_eggs.*.
  * Style: dot-matrix bitmaps drawn on small canvases (no GIF). Nothing here covers a CTA;
  * nothing auto-starts under prefers-reduced-motion. Tracking: data-track="egg-<id>" via found().
+ * A found egg is an achievement, shown the way Steam shows one (achievement.js).
  */
+import { unlock } from './achievement.js';
+
 const KEY = 'krokosha:eggs';
 const ALL = ['konami', 'sudo', 'croc', 'cat', 'reboot', 'console', 'croc5', 'lost_packet'];
 export const TOTAL = ALL.length;
 let years = 9; // set by initEggs: the BIOS screen of the avatar counts the real years
+let achievements = true; // flag achievements: the banner with its sound
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const css = (el, s) => { el.style.cssText += ';' + s; return el; };
 const mono = "font:12px/1.5 var(--font-mono, 'Fira Code', ui-monospace, monospace)"; // the site's own family name
 
+/** What found() needs where initEggs() does not run (the 404 page): the flags and the years. */
+export function configure({ flags = {}, experience } = {}) {
+  achievements = flags.enabled !== false && flags.achievements !== false;
+  if (experience) years = experience;
+}
 export function foundList() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
 export function found(id, texts = {}) {
   const list = foundList(); if (list.includes(id)) return list.length;
   list.push(id); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch {}
   document.dispatchEvent(new CustomEvent('kro:egg', { detail: { id, count: list.length, total: ALL.length } }));
   document.dispatchEvent(new CustomEvent('krokosha:egg', { detail: id })); // statistics (contract §4)
-  toast(`${texts.found || 'Пасхалка найдена'} · ${list.length}/${ALL.length}`);
-  if (list.length >= ALL.length) setTimeout(() => toast(texts.all || 'Все пасхалки найдены. Ачивка: root@krokosha'), 1600);
+  if (achievements) {
+    const names = texts.achievements || {}, label = texts.found || 'Пасхалка найдена';
+    unlock({ id, name: id, text: label, ...names[id], found: label, count: list.length, total: ALL.length });
+    if (list.length >= ALL.length) unlock({ id: 'all', name: 'root@krokosha', text: '', ...names.all, found: label, rare: true });
+  }
   return list.length;
-}
-function toast(msg) {
-  const t = css(document.createElement('div'), `position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 84px);transform:translateX(-50%) translateY(8px);z-index:60;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--fg);box-shadow:var(--shadow-1);${mono};opacity:0;transition:opacity .3s,transform .3s`);
-  t.textContent = msg; t.setAttribute('role', 'status'); document.body.appendChild(t);
-  requestAnimationFrame(() => { t.style.opacity = 1; t.style.transform = 'translateX(-50%)'; });
-  setTimeout(() => { t.style.opacity = 0; setTimeout(() => t.remove(), 400); }, 2600);
 }
 
 // Dot-matrix sprite: array of strings ('#' = dot) → canvas with animation frames.
@@ -81,7 +87,7 @@ const CAT_SIT = [[
 ]];
 
 export function initEggs({ flags = {}, texts = {}, experience = 9 } = {}) {
-  years = experience;
+  configure({ flags, experience });
   const on = (k) => flags.enabled !== false && flags[k] !== false;
   if (on('console_message')) {
     console.log('%c krokosha.xyz %c link up · 10Gbps · full-duplex ', 'background:#111;color:#fff;padding:4px 8px;border-radius:4px 0 0 4px;font-family:Fira Code,monospace', 'background:#6b4de6;color:#fff;padding:4px 8px;border-radius:0 4px 4px 0;font-family:Fira Code,monospace');
@@ -171,7 +177,7 @@ function croc(texts) {
   const c = dotSprite(CROC, 3, 1); wrap.appendChild(c); document.body.appendChild(wrap);
   let clicks = 0, tmr; const blink = () => { c.step(); tmr = setTimeout(blink, 400 + Math.random() * 1600); };
   const io = new IntersectionObserver(([e]) => { if (e.isIntersecting && !reduced) { wrap.style.bottom = '0px'; clearTimeout(tmr); blink(); } else { wrap.style.bottom = '-40px'; clearTimeout(tmr); } }); io.observe(foot);
-  wrap.onclick = () => { clicks++; found('croc', texts); wrap.style.bottom = '-40px'; if (clicks >= 5) { toast(texts.croc5 || 'крок-крок. ты нашёл настоящего Krokosha'); found('croc5', texts); } else setTimeout(() => { if (wrap.style.bottom === '-40px') wrap.style.bottom = '0px'; }, 2200 + clicks * 400); };
+  wrap.onclick = () => { clicks++; found('croc', texts); wrap.style.bottom = '-40px'; if (clicks >= 5) found('croc5', texts); else setTimeout(() => { if (wrap.style.bottom === '-40px') wrap.style.bottom = '0px'; }, 2200 + clicks * 400); };
   new MutationObserver(() => c.redraw()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }
 

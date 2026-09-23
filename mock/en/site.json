@@ -271,10 +271,46 @@
   },
   "eggs": {
     "found": "Easter egg found",
-    "all": "All easter eggs found. Achievement: root@krokosha",
+    "achievements": {
+      "konami": {
+        "name": "↑↑↓↓←→←→BA",
+        "text": "Night in the server room: all green"
+      },
+      "sudo": {
+        "name": "Superuser",
+        "text": "Typed sudo and got a terminal"
+      },
+      "croc": {
+        "name": "Crocodile spotted",
+        "text": "It was peeking out from behind the footer"
+      },
+      "croc5": {
+        "name": "The real Krokosha",
+        "text": "Crock-crock! Five clicks on the crocodile"
+      },
+      "cat": {
+        "name": "Cat whisperer",
+        "text": "The wandering cat sat down to rest"
+      },
+      "reboot": {
+        "name": "Turn it off and on again",
+        "text": "The avatar rebooted like a server"
+      },
+      "console": {
+        "name": "Almost a colleague",
+        "text": "krokosha.hello() in the DevTools console"
+      },
+      "lost_packet": {
+        "name": "Packet recovered",
+        "text": "The lost packet of the 404 page"
+      },
+      "all": {
+        "name": "root@krokosha",
+        "text": "Every easter egg found"
+      }
+    },
     "night": "server room · 03:14 · all green",
     "croc": "Crocodile",
-    "croc5": "crock-crock. You found the real Krokosha",
     "console": "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA",
     "terminal": {
       "whoami": "guest (but curious). Denis is root here.",
