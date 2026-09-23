@@ -713,6 +713,7 @@ check "a new release was published" test "$(readlink -f /var/www/krokosha/curren
 check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
 check "the mail server, its mailboxes and its key survived" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && [[ \$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf \"/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt\" | sha256sum) == '$mail_before' ]]"
+check "…and rspamd can still read that key, the mail server running on" docker exec krokosha-mail-1 su _rspamd -s /bin/sh -c "cat /tmp/docker-mailserver/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt >/dev/null"
 check "the bot and its owner survived" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=.' /etc/krokosha/env && krokosha-cli bot users | grep -q 'owner'"
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1

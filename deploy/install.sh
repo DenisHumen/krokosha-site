@@ -867,7 +867,11 @@ if [[ $MAIL != yes ]]; then
     ok "the mail server that ran here before is stopped; its data stays in $MAIL_DIR"
   fi
 else
-  install -d -m 0750 -o root -g root "$MAIL_DIR" "$MAIL_DIR/config"
+  install -d -m 0750 -o root -g root "$MAIL_DIR"
+  # The mail server's own users pass through its settings (rspamd reads the DKIM keys there, and
+  # makes new ones): docker-mailserver sets that bit when it starts, and taking it away while the
+  # server runs would leave a new key unwritable and the keys unreadable after a reload.
+  install -d -m 0751 -o root -g root "$MAIL_DIR/config"
   install -d -m 0755 "$MAIL_DIR/data" "$MAIL_DIR/state" "$MAIL_DIR/logs"
 
   # Mailboxes: «address|{SHA512-CRYPT}hash» per line, the format docker-mailserver reads. A
