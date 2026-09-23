@@ -20,6 +20,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
@@ -79,6 +80,10 @@ type Options struct {
 	Inbox           Inbox
 	Mailbox         string
 	KeepLettersDays int
+
+	// Geo describes the GeoIP database; nil — geolocation is off. Its maker is credited at the
+	// bottom of every page, as the licence of the data asks (DB-IP: CC BY 4.0).
+	Geo func() geo.Info
 }
 
 // Handler serves the admin area.
@@ -307,9 +312,11 @@ type view struct {
 	Letters  int
 	Session  *auth.Session
 	Version  string
-	Flash    string // a message about what just happened
-	Error    string
-	Data     any
+	// GeoSource is the maker of the GeoIP database whom the footer credits: «DB-IP», «MaxMind» or "".
+	GeoSource string
+	Flash     string // a message about what just happened
+	Error     string
+	Data      any
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
@@ -322,6 +329,9 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	}
 	if v.Session != nil && h.opts.Inbox != nil {
 		v.HasInbox, v.Letters = true, h.opts.Inbox.Status(r.Context()).Unmatched
+	}
+	if v.Session != nil && h.opts.Geo != nil {
+		v.GeoSource = h.opts.Geo().Source()
 	}
 	if v.Flash == "" {
 		v.Flash = flashText[r.URL.Query().Get("ok")]

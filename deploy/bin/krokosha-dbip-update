@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Keeps the free city database of DB-IP (IP to City Lite, https://db-ip.com/db/download/ip-to-city-lite)
+# in /var/lib/GeoIP: the countries and cities of visitors in the statistics (brief B5) when there
+# is no MaxMind key. DB-IP publishes a new file on the first day of every month; this looks once a
+# day and downloads only when this month's file is not in place yet — about 60 MB once a month.
+#
+#   sudo systemctl start krokosha-dbip.service      (krokosha-dbip.timer runs it every day)
+#
+# The API notices the new file by itself within ten minutes. The licence of the data (CC BY 4.0)
+# asks for a link to DB-IP where the results are shown: the admin area has it at the bottom.
+set -Eeuo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=deploy/lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
+
+require_root
+
+GEOIP_DIR=/var/lib/GeoIP
+DB=$GEOIP_DIR/dbip-city-lite.mmdb
+STAMP=$DB.month # the month of the file in place, «2026-09»
+# The environment may point elsewhere: the installer's test serves the files itself.
+BASE=${DBIP_URL:-$(env_get DBIP_URL)}
+BASE=${BASE:-https://download.db-ip.com/free}
+BASE=${BASE%/}
+# Every MaxMind DB file ends with its metadata, which starts with these bytes.
+MARKER=$'\xab\xcd\xefMaxMind.com'
+
+install -d -m 0755 "$GEOIP_DIR"
+exec 9>"$GEOIP_DIR/.dbip.lock"
+flock --nonblock 9 || die "another update of the DB-IP database is running"
+# What a run that was killed halfway left behind (nothing else runs now: the lock is ours).
+rm -f -- "$GEOIP_DIR"/.dbip-city-lite.*
+TMP=''
+trap 'rm -f -- "${TMP:-}" "${TMP:+$TMP.gz}"' EXIT
+
+this_month=$(date -u +%Y-%m)
+# The 15th of the month is the safe day to step back from: «-1 month» of the 31st is not always last month.
+last_month=$(date -u -d "$(date -u +%Y-%m-15) -1 month" +%Y-%m)
+have_month=''
+[[ -s $DB && -f $STAMP ]] && have_month=$(<"$STAMP")
+if [[ $have_month == "$this_month" ]]; then
+  log "DB-IP City Lite of $this_month is in place"
+  exit 0
+fi
+
+# fetch MONTH — downloads that month's file, checks it and puts it in place.
+# Returns 2 when DB-IP has no such file (not published yet), 1 on any other failure.
+fetch() {
+  local status=0
+  download "$1" || status=$?
+  [[ -z $TMP ]] || rm -f -- "$TMP" "$TMP.gz"
+  TMP=''
+  return "$status"
+}
+
+# download MONTH — the work of fetch, in a temporary file that fetch then removes. It is called as
+# `download … || status=$?`, where bash does not stop at errors: each step checks its own.
+download() {
+  local month=$1 url code
+  url="$BASE/dbip-city-lite-$month.mmdb.gz"
+  TMP=$(mktemp "$GEOIP_DIR/.dbip-city-lite.XXXXXX") || return 1
+  if ! code=$(curl --silent --show-error --location --retry 3 --connect-timeout 20 --max-time 1200 \
+    --output "$TMP.gz" --write-out '%{http_code}' "$url"); then
+    warn "$url: the download failed"
+    return 1
+  fi
+  case $code in
+    200) ;;
+    404) return 2 ;;
+    *) warn "$url: HTTP $code"; return 1 ;;
+  esac
+  if ! gzip -dc "$TMP.gz" >"$TMP"; then
+    warn "$url: the archive is damaged"
+    return 1
+  fi
+  if ! LC_ALL=C grep -qa "$MARKER" < <(tail -c 131072 "$TMP"); then
+    warn "$url: that is not a MaxMind DB file"
+    return 1
+  fi
+  chmod 0644 "$TMP" || return 1
+  # A rename: the API keeps reading the old file until it opens the new one.
+  mv -f "$TMP" "$DB" || return 1
+  { printf '%s\n' "$month" >"$STAMP.new" && mv -f "$STAMP.new" "$STAMP"; } || return 1
+  ok "DB-IP City Lite of $month is in place: $DB ($(du -h "$DB" | cut -f1))"
+}
+
+status=0
+fetch "$this_month" || status=$?
+[[ $status -eq 0 ]] && exit 0
+if [[ $status -eq 2 ]]; then
+  # A new month is published in the morning of its first day (UTC). Until then last month's
+  # file is as good as it gets; later the address has probably changed.
+  if [[ -n $have_month ]] && ((10#$(date -u +%d) <= 3)); then
+    log "DB-IP has not published $this_month yet; the file of $have_month stays"
+    exit 0
+  fi
+  warn "DB-IP has no file for $this_month: $BASE/dbip-city-lite-$this_month.mmdb.gz"
+fi
+if [[ -z $have_month || $have_month < $last_month ]]; then
+  status=0
+  fetch "$last_month" || status=$?
+  [[ $status -eq 0 ]] && exit 0
+  [[ $status -eq 2 ]] && warn "DB-IP has no file for $last_month either"
+fi
+[[ -s $DB ]] && warn "the database of ${have_month:-an unknown month} stays in place"
+exit 1

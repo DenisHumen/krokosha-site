@@ -44,7 +44,8 @@ install_site() {
   "$SOURCE/deploy/install.sh" --domain "$DOMAIN" --email ci@example.com \
     --mailbox "owner@$DOMAIN" --mail-name 'CI Owner' --mailbox-password-file "$MAILBOX_PASSWORD_FILE" \
     --repo "$SOURCE" --branch ci-test --tls selfsigned --skip-dns-check --yes \
-    --admin-path "$ADMIN_PATH" --admin-login ci-admin --admin-password-file "$ADMIN_PASSWORD_FILE" "$@"
+    --admin-path "$ADMIN_PATH" --admin-login ci-admin --admin-password-file "$ADMIN_PASSWORD_FILE" \
+    --dbip-url http://127.0.0.1:8090 "$@"
 }
 
 echo "::group::A WireGuard interface that the installer must not break"
@@ -78,11 +79,36 @@ chmod 0666 "$INDEXNOW_CALLS"
 python3 "$SOURCE/deploy/ci/mock-indexnow.py" "$INDEXNOW_CALLS" 8089 &
 MOCK_INDEXNOW=$!
 trap 'kill "$MOCK_TELEGRAM" "$MOCK_INDEXNOW" 2>/dev/null || true' EXIT
+
+# DB-IP: a pretend download.db-ip.com, a directory of files served over HTTP. At first it has
+# last month's file only — what the real one looks like early on the first day of a month.
+DBIP_DIR=$(mktemp -d)
+chmod 0755 "$DBIP_DIR"
+THIS_MONTH=$(date -u +%Y-%m)
+LAST_MONTH=$(date -u -d "$(date -u +%Y-%m-15) -1 month" +%Y-%m)
+dbip_publish() { # dbip_publish MONTH NETWORK=CC:City… — a database of DB-IP's type, gzipped as DB-IP serves it
+  local month=$1
+  shift
+  MMDB_TYPE=DBIP-City-Lite python3 "$SOURCE/deploy/ci/mmdb.py" "$DBIP_DIR/new.mmdb" "$@"
+  gzip -c "$DBIP_DIR/new.mmdb" >"$DBIP_DIR/dbip-city-lite-$month.mmdb.gz"
+  rm -f "$DBIP_DIR/new.mmdb"
+}
+dbip_publish "$LAST_MONTH" 127.0.0.0/8=PL:Warsaw
+python3 -m http.server 8090 --bind 127.0.0.1 --directory "$DBIP_DIR" >/dev/null 2>&1 &
+MOCK_DBIP=$!
+trap 'kill "$MOCK_TELEGRAM" "$MOCK_INDEXNOW" "$MOCK_DBIP" 2>/dev/null || true' EXIT
+# dbip_in_use MONTH — the API is told to read DB-IP City Lite of that month, and a timer keeps it fresh.
+dbip_in_use() {
+  [[ $(sed -n 's/^GEOIP_DB=//p' /etc/krokosha/env) == /var/lib/GeoIP/dbip-city-lite.mmdb &&
+    $(stat -c '%a %U' /var/lib/GeoIP/dbip-city-lite.mmdb) == '644 root' &&
+    $(cat /var/lib/GeoIP/dbip-city-lite.mmdb.month) == "$1" ]] &&
+    systemctl is-enabled --quiet krokosha-dbip.timer
+}
 submissions() { wc -l <"$INDEXNOW_CALLS" | tr -d ' '; }
 submission() { sed -n "${1}p" "$INDEXNOW_CALLS"; } # the Nth, as the engine received it
 
 # GeoLite2: a key MaxMind will not accept. The installer must keep it to itself, say that the
-# database could not be fetched, and go on.
+# database could not be fetched, and go on with DB-IP City Lite meanwhile.
 MAXMIND_KEY='CI0000_a_fake_key_that_must_not_show_up_in_logs'
 MAXMIND_KEY_FILE=$(mktemp)
 printf '%s\n' "$MAXMIND_KEY" >"$MAXMIND_KEY_FILE"
@@ -305,28 +331,39 @@ echo "GeoIP"
 check "the MaxMind account and key are in the settings and in /etc/GeoIP.conf, for root only" bash -c "grep -q '^MAXMIND_ACCOUNT_ID=999999\$' /etc/krokosha/env && grep -q '^MAXMIND_LICENSE_KEY=$MAXMIND_KEY\$' /etc/krokosha/env && grep -q '^AccountID 999999\$' /etc/GeoIP.conf && grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && [[ \$(stat -c '%a %U' /etc/GeoIP.conf) == '600 root' ]]"
 check "…and the key shows up nowhere in the installer's output" bash -c "! grep -qF '$MAXMIND_KEY' '$INSTALL_LOG'"
 check "a key MaxMind refuses: the installer said so and went on" grep -q 'could not be fetched yet' "$INSTALL_LOG"
-check "the database is fetched twice a week" systemctl is-enabled --quiet krokosha-geoipupdate.timer
-geo_not_installed() {
+check "GeoLite2 is tried twice a week" systemctl is-enabled --quiet krokosha-geoipupdate.timer
+check "meanwhile the free DB-IP City Lite is used: last month's, as this month's is not out yet" dbip_in_use "$LAST_MONTH"
+check "…fetched from the address given to the installer" grep -q '^DBIP_URL=http://127.0.0.1:8090$' /etc/krokosha/env
+geo_status() { # geo_status TEXT — the line «База GeoIP» of the status screen says TEXT
   local page
   page=$(admin_get "$ADMIN/status")
-  grep -q 'не установлена — страны и города' <<<"$page" || { grep -o 'База GeoIP.\{0,160\}' <<<"$page" | head -n 2; return 1; }
+  grep -q "$1" <<<"$page" || { grep -o 'База GeoIP.\{0,160\}' <<<"$page" | head -n 2; return 1; }
 }
-check "the status screen says there is no database yet" geo_not_installed
-# geoipupdate would bring the real file; one written by the test stands in for it, and the
-# service picks it up the way it picks up a fresh download.
-python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
-systemctl restart krokosha-api.service
-api_answers() { curl -sf --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; }
-check "the API is back with the database" wait_for 30 api_answers
-geo_recorded() {
-  [[ $(beacon "${view/00112233aabbccdd/00112233aabbcc77}") == 204 ]] || return 1
+check "the status screen names the database" geo_status 'DBIP-City-Lite от 10.09.2026'
+check "…and the admin area credits DB-IP, as its licence asks" grep -q '>IP Geolocation by DB-IP</a>' <(admin_get "$ADMIN/")
+geo_recorded() { # geo_recorded ID 'CC City' — a page view with that id gets that place
+  [[ $(beacon "${view/00112233aabbccdd/$1}") == 204 ]] || return 1
   sleep 3
-  [[ $(sql "SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('00112233aabbcc77')") == 'UA Kyiv' ]]
+  [[ $(sql "SELECT CONCAT(country, ' ', city) FROM analytics_pageviews WHERE pageview_id = UNHEX('$1')") == "$2" ]]
 }
-check "a page view gets its country and city from the database" geo_recorded
+check "a page view gets its country and city from the database" geo_recorded 00112233aabbcc77 'PL Warsaw'
 check "…the address itself is still not stored" test "$(sql "SELECT COUNT(*) FROM analytics_pageviews WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
-geo_shown() { grep -q 'Украина' <(both_days /) && grep -q 'Test-City от 10.09.2026' <(admin_get "$ADMIN/status"); }
-check "the overview names the country, the status screen names the database" geo_shown
+check "the overview names the country" grep -q 'Польша' <(both_days /)
+# After the second run of the installer the admin area is read once more. By then this test has
+# signed out and run into the limit of sign-ins (five wrong attempts per login and per network),
+# so a session for that is opened now.
+GEO_JAR=$(mktemp)
+geo_login=$("${CURL[@]}" --output /dev/null --write-out '%{http_code}' --cookie-jar "$GEO_JAR" --user-agent "$BROWSER" \
+  --request POST "$ADMIN/login" --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")
+check "…a session is kept for the checks after the second run" test "$geo_login" = 303
+geo_page_says() { # geo_page_says PATH TEXT — that page of the admin area, read in that session, says TEXT
+  local page
+  page=$("${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN$1")
+  grep -q "$2" <<<"$page" || { grep -o 'База GeoIP.\{0,160\}\|<footer.\{0,300\}\|<title>[^<]*' <<<"$page" | head -n 3; return 1; }
+}
+# geoipupdate would bring the real GeoLite2 one day; a file written by the test stands in for it.
+# The next run of the installer (the second run below) is to switch the API over to it.
+MMDB_TYPE=GeoLite2-City python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
 
 echo "Requests in the admin area"
 check "the list shows the requests sent above" grep -q '#K-0001' <(admin_get "$ADMIN/leads")
@@ -654,6 +691,11 @@ check "the mail server, its mailboxes and its key survived" bash -c "[[ \$(docke
 check "the bot and its owner survived" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=.' /etc/krokosha/env && krokosha-cli bot users | grep -q 'owner'"
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
+check "GeoLite2 has come: the API reads it now, and DB-IP is gone" bash -c "[[ \$(sed -n 's/^GEOIP_DB=//p' /etc/krokosha/env) == /var/lib/GeoIP/GeoLite2-City.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb ]] && ! systemctl is-enabled --quiet krokosha-dbip.timer"
+check "…a page view gets its place from GeoLite2" geo_recorded 00112233aabbcc78 'UA Kyiv'
+check "…the status screen names it" geo_page_says /status 'GeoLite2-City от 10.09.2026'
+check "…and the admin area credits MaxMind" geo_page_says / 'GeoLite2 data created by MaxMind'
+check "…instead of DB-IP" bash -c "! grep -q 'IP Geolocation by DB-IP' <<<\"\$1\"" _ "$("${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN/")"
 
 echo "::group::update.sh"
 /opt/krokosha/repo/deploy/update.sh
@@ -680,11 +722,15 @@ mail_before=$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krok
 files_before=$(find /srv/krokosha/attachments -type f | wc -l)
 webhooks_before=$(bot_called setWebhook)
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
+# DB-IP has published this month's file by now.
+dbip_publish "$THIS_MONTH" 127.0.0.0/8=CZ:Prague
 install_site
 database_password=$(sed -n 's/^MYSQL_PASSWORD=//p' /etc/krokosha/env)
 echo "::endgroup::"
 echo "Restore"
 check "a new installation knows nothing of the old one" test "$(sql 'SELECT COUNT(*) FROM leads')" = 0
+check "…has no MaxMind key and no use for geoipupdate" bash -c "[[ ! -e /etc/GeoIP.conf ]] && ! systemctl is-enabled --quiet krokosha-geoipupdate.timer"
+check "…and takes DB-IP City Lite of this month instead" dbip_in_use "$THIS_MONTH"
 check "…and has secrets of its own" test "$(grep -E '^(APP_SECRET|ADMIN_PATH|MAIL_SERVICE_PASSWORD)=' /etc/krokosha/env | sha256sum)" != "$kept_before"
 check "restore.sh puts the backup back" bash -c "'$SOURCE/deploy/restore.sh' --from '$saved' --yes >'$elsewhere/restore.log' 2>&1 || { tail -n 30 '$elsewhere/restore.log'; exit 1; }"
 check "requests, conversations, files, administrators, the bot's people and the statistics are back" test "$(facts)" = "$facts_before"
@@ -693,6 +739,7 @@ check "…while the database password stays the new installation's own" test "$(
 webhook_again() { [[ $(bot_called setWebhook) -gt $webhooks_before ]]; }
 check "the bot is back: the restored token was checked with Telegram, the webhook registered anew" wait_for 30 webhook_again
 check "the MaxMind key is back, /etc/GeoIP.conf is written again" bash -c "grep -q '^LicenseKey $MAXMIND_KEY\$' /etc/GeoIP.conf && systemctl is-enabled --quiet krokosha-geoipupdate.timer"
+check "…and until it brings GeoLite2, DB-IP stays" dbip_in_use "$THIS_MONTH"
 check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf "/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt" | sha256sum)" = "$mail_before"
 check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
 check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
@@ -707,7 +754,8 @@ echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge
 echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
-check "the MaxMind key and the database are gone with them" bash -c "[[ ! -e /etc/GeoIP.conf && ! -e /var/lib/GeoIP/GeoLite2-City.mmdb ]]"
+check "the MaxMind key and both databases are gone with them" bash -c "[[ ! -e /etc/GeoIP.conf && ! -e /var/lib/GeoIP/GeoLite2-City.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb.month ]]"
+check "…and so is the DB-IP timer" bash -c "! systemctl cat krokosha-dbip.timer >/dev/null 2>&1"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"

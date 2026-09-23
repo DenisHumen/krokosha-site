@@ -317,9 +317,18 @@ func problems(status *Status, now time.Time) []Problem {
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")
 	}
-	// GeoLite2 comes out twice a week; a database older than six weeks means geoipupdate stopped.
+	// GeoLite2 comes out twice a week and DB-IP once a month: a database older than six weeks means
+	// that what fetches it has stopped.
 	if info := status.Geo; info != nil && info.Loaded && now.Sub(info.Built) > 42*24*time.Hour {
-		add("warn", "База GeoIP собрана %s и не обновлялась: sudo systemctl status krokosha-geoipupdate.timer, sudo geoipupdate -v", info.Built.Format("02.01.2006"))
+		built := info.Built.Format("02.01.2006")
+		switch info.Source() {
+		case "DB-IP":
+			add("warn", "База GeoIP (DB-IP) собрана %s и не обновлялась: sudo systemctl status krokosha-dbip.timer, sudo journalctl -u krokosha-dbip, скачать сейчас — sudo systemctl start krokosha-dbip.service", built)
+		case "MaxMind":
+			add("warn", "База GeoIP собрана %s и не обновлялась: sudo systemctl status krokosha-geoipupdate.timer, sudo geoipupdate -v", built)
+		default:
+			add("warn", "База GeoIP %s собрана %s и не обновлялась", info.Path, built)
+		}
 	}
 	return out
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap/imaptest"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
@@ -52,6 +53,7 @@ type site struct {
 	state   string              // the server's state directory: build report, rebuild requests
 	leads   *leads.Store
 	bot     telegram.Status // what the bot reports; the zero value — no token, no bot
+	geo     geo.Info        // the GeoIP database; the zero value — not there
 	// With mail: the service mailbox (a test IMAP server) and what reads it.
 	mailbox *imaptest.Server
 	letters *inbox.Service
@@ -89,7 +91,8 @@ func newSiteWith(t *testing.T, withMail bool) *site {
 		t.Fatal(err)
 	}
 	systemOptions := sysstatus.Options{StateDir: s.state, WWWDir: t.TempDir(), ContentDir: t.TempDir(), DB: pool, Cache: store,
-		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay }}
+		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay },
+		Geo: func() geo.Info { return s.geo }}
 	var letters Inbox
 	if withMail {
 		files := leads.NewFiles(filepath.Join(t.TempDir(), "attachments"))
@@ -119,6 +122,7 @@ func newSiteWith(t *testing.T, withMail bool) *site {
 		Leads:     s.leads, Form: testForm,
 		BotAccess: telegram.NewAccess(pool, nil),
 		BotStatus: func() (telegram.Status, bool) { return s.bot, s.bot.Mode != "" },
+		Geo:       func() geo.Info { return s.geo },
 	})
 	if err != nil {
 		t.Fatal(err)

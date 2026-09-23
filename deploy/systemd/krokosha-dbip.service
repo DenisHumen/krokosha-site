@@ -1,0 +1,17 @@
+[Unit]
+Description=krokosha site: fetch this month's DB-IP City Lite database (countries and cities of visitors)
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/krokosha/repo/deploy/bin/krokosha-dbip-update
+TimeoutStartSec=30min
+# It writes one file into /var/lib/GeoIP and touches nothing else.
+StateDirectory=GeoIP
+StateDirectoryMode=0755
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

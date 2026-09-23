@@ -90,7 +90,7 @@ func run() error {
 	siteURL, _ := url.Parse(env.SiteURL) // validated by LoadEnv
 	location := ownerLocation(env.ContentDir, log)
 	// Where a visitor is from, by a local database (brief B5): nil when switched off, and a
-	// locator that waits for the file when geoipupdate has not brought it yet.
+	// locator that waits for the file when krokosha-dbip or geoipupdate has not brought it yet.
 	var locator *geo.Locator
 	var geoInfo func() geo.Info
 	if env.GeoIPDB != "" {
@@ -268,6 +268,7 @@ func run() error {
 		Inbox:           lettersPanel,
 		Mailbox:         env.Mail.Inbox,
 		KeepLettersDays: env.Retention.SpamDays,
+		Geo:             geoInfo,
 	})
 	if err != nil {
 		return err
