@@ -681,6 +681,8 @@ check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 check "GeoLite2 has come: the API reads it now, and DB-IP is gone" bash -c "[[ \$(sed -n 's/^GEOIP_DB=//p' /etc/krokosha/env) == /var/lib/GeoIP/GeoLite2-City.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb ]] && ! systemctl is-enabled --quiet krokosha-dbip.timer"
 check "…a page view gets its place from GeoLite2" geo_recorded 00112233aabbcc78 'UA Kyiv'
+# The session of the admin area ended above («signing out ends the session»).
+admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD" >/dev/null || true
 check "…the status screen names it" geo_status 'GeoLite2-City от 10.09.2026'
 check "…and the admin area credits MaxMind instead of DB-IP" bash -c "grep -q 'GeoLite2 data created by MaxMind' <<<\"\$1\" && ! grep -q 'DB-IP' <<<\"\$1\"" _ "$(admin_get "$ADMIN/")"
 
