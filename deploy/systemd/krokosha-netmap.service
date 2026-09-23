@@ -1,0 +1,47 @@
+[Unit]
+Description=krokosha site: the map of the internet — fresh sources, what changed into MySQL, the overview of /map
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/docs/netmap.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=krokosha
+Group=krokosha
+EnvironmentFile=/etc/krokosha/env
+ExecStart=/opt/krokosha/bin/krokosha-cli netmap sync
+# The first run downloads ~130 MB and writes the whole map; later runs only what changed.
+TimeoutStartSec=45min
+
+# A night job on a small server: it must never starve the site. Reading the routing tables is
+# the heavy part — about a minute of one core and up to 300 MB for a moment.
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=80%
+MemoryHigh=500M
+MemoryMax=700M
+Environment=GOMEMLIMIT=400MiB
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+# The sources, and the overview nginx serves as /netmap/data/.
+ReadWritePaths=-/var/lib/krokosha/netmap -/var/www/krokosha/netmap
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0022

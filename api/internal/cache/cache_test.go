@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -146,4 +147,29 @@ func containsSecret(s string) bool {
 		}
 	}
 	return false
+}
+
+func TestValuesInMemoryAreBounded(t *testing.T) {
+	c, err := New(context.Background(), "", quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
+	c.SetClock(func() time.Time { return now })
+	ctx := context.Background()
+	for i := range maxValuesInMemory + 100 {
+		c.Set(ctx, fmt.Sprintf("key-%d", i), "value", time.Minute)
+	}
+	if len(c.values) != maxValuesInMemory {
+		t.Errorf("%d values kept, the limit is %d", len(c.values), maxValuesInMemory)
+	}
+	if _, ok := c.Get(ctx, "key-0"); !ok {
+		t.Error("a value kept before the limit is lost")
+	}
+	// A minute later all of them are dead: the next value sweeps them out.
+	now = now.Add(2 * time.Minute)
+	c.Set(ctx, "fresh", "value", time.Minute)
+	if len(c.values) != 1 {
+		t.Errorf("%d values after the sweep", len(c.values))
+	}
 }

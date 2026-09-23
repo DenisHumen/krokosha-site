@@ -165,8 +165,11 @@ func (p *Prefixes) sort() {
 }
 
 // cut shortens a name to at most maxNameBytes without breaking a character.
-func cut(text string) string {
-	for len(text) > maxNameBytes {
+func cut(text string) string { return cutTo(text, maxNameBytes) }
+
+// cutTo shortens text to at most limit bytes without breaking a character.
+func cutTo(text string, limit int) string {
+	for len(text) > limit {
 		_, size := utf8.DecodeLastRuneInString(text)
 		text = text[:len(text)-size]
 	}

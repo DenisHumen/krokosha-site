@@ -12,6 +12,7 @@ import (
 
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
+	"github.com/DenisHumen/krokosha-site/api/internal/netmap"
 )
 
 var now = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
@@ -177,6 +178,7 @@ func TestCertificateIsReadFromTheServer(t *testing.T) {
 }
 
 func TestProblems(t *testing.T) {
+	mapOfTheNight := netmap.SyncRun{ID: 4, OK: true, Started: now.Add(-5 * time.Hour), Finished: now.Add(-5*time.Hour + 6*time.Minute)}
 	healthy := func() *Status {
 		return &Status{
 			Database: Database{OK: true}, Redis: "ok", HTTPS: true,
@@ -188,6 +190,7 @@ func TestProblems(t *testing.T) {
 			LogReadAt: now.Add(-8 * time.Second),
 			Backup:    Backup{Known: true, OK: true, FinishedAt: now.Add(-9 * time.Hour)},
 			CertWatch: CertWatch{Known: true, OK: true, CheckedAt: now.Add(-8 * time.Hour)},
+			Map:       MapStatus{Known: true, Last: mapOfTheNight, LastOK: mapOfTheNight},
 			Uptime:    72 * time.Hour,
 		}
 	}
@@ -239,6 +242,17 @@ func TestProblems(t *testing.T) {
 		"an own database is old": {func(s *Status) {
 			s.Geo = &geo.Info{Path: "/srv/geo/own.mmdb", Loaded: true, Type: "Own-City", Built: now.AddDate(0, 0, -50)}
 		}, "warn", "База GeoIP /srv/geo/own.mmdb собрана"},
+		"the map was not updated": {func(s *Status) {
+			s.Map.Last = netmap.SyncRun{ID: 5, Started: now.Add(-time.Hour), Finished: now.Add(-50 * time.Minute), Error: "netmap: the new map is much smaller"}
+		}, "warn", "не обновилась: netmap: the new map is much smaller. На сайте карта от"},
+		"the map sync hangs": {func(s *Status) {
+			s.Map.Last = netmap.SyncRun{ID: 5, Started: now.Add(-3 * time.Hour)}
+		}, "warn", "больше двух часов"},
+		"the map is old": {func(s *Status) {
+			s.Map.LastOK.Finished = now.Add(-60 * time.Hour)
+			s.Map.Last = s.Map.LastOK
+		}, "warn", "не обновлялась больше двух суток"},
+		"the map was never built": {func(s *Status) { s.Map = MapStatus{Known: true} }, "warn", "ещё не построена"},
 	} {
 		status := healthy()
 		tc.breakIt(status)
@@ -267,6 +281,18 @@ func TestProblems(t *testing.T) {
 		quiet.Geo = &info
 		if got := problems(quiet, now); len(got) != 0 {
 			t.Errorf("GeoIP %+v: %+v", info, got)
+		}
+	}
+
+	// A sync under way is no news, nor is a map that cannot be read (the database has its own line).
+	for _, state := range []MapStatus{
+		{Known: true, Last: netmap.SyncRun{ID: 5, Started: now.Add(-10 * time.Minute)}, LastOK: mapOfTheNight},
+		{Known: false},
+	} {
+		quiet := healthy()
+		quiet.Map = state
+		if got := problems(quiet, now); len(got) != 0 {
+			t.Errorf("map %+v: %+v", state, got)
 		}
 	}
 

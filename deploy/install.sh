@@ -54,6 +54,8 @@ Usage: sudo $0 --domain DOMAIN --email EMAIL [options]
                          Without them the free DB-IP City Lite is used (no account, CC BY 4.0),
                          fetched once a month by krokosha-dbip.timer
   --dbip-url URL         another place of the DB-IP files (tests). Default: https://download.db-ip.com/free
+  --netmap-offline       build the map of the internet (/map) only from the files already in
+                         /var/lib/krokosha/netmap, never download its sources (tests)
   --no-mail              do not set up the mail server (it needs HTTPS, about 500 MB of memory,
                          and a provider that lets port 25 out)
   --mailbox ADDRESS      a mailbox to create besides the service one, e.g. denis@DOMAIN: letters
@@ -80,7 +82,7 @@ DOMAIN='' ADMIN_EMAIL='' TLS_MODE='' AGREE_TOS=no STAGING=no SKIP_FIREWALL='' SK
 REPO_URL='' REPO_BRANCH='' FROM_ENV=no ASSUME_YES=no DATA_DIR=''
 ADMIN_PATH='' ADMIN_LOGIN='' ADMIN_PASSWORD_FILE=''
 TELEGRAM_TOKEN_FILE='' TELEGRAM_API=''
-MAXMIND_ACCOUNT='' MAXMIND_KEY_FILE='' DBIP_URL=''
+MAXMIND_ACCOUNT='' MAXMIND_KEY_FILE='' DBIP_URL='' NETMAP_OFFLINE=no
 INDEXNOW='' INDEXNOW_API=''
 MAIL='' MAILBOX='' MAIL_NAME='' MAILBOX_PASSWORD_FILE=''
 EXTRA_PORTS=()
@@ -104,6 +106,7 @@ while [[ $# -gt 0 ]]; do
     --maxmind-account) MAXMIND_ACCOUNT=${2:?--maxmind-account needs a value}; shift 2 ;;
     --maxmind-key-file) MAXMIND_KEY_FILE=${2:?--maxmind-key-file needs a value}; shift 2 ;;
     --dbip-url) DBIP_URL=${2:?--dbip-url needs a value}; shift 2 ;;
+    --netmap-offline) NETMAP_OFFLINE=yes; shift ;;
     --no-indexnow) INDEXNOW=no; shift ;;
     --indexnow-api) INDEXNOW_API=${2:?--indexnow-api needs a value}; shift 2 ;;
     --no-mail) MAIL=no; shift ;;
@@ -337,6 +340,9 @@ fi
 install -d -m 0755 -o root -g root "$KROKOSHA_ROOT" "$KROKOSHA_ROOT/bin" "$KROKOSHA_ROOT/toolchain"
 install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE" "$KROKOSHA_STATE/cache"
 install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW" "$WWW/releases"
+# The map of the internet (docs/netmap.md): its sources, and the overview nginx serves.
+install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/netmap"
+install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW/netmap"
 install -d -m 0755 -o root -g root "$WWW/acme"
 # The data root: everything that cannot be rebuilt (docs/architecture.md §6).
 install -d -m 0755 -o root -g root "$DATA_DIR"
@@ -485,6 +491,7 @@ if [[ -n $MAXMIND_KEY_FILE ]]; then
 fi
 # Without a key: DB-IP City Lite, fetched from here by deploy/bin/krokosha-dbip-update.
 [[ -z $DBIP_URL ]] || env_set DBIP_URL "$DBIP_URL"
+[[ $NETMAP_OFFLINE == no ]] || env_set NETMAP_FETCH off
 # Telegram delivers updates to HTTPS only; without it the site asks Telegram itself.
 if [[ $TLS_MODE == none ]]; then
   env_set TELEGRAM_MODE polling
@@ -564,7 +571,8 @@ ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
 for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
   krokosha-backup.service krokosha-backup.timer krokosha-certwatch.service krokosha-certwatch.timer \
-  krokosha-geoipupdate.service krokosha-geoipupdate.timer krokosha-dbip.service krokosha-dbip.timer; do
+  krokosha-geoipupdate.service krokosha-geoipupdate.timer krokosha-dbip.service krokosha-dbip.timer \
+  krokosha-netmap.service krokosha-netmap.timer; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
 done
 # Where the API leaves requests for a rebuild and the build leaves its report (both run as the
@@ -1017,6 +1025,27 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------------------------
+step "The map of the internet (/map)"
+# ---------------------------------------------------------------------------------------------
+
+# Rebuilt every night from open data by krokosha-netmap.timer (docs/netmap.md): the sources in
+# $KROKOSHA_STATE/netmap, what changed into MySQL, the overview in $WWW/netmap for nginx. The API
+# picks up every new map by itself; until the first one is there, /map says its data is not ready.
+systemctl enable --quiet --now krokosha-netmap.timer
+if [[ -s $WWW/netmap/overview.json ]]; then
+  netmap_summary="rebuilt every night (krokosha-netmap.timer); the map of $(date -r "$WWW/netmap/overview.json" +%F) is served"
+elif [[ $(env_get NETMAP_FETCH) == off ]]; then
+  netmap_summary="built from the files in $KROKOSHA_STATE/netmap only (NETMAP_FETCH=off): sudo systemctl start krokosha-netmap.service"
+elif systemctl is-active --quiet krokosha-netmap.service; then
+  netmap_summary="the first map is being built: journalctl -u krokosha-netmap -f"
+else
+  # The first run downloads some 130 MB and writes the whole map: minutes, in the background.
+  systemctl start --no-block krokosha-netmap.service
+  netmap_summary="the first map is being built in the background (a few minutes): journalctl -u krokosha-netmap -f"
+fi
+ok "$netmap_summary"
+
+# ---------------------------------------------------------------------------------------------
 step "Firewall"
 # ---------------------------------------------------------------------------------------------
 
@@ -1110,6 +1139,7 @@ cat >&2 <<EOF
   Roll back:  sudo $KROKOSHA_REPO/deploy/rollback.sh
   Backups:    $DATA_DIR/backups, every night   (now: sudo $KROKOSHA_REPO/deploy/backup.sh; back: sudo $KROKOSHA_REPO/deploy/restore.sh --from DIR)
   GeoIP:      $geo_summary
+  Map:        $netmap_summary
   IndexNow:   $([[ $INDEXNOW == yes ]] && echo "on — the key is served as $SITE_URL/$(env_get INDEXNOW_KEY).txt; changed pages are submitted after every release" || echo "off (--no-indexnow)")
   Search:     Google Search Console and Bing Webmaster Tools are connected by hand once: deploy/README.md, «Поисковики»
   Logs:       journalctl -u krokosha-sync.service, /var/log/krokosha/

@@ -45,7 +45,7 @@ install_site() {
     --mailbox "owner@$DOMAIN" --mail-name 'CI Owner' --mailbox-password-file "$MAILBOX_PASSWORD_FILE" \
     --repo "$SOURCE" --branch ci-test --tls selfsigned --skip-dns-check --yes \
     --admin-path "$ADMIN_PATH" --admin-login ci-admin --admin-password-file "$ADMIN_PASSWORD_FILE" \
-    --dbip-url http://127.0.0.1:8090 "$@"
+    --dbip-url http://127.0.0.1:8090 --netmap-offline "$@"
 }
 
 echo "::group::A WireGuard interface that the installer must not break"
@@ -366,6 +366,29 @@ geo_page_says() { # geo_page_says PATH TEXT — that page of the admin area, rea
 # The next run of the installer (the second run below) is to switch the API over to it.
 MMDB_TYPE=GeoLite2-City python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
 
+echo "Map of the internet"
+# Offline in CI (--netmap-offline): a small world stands in for the internet, nothing is downloaded.
+check "the map is rebuilt every night" systemctl is-enabled --quiet krokosha-netmap.timer
+check "the installer kept it offline" grep -q '^NETMAP_FETCH=off$' /etc/krokosha/env
+check "before the first map the page's data is not there" test "$(status "https://$DOMAIN/netmap/data/overview.json")" = 404
+check "…and the API says the map is not ready" test "$(status "https://$DOMAIN/api/net/route?from=81.0.0.10&to=82.0.0.20")" = 503
+cp -r "$SOURCE/api/internal/netmap/testdata/world/." /var/lib/krokosha/netmap/
+chown -R krokosha:krokosha /var/lib/krokosha/netmap
+netmap_sync() { systemctl start krokosha-netmap.service || { journalctl -u krokosha-netmap.service -n 40 --no-pager; return 1; }; }
+check "the nightly job builds the map, the way its unit runs it" netmap_sync
+check "…notes the run: 6 networks, 8 links" test "$(sql "SELECT CONCAT(ok, ' ', networks, ' ', links) FROM netmap_sync ORDER BY id DESC LIMIT 1")" = "1 6 8"
+check "…and keeps the map in MySQL" test "$(sql "SELECT COUNT(*) FROM netmap_link WHERE gone_at IS NULL")" = 8
+netmap_file=$(body "https://$DOMAIN/netmap/data/overview.json" | python3 -c 'import json, sys; print(json.load(sys.stdin)["file"])' 2>/dev/null || true)
+check "the page finds the overview through its manifest" test "$(status "https://$DOMAIN/netmap/data/$netmap_file")" = 200
+netmap_headers() { "${CURL[@]}" --output /dev/null --dump-header - --header 'Accept-Encoding: gzip' "$1" | tr -d '\r'; }
+check "…sent gzipped as the job wrote it, and kept for good" bash -c "grep -qi '^content-encoding: gzip' <<<\"\$1\" && grep -qi '^cache-control: public, max-age=31536000, immutable' <<<\"\$1\"" _ "$(netmap_headers "https://$DOMAIN/netmap/data/$netmap_file")"
+route_answers() { body "https://$DOMAIN/api/net/route?from=81.0.0.10&to=82.0.0.20" | grep -q '"asn":7000'; }
+check "the API picks the new map up by itself and draws routes on it" wait_for 90 route_answers
+check "addresses people trace stay out of the access log" bash -c "grep -q '\"uri\":\"/api/net/route\"' /var/log/krokosha/nginx-access.json.log && ! grep -q '81\.0\.0\.10' /var/log/krokosha/nginx-access.json.log"
+check "the status screen describes the map" grep -q 'сетей: 6 · связей: 8' <(admin_get "$ADMIN/status")
+check "a second run with nothing new" netmap_sync
+check "…writes nothing" test "$(sql "SELECT CONCAT(ok, ' ', added, ' ', gone, ' ', changed) FROM netmap_sync ORDER BY id DESC LIMIT 1") $(sql "SELECT COUNT(*) FROM netmap_change")" = "1 0 0 0 0"
+
 echo "Requests in the admin area"
 check "the list shows the requests sent above" grep -q '#K-0001' <(admin_get "$ADMIN/leads")
 check "spam is kept apart" bash -c "! grep -q '#K-0003' <<<\"\$1\"" _ "$(admin_get "$ADMIN/leads")"
@@ -656,6 +679,7 @@ check "the nightly backup and the daily look at the certificates are scheduled" 
 check "a backup by hand" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
 first_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
 check "…has the database, the settings, the mail and the files of requests" bash -c "gzip -t '$first_backup/mysql.sql.gz' && zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .leads.' && tar -tzf '$first_backup/config.tar.gz' | grep -qx config/env && test -s '$first_backup/mail/config/postfix-accounts.cf' && test -d '$first_backup/attachments' && test -s '$first_backup/MANIFEST'"
+check "…with the tables of the map but not their rows: they are built again every night" bash -c "zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .netmap_link.' && ! zcat '$first_backup/mysql.sql.gz' | grep -q 'INSERT INTO .netmap_'"
 check "…for root's eyes only: the secrets are in it" test "$(stat -c '%U %a' /srv/krokosha/backups) $(stat -c '%a' "$first_backup/config.tar.gz")" = "root 700 600"
 check "…and reports to the status screen" grep -q '"ok":true' /var/lib/krokosha/status/backup.json
 sleep 1
@@ -757,6 +781,7 @@ echo "::endgroup::"
 check "files are gone" bash -c "[[ ! -e /opt/krokosha && ! -e /var/www/krokosha && ! -e /etc/krokosha && ! -e /srv/krokosha ]]"
 check "the MaxMind key and both databases are gone with them" bash -c "[[ ! -e /etc/GeoIP.conf && ! -e /var/lib/GeoIP/GeoLite2-City.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb.month ]]"
 check "…and so is the DB-IP timer" bash -c "! systemctl cat krokosha-dbip.timer >/dev/null 2>&1"
+check "the map's timer is gone" bash -c "! systemctl cat krokosha-netmap.timer >/dev/null 2>&1"
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"

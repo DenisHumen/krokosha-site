@@ -1,0 +1,1 @@
+{"meta": {}, "data": [{"asn": 3000, "ix_id": 1, "ixlan_id": 1, "speed": 100000, "ipaddr4": "80.81.192.3", "operational": true}, {"asn": 7000, "ix_id": 1, "ixlan_id": 1, "speed": 400000, "ipaddr4": "80.81.192.7", "operational": true}]}

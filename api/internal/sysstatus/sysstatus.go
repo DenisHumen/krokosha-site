@@ -22,6 +22,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
+	"github.com/DenisHumen/krokosha-site/api/internal/netmap"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
@@ -161,6 +162,12 @@ type Database struct {
 	Tables    int
 }
 
+// MapStatus is the map of the internet (/map): its newest sync and the newest one that worked.
+type MapStatus struct {
+	Known        bool // the table could be read
+	Last, LastOK netmap.SyncRun
+}
+
 // Problem is something the owner should look at.
 type Problem struct {
 	Level string // warn | error
@@ -185,6 +192,7 @@ type Status struct {
 	Outbox           outbox.Stats
 	Inbox            *inbox.Status // nil — answers by mail are not read
 	Geo              *geo.Info     // nil — geolocation is switched off
+	Map              MapStatus
 	Backup           Backup
 	CertWatch        CertWatch
 	Mailbox          string
@@ -230,6 +238,11 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	if s.opts.Geo != nil {
 		info := s.opts.Geo()
 		out.Geo = &info
+	}
+	if s.opts.DB != nil {
+		var err error
+		out.Map.Last, out.Map.LastOK, err = netmap.Runs(ctx, s.opts.DB)
+		out.Map.Known = err == nil
 	}
 	out.Problems = problems(out, now)
 	return out
@@ -316,6 +329,21 @@ func problems(status *Status, now time.Time) []Problem {
 	}
 	if !status.LogReadAt.IsZero() && now.Sub(status.LogReadAt) > 10*time.Minute {
 		add("warn", "Лог nginx не читается больше 10 минут: экран «Трафик сервера» отстаёт. Подробности — journalctl -u krokosha-api")
+	}
+	switch run := status.Map; {
+	case !run.Known:
+	case run.Last.ID > run.LastOK.ID && !run.Last.Finished.IsZero():
+		shown := "Карты ещё нет"
+		if run.LastOK.ID != 0 {
+			shown = "На сайте карта от " + run.LastOK.Finished.Format("02.01.2006")
+		}
+		add("warn", "Карта интернета не обновилась: %s. %s. Журнал: sudo journalctl -u krokosha-netmap", run.Last.Error, shown)
+	case run.Last.ID > run.LastOK.ID && now.Sub(run.Last.Started) > 2*time.Hour:
+		add("warn", "Обновление карты интернета идёт больше двух часов — прервалось? sudo journalctl -u krokosha-netmap")
+	case run.LastOK.ID != 0 && now.Sub(run.LastOK.Finished) > 50*time.Hour:
+		add("warn", "Карта интернета не обновлялась больше двух суток: sudo systemctl status krokosha-netmap.timer")
+	case run.LastOK.ID == 0 && run.Last.ID == 0 && status.Uptime > 6*time.Hour:
+		add("warn", "Карта интернета ещё не построена: sudo systemctl start krokosha-netmap.service (несколько минут)")
 	}
 	// GeoLite2 comes out twice a week and DB-IP once a month: a database older than six weeks means
 	// that what fetches it has stopped.

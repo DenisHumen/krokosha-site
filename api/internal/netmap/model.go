@@ -2,6 +2,7 @@ package netmap
 
 import (
 	"net/netip"
+	"slices"
 	"sort"
 	"time"
 )
@@ -148,9 +149,7 @@ func Build(sources Sources) *Model {
 	}
 	links := mergeLinks(sources.Links)
 	m.makeNodes(links, sources)
-	m.makeGraph(links)
-	m.countRelations()
-	m.computeCones()
+	m.link(links)
 	if sources.PeeringDB != nil {
 		m.addPeeringDB(sources.PeeringDB)
 	} else {
@@ -221,6 +220,14 @@ func (m *Model) makeNodes(links []Link, sources Sources) {
 		m.Nodes[i] = node
 		m.index[asn] = int32(i)
 	}
+}
+
+// link lays the links out and counts what follows from them: relations, cones, ranks. Every
+// end of every link must be a node; links are sorted by Key.
+func (m *Model) link(links []Link) {
+	m.makeGraph(links)
+	m.countRelations()
+	m.computeCones()
 }
 
 // makeGraph lays the links out as arrays: for each node, its neighbours one after another.
@@ -311,21 +318,32 @@ func (m *Model) computeCones() {
 	}
 }
 
-// addPeeringDB attaches exchange points, data centres, ports and presence.
+// addPeeringDB attaches exchange points, data centres, ports and presence. Exchange points and
+// data centres are kept in the order of their PeeringDB ids, as the stored map restores them.
 func (m *Model) addPeeringDB(db *PeeringDB) {
-	facIndex := make(map[int]int32, len(db.Facilities))
-	for _, f := range db.Facilities {
-		facility := Facility{ID: f.ID, Name: cut(f.Name), City: f.City, Country: f.Country}
+	facilities := append([]PDBFacility(nil), db.Facilities...)
+	sort.Slice(facilities, func(i, j int) bool { return facilities[i].ID < facilities[j].ID })
+	facIndex := make(map[int]int32, len(facilities))
+	for _, f := range facilities {
+		if _, twice := facIndex[f.ID]; twice {
+			continue
+		}
+		facility := Facility{ID: f.ID, Name: cut(f.Name), City: cut(f.City), Country: country(f.Country)}
 		if f.Lat != nil && f.Lon != nil && (*f.Lat != 0 || *f.Lon != 0) {
 			facility.Lat, facility.Lon, facility.Placed = float32(*f.Lat), float32(*f.Lon), true
 		}
 		facIndex[f.ID] = int32(len(m.Facilities)) //nolint:gosec // some 6 000 data centres
 		m.Facilities = append(m.Facilities, facility)
 	}
-	ixIndex := make(map[int]int32, len(db.IXs))
-	for _, x := range db.IXs {
+	exchanges := append([]PDBIX(nil), db.IXs...)
+	sort.Slice(exchanges, func(i, j int) bool { return exchanges[i].ID < exchanges[j].ID })
+	ixIndex := make(map[int]int32, len(exchanges))
+	for _, x := range exchanges {
+		if _, twice := ixIndex[x.ID]; twice {
+			continue
+		}
 		ixIndex[x.ID] = int32(len(m.IXs)) //nolint:gosec // some 1 300 exchange points
-		m.IXs = append(m.IXs, IX{ID: x.ID, Name: cut(x.Name), City: x.City, Country: x.Country})
+		m.IXs = append(m.IXs, IX{ID: x.ID, Name: cut(x.Name), City: cut(x.City), Country: country(x.Country)})
 	}
 	// An exchange point is where its data centres are: their middle.
 	sums := make([][3]float64, len(m.IXs))
@@ -410,6 +428,7 @@ func (m *Model) addPeeringDB(db *PeeringDB) {
 	}
 	for i := range m.sites {
 		sort.Slice(m.sites[i], func(a, b int) bool { return m.sites[i][a] < m.sites[i][b] })
+		m.sites[i] = slices.Compact(m.sites[i]) // PeeringDB may list a presence twice
 	}
 
 	for prefix, ix := range db.LANPrefixes() {
@@ -418,4 +437,12 @@ func (m *Model) addPeeringDB(db *PeeringDB) {
 		}
 	}
 	sort.Slice(m.lans, func(i, j int) bool { return m.lans[i].prefix.String() < m.lans[j].prefix.String() })
+}
+
+// country is a code of two letters, or nothing.
+func country(code string) string {
+	if len(code) != 2 {
+		return ""
+	}
+	return code
 }

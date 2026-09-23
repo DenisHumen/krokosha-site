@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,4 +108,28 @@ func TestANewDatabaseIsNoticed(t *testing.T) {
 		t.Error("a locator without a database answered")
 	}
 	none.Close()
+}
+
+func TestWhere(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dbip-city-lite.mmdb")
+	kyiv := geotest.Place("UA", "Kyiv")
+	kyiv["location"] = map[string]any{"latitude": 50.4501, "longitude": 30.5234}
+	geotest.Write(t, path, map[string]map[string]any{
+		"203.0.113.0/24":  kyiv,
+		"198.51.100.0/25": geotest.Place("DE", ""), // a country without a point
+	})
+	locator := Open(path, quiet)
+	defer locator.Close()
+	if lat, lon, ok := locator.Where(netip.MustParseAddr("203.0.113.7")); !ok || lat != 50.4501 || lon != 30.5234 {
+		t.Errorf("Kyiv: %v, %v, %v", lat, lon, ok)
+	}
+	for _, address := range []string{"198.51.100.1", "8.8.8.8", "2001:db8::1"} {
+		if _, _, ok := locator.Where(netip.MustParseAddr(address)); ok {
+			t.Errorf("%s has a point", address)
+		}
+	}
+	var none *Locator
+	if _, _, ok := none.Where(netip.MustParseAddr("203.0.113.7")); ok {
+		t.Error("no database, and yet a point")
+	}
 }

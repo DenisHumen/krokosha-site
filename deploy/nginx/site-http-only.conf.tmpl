@@ -39,6 +39,32 @@ server {
         include snippets/krokosha-proxy.conf;
     }
 
+    # The map of the internet (docs/netmap.md): routes and networks. The addresses people trace
+    # stay out of the log: only the path is written, without the query.
+    location ^~ /api/net/ {
+        limit_req zone=krokosha_api burst=40 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1k;
+        access_log /var/log/krokosha/nginx-access.json.log krokosha_json_path;
+        include snippets/krokosha-proxy.conf;
+    }
+
+    # …and its data, rebuilt every night by krokosha-netmap.service. The overview is named by its
+    # content and kept for good; the manifest that names it, only briefly. The overview is sent
+    # gzipped as the sync wrote it, not compressed again for every visitor.
+    location = /netmap/data/overview.json {
+        alias @@WWW@@/netmap/overview.json;
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "public, max-age=300" always;
+    }
+
+    location ^~ /netmap/data/ {
+        alias @@WWW@@/netmap/;
+        gzip_static on;
+        include snippets/krokosha-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
     # The contact form. Files may come with it — up to 3 × 10 MB — when content/site.yaml allows
     # them (contacts.form.attachments). This is only the ceiling: the API reads 48 KB while files
     # are off, and checks the number, the size and the content of every file when they are on.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,5 +157,29 @@ func TestFetchLoadBuild(t *testing.T) {
 func TestLoadSourcesNeedsCAIDA(t *testing.T) {
 	if _, err := LoadSources(t.TempDir(), nil); err == nil || !strings.Contains(err.Error(), "caida") {
 		t.Errorf("an empty data directory: %v", err)
+	}
+}
+
+// testdata/world is a data directory as the sync leaves it, a small world instead of the internet:
+// the installer's test builds the map from it without downloading anything (deploy/ci/test-install.sh).
+func TestTheSampleWorld(t *testing.T) {
+	loaded, err := LoadSources("testdata/world", DefaultPlaces.Collectors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Build(loaded.Sources)
+	if len(m.Nodes) != 6 || m.Links() != 8 || len(m.IXs) != 1 || len(m.Facilities) != 3 {
+		t.Fatalf("%d networks, %d links, %d exchange points, %d data centres", len(m.Nodes), m.Links(), len(m.IXs), len(m.Facilities))
+	}
+	// What the test asks the API: addresses it takes for the internet's, with a way between them.
+	from, to := netip.MustParseAddr("81.0.0.10"), netip.MustParseAddr("82.0.0.20")
+	for _, addr := range []netip.Addr{from, to} {
+		if _, bad := publicAddress(addr.String()); bad != nil {
+			t.Errorf("%s is refused: %s", addr, bad.code)
+		}
+	}
+	route, err := m.Route(from, to, nil)
+	if err != nil || route.Hops[0].ASN != 6000 || route.Hops[len(route.Hops)-1].ASN != 7000 {
+		t.Fatalf("81.0.0.10 → 82.0.0.20: %+v, %v", route, err)
 	}
 }

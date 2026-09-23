@@ -6,6 +6,7 @@ package geotest
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	"net/netip"
 	"os"
 	"sort"
@@ -138,6 +139,8 @@ func encode(value any) []byte {
 		out = append(control(6, len(number(uint64(v)))), number(uint64(v))...)
 	case uint64:
 		out = append(control(9, len(number(v))), number(v)...)
+	case float64:
+		out = binary.BigEndian.AppendUint64(control(3, 8), math.Float64bits(v))
 	case []any:
 		out = control(11, len(v))
 		for _, item := range v {

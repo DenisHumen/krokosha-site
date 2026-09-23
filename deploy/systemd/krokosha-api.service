@@ -16,8 +16,11 @@ ExecStart=/opt/krokosha/bin/krokosha-api
 Restart=always
 RestartSec=3
 
-MemoryHigh=200M
-MemoryMax=300M
+# The map of the internet lives in memory (~40 MB); when a new one is loaded the old one serves
+# until it is ready, and the load itself takes ~70 MB for a second or two.
+MemoryHigh=300M
+MemoryMax=450M
+Environment=GOMEMLIMIT=250MiB
 
 NoNewPrivileges=yes
 PrivateTmp=yes

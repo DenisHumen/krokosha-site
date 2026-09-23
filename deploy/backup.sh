@@ -103,9 +103,19 @@ main() {
   local database
   database=$(env_get MYSQL_DATABASE)
   database=${database:-krokosha}
-  # One consistent moment of every table, without stopping anything (InnoDB).
-  docker exec krokosha-mysql-1 sh -c 'exec mysqldump --single-transaction --quick --routines --triggers --no-tablespaces \
-      --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$0"' "$database" 2>/dev/null | gzip -6 >"$work/mysql.sql.gz"
+  # One consistent moment of every table, without stopping anything (InnoDB). The tables of the
+  # map of the internet (netmap_*, docs/netmap.md) go in without their rows: the map is built
+  # again from open data every night, and its hundred megabytes would only slow a restore down.
+  docker exec krokosha-mysql-1 sh -c '
+      set -e
+      auth="-uroot -p$MYSQL_ROOT_PASSWORD"
+      map=$(mysql $auth -N -B -e "SELECT table_name FROM information_schema.tables WHERE table_schema = '"'"'$0'"'"' AND table_name LIKE '"'"'netmap\\_%'"'"'")
+      skip=""
+      for table in $map; do skip="$skip --ignore-table=$0.$table"; done
+      mysqldump --single-transaction --quick --routines --triggers --no-tablespaces --default-character-set=utf8mb4 $auth $skip "$0"
+      if [ -n "$map" ]; then
+        mysqldump --no-data --no-tablespaces --default-character-set=utf8mb4 $auth "$0" $map
+      fi' "$database" 2>/dev/null | gzip -6 >"$work/mysql.sql.gz"
   gzip --test "$work/mysql.sql.gz"
   zcat "$work/mysql.sql.gz" | tail -n 1 | grep -q 'Dump completed' || die "the database dump is cut short"
   ok "$(du -h "$work/mysql.sql.gz" | cut -f1) — $(zcat "$work/mysql.sql.gz" | grep -c '^CREATE TABLE') tables"
