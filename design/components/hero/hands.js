@@ -19,20 +19,34 @@
     const h = clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
     return Math.hypot(pax - bax * h, pay - bay * h) - r;
   }
-  function ellipse(px, py, cx, cy, rx, ry) {
-    const k = Math.hypot((px - cx) / rx, (py - cy) / ry);
-    return (k - 1) * Math.min(rx, ry);
+  // A capsule whose radius goes from ra at a to rb at b: a finger that thins towards its tip.
+  function cone(px, py, ax, ay, bx, by, ra, rb) {
+    const pax = px - ax, pay = py - ay, bax = bx - ax, bay = by - ay;
+    const h = clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+    return Math.hypot(pax - bax * h, pay - bay * h) - (ra + (rb - ra) * h);
   }
+  // Smooth union: two shapes flow into each other within k, like a finger into the palm.
+  function smin(a, b, k) {
+    const h = clamp(0.5 + 0.5 * (b - a) / k, 0, 1);
+    return b * (1 - h) + a * h - k * h * (1 - h);
+  }
+  // Middle, ring and little fingers curled under the index: knuckle → middle joint → last joint → tip, radius.
+  const CURLED = [
+    [0.47, 0.03, 0.65, 0.07, 0.635, 0.165, 0.57, 0.165, 0.056],
+    [0.44, 0.09, 0.61, 0.14, 0.585, 0.225, 0.53, 0.215, 0.053],
+    [0.4, 0.14, 0.54, 0.2, 0.515, 0.262, 0.47, 0.245, 0.047],
+  ];
   // Hand in local space: wrist at x≈0, index fingertip at x≈0.98, y down = positive. Own silhouette (Adam-like: index
-  // extended, other fingers curling down, thumb resting above). Returns SDF (<0 inside).
+  // extended, the other fingers curled under it, thumb lying along the top) in the proportions of a real hand: past the
+  // thumb the index reaches about two thirds of the palm's length. Returns SDF (<0 inside).
   function handSDF(x, y) {
-    let d = capsule(x, y, -1.0, 0.03, -0.35, 0.01, 0.125); d = Math.min(d, capsule(x, y, -0.4, 0.01, 0.0, 0.0, 0.105)); // forearm, from behind the edge
-    d = Math.min(d, ellipse(x, y, 0.2, 0.03, 0.28, 0.165)); // palm
-    d = Math.min(d, capsule(x, y, 0.4, -0.06, 0.74, -0.05, 0.05)); d = Math.min(d, capsule(x, y, 0.74, -0.05, 0.98, 0.0, 0.044)); // index
-    d = Math.min(d, capsule(x, y, 0.43, 0.03, 0.67, 0.09, 0.05)); d = Math.min(d, capsule(x, y, 0.67, 0.09, 0.70, 0.2, 0.044)); // middle
-    d = Math.min(d, capsule(x, y, 0.41, 0.1, 0.58, 0.17, 0.047)); d = Math.min(d, capsule(x, y, 0.58, 0.17, 0.57, 0.27, 0.04)); // ring
-    d = Math.min(d, capsule(x, y, 0.37, 0.15, 0.48, 0.22, 0.04)); d = Math.min(d, capsule(x, y, 0.48, 0.22, 0.45, 0.3, 0.035)); // pinky
-    d = Math.min(d, capsule(x, y, 0.15, -0.1, 0.42, -0.17, 0.052)); // thumb
+    let d = capsule(x, y, -1.0, 0.03, -0.35, 0.01, 0.125); d = Math.min(d, cone(x, y, -0.4, 0.01, 0.02, 0.0, 0.11, 0.1)); // forearm, from behind the edge
+    d = smin(d, cone(x, y, 0.02, 0.0, 0.44, 0.02, 0.105, 0.15), 0.05); // palm, wider at the knuckles
+    d = smin(d, Math.min(cone(x, y, 0.52, -0.06, 0.74, -0.05, 0.066, 0.058), cone(x, y, 0.74, -0.05, 0.87, -0.028, 0.058, 0.052), cone(x, y, 0.87, -0.028, 0.98, 0.0, 0.052, 0.046)), 0.02); // index
+    d = smin(d, Math.min(cone(x, y, 0.08, -0.055, 0.32, -0.115, 0.064, 0.056), cone(x, y, 0.32, -0.115, 0.56, -0.125, 0.056, 0.047)), 0.02); // thumb
+    for (const [kx, ky, jx, jy, qx, qy, tx, ty, r] of CURLED) {
+      d = smin(d, Math.min(cone(x, y, kx, ky, jx, jy, r, r * 0.95), cone(x, y, jx, jy, qx, qy, r * 0.95, r * 0.9), cone(x, y, qx, qy, tx, ty, r * 0.9, r * 0.85)), 0.04);
+    }
     return d;
   }
   function noise(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }

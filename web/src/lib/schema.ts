@@ -43,6 +43,9 @@ export const tierSchema = z.enum(['featured', 'standard', 'compact']);
 
 const option = z.strictObject({ id: slug, label: localized });
 
+/** An achievement of the easter eggs: the banner's name and its line of description. */
+const achievement = z.strictObject({ name: localized, text: localized });
+
 /** Texts of the /map page (docs/netmap.md). */
 const mapSchema = z.strictObject({
   title: localized,
@@ -303,10 +306,20 @@ export const siteSchema = z.strictObject({
   }),
   eggs: z.strictObject({
     found: localized,
-    all: localized,
+    // One achievement per egg (design/components/eggs/eggs.js → ALL), and «all» for finding every one.
+    achievements: z.strictObject({
+      konami: achievement,
+      sudo: achievement,
+      croc: achievement,
+      croc5: achievement,
+      cat: achievement,
+      reboot: achievement,
+      console: achievement,
+      lost_packet: achievement,
+      all: achievement,
+    }),
     night: localized,
     croc: localized,
-    croc5: localized,
     console: localized,
     terminal: z.strictObject({
       whoami: localized,

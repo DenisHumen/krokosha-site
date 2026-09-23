@@ -332,17 +332,39 @@ footer:
 # Пасхалки (бриф A6; какие включены — flags.easter_eggs). Команды терминала и строки «BIOS» — на
 # английском, как в настоящей консоли; по-человечески сказанное — на языке страницы.
 eggs:
-  found: { en: "Easter egg found", uk: "Пасхалку знайдено", ru: "Пасхалка найдена" }
-  all:
-    en: "All easter eggs found. Achievement: root@krokosha"
-    uk: "Усі пасхалки знайдено. Ачівка: root@krokosha"
-    ru: "Все пасхалки найдены. Ачивка: root@krokosha"
+  found: { en: "Easter egg found", uk: "Пасхалку знайдено", ru: "Пасхалка найдена" }   # читает экранный диктор перед названием ачивки
+  # Найденная пасхалка — ачивка: баннер как в Steam, название и строка описания (до двух строк).
+  # all — последняя, за все пасхалки сразу: золотая, как редкая ачивка Steam.
+  achievements:
+    konami:
+      name: "↑↑↓↓←→←→BA"
+      text: { en: "Night in the server room: all green", uk: "Ніч у серверній: усе зелене", ru: "Ночь в серверной: всё зелёное" }
+    sudo:
+      name: { en: "Superuser", uk: "Суперкористувач", ru: "Суперпользователь" }
+      text: { en: "Typed sudo and got a terminal", uk: "Набрали sudo — і отримали термінал", ru: "Набрали sudo — и получили терминал" }
+    croc:
+      name: { en: "Crocodile spotted", uk: "Крокодила помічено", ru: "Крокодил замечен" }
+      text: { en: "It was peeking out from behind the footer", uk: "Він визирав з-за футера", ru: "Он выглядывал из-за футера" }
+    croc5:
+      name: { en: "The real Krokosha", uk: "Справжній Krokosha", ru: "Настоящий Krokosha" }
+      text: { en: "Crock-crock! Five clicks on the crocodile", uk: "Крок-крок! П'ять кліків по крокодилу", ru: "Крок-крок! Пять кликов по крокодилу" }
+    cat:
+      name: { en: "Cat whisperer", uk: "Заклинач котів", ru: "Заклинатель котов" }
+      text: { en: "The wandering cat sat down to rest", uk: "Кіт-мандрівник присів відпочити", ru: "Кот-путешественник присел отдохнуть" }
+    reboot:
+      name: { en: "Turn it off and on again", uk: "Вимкни й увімкни", ru: "Выключи и включи" }
+      text: { en: "The avatar rebooted like a server", uk: "Аватар перезавантажився, як сервер", ru: "Аватар перезагрузился, как сервер" }
+    console:
+      name: { en: "Almost a colleague", uk: "Майже колега", ru: "Почти коллега" }
+      text: { en: "krokosha.hello() in the DevTools console", uk: "krokosha.hello() у консолі DevTools", ru: "krokosha.hello() в консоли DevTools" }
+    lost_packet:
+      name: { en: "Packet recovered", uk: "Пакет знайдено", ru: "Пакет найден" }
+      text: { en: "The lost packet of the 404 page", uk: "Загублений пакет зі сторінки 404", ru: "Потерянный пакет со страницы 404" }
+    all:
+      name: "root@krokosha"
+      text: { en: "Every easter egg found", uk: "Знайдено всі пасхалки", ru: "Найдены все пасхалки" }
   night: { en: "server room · 03:14 · all green", uk: "серверна · 03:14 · усе зелене", ru: "серверная · 03:14 · всё зелёное" }
   croc: { en: "Crocodile", uk: "Крокодил", ru: "Крокодил" }
-  croc5:
-    en: "crock-crock. You found the real Krokosha"
-    uk: "крок-крок. Ти знайшов справжнього Krokosha"
-    ru: "крок-крок. Ты нашёл настоящего Krokosha"
   console:
     en: "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA"
     uk: "Хто читає консоль — той уже майже колега. krokosha.hello() · або наберіть sudo на сторінці · або ↑↑↓↓←→←→BA"

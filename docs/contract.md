@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.7** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]**.
+**Версия 1.8** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -11,8 +11,9 @@
 | 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
 | 1.4 | **Файлы в форме** (§7), только при `form.attachments: true`: поле `files`, `enctype="multipart/form-data"`. В `site.json` добавлены `form.labels.{attachments, attachments_hint}` и `form.errors.{too_many_files, file_too_big, file_type}` |
 | 1.5 | **Интеграция дизайна v1.** Тексты, которые дизайн держал в коде, — теперь в `site.json`: `ui.{skills_headline, menu, socials, contents, draft}`, `not_found.game.*`, `footer.play_status`, `eggs.*` (§2.4). События пасхалок (§4) |
-| 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
 | 1.6 | **Карта интернета** (§8): страница `/map`, её тексты — `site.json → map.*`. Пункт меню может вести на другую страницу: `nav[]` — `{ number, label, anchor }` или `{ number, label, page }` |
+| 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
+| 1.8 | **Ачивки пасхалок** (§2.4, §4): найденная пасхалка — баннер как в Steam со звуком. `eggs.achievements.<id>.{name, text}`; `eggs.all` и `eggs.croc5` убраны — их тексты теперь в ачивках `all` и `croc5` |
 
 ---
 
@@ -143,7 +144,7 @@
 | **[v1.2]** `ui` | `headings.{services, skills, stats}`, `skip_to_content`, `theme_toggle`, `language`, `skills_search`, `skills_no_results`; **[v1.5]** `skills_headline` (заголовок дерева навыков без числа: «skills, one topology» / «навичок в одній топології» — слово уже согласовано с числом навыков на странице), `menu` (кнопка меню на телефоне), `socials` (подпись левой рамки и нижней панели), `contents` (оглавление текстовой страницы), `draft` (метка черновика) |
 | **[v1.2]** `not_found` | 404: `title`, `text`, `game_hint`, `back`; **[v1.5]** `game.{prompt, warm, cold, found, port}` — игра «найди пакет». Технические подписи игры (`ping port 7 … timeout`, `tries 3`, `SW-CORE-01`, `LINK UP`) — часть оформления, одинаковы на всех языках |
 | `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub`; **[v1.5]** `play_status` — строка над заглушкой `/play` («HATCH SEALED · ACCESS LATER») |
-| **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found`, `all` (тосты), `night` (подпись «ночного режима»), `croc`, `croc5`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
+| **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found` (экранный диктор читает его перед названием ачивки), **[v1.8]** `achievements.{konami, sudo, croc, croc5, cat, reboot, console, lost_packet, all}.{name, text}` — название и строка описания баннера ачивки, `all` — за все пасхалки сразу (золотая, как редкая ачивка Steam); `night` (подпись «ночного режима»), `croc`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
 | **[v1.6]** `map` | страница `/map` (§8): `title`, `status`, `lead`, `description`, `stats.*`, `views.{label, map, core, globe, core_hint}`, `controls.*`, `legend.*`, `form.*` (с `examples[]` — `{ ip, label }`), `panel.*` — таблица маршрута (`networks` — формы слова для числа: две в английском, три в украинском и русском; `anycast` с подстановкой `{ip}`), `network.*` — карточка сети, **[v1.7]** `trace.*` — замер пути с сервера сайта (`hops` — формы слова для числа), `errors.*` — по кодам ответа API, `loading`, `no_webgl`, `no_data`, `about.{heading, paragraphs[]}`, `credits.{heading, items[], citation}` |
 
@@ -200,7 +201,7 @@
 | `game-entry` | вход в мини-игру в футере |
 | **[v1.2]** `lang-<code>` | переключение языка: `lang-en`, `lang-uk`, `lang-ru` |
 
-**[v1.5] События на `document`.** `krokosha:egg` (`detail` — id пасхалки строкой: `konami`, `sudo`, `croc`, `croc5`, `cat`, `reboot`, `console`, `lost_packet`) — его слушает статистика (`/assets/analytics.js`, тип события `egg`). Внутренние события дизайна: `kro:egg` (`detail.{id, count, total}` — счётчик «eggs 2/8»), `kro:link` / `kro:unlink` (руки героя соприкоснулись и разошлись). Найденные пасхалки хранятся в `localStorage['krokosha:eggs']`.
+**[v1.5] События на `document`.** `krokosha:egg` (`detail` — id пасхалки строкой: `konami`, `sudo`, `croc`, `croc5`, `cat`, `reboot`, `console`, `lost_packet`) — его слушает статистика (`/assets/analytics.js`, тип события `egg`). Внутренние события дизайна: `kro:egg` (`detail.{id, count, total}` — счётчик «eggs 2/8»), `kro:link` / `kro:unlink` (руки героя соприкоснулись и разошлись). Найденные пасхалки хранятся в `localStorage['krokosha:eggs']`. **[v1.8]** Баннер ачивки — `#kro-achievement` (`role="status"`) в правом нижнем углу; при флаге `achievements: false` его нет.
 
 ---
 

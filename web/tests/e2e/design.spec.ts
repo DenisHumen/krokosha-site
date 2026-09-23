@@ -68,7 +68,35 @@ test('the lost packet can be found on the 404 page', async ({ page }) => {
   }
   await expect(page.locator('[data-game-status]')).toHaveText('LINK UP');
   await expect(log).toHaveText(/пакет найден/);
+  // The find is an achievement, like the eggs of the home page.
+  const banner = page.locator('#kro-achievement');
+  await expect(banner).toContainText('Пакет найден');
+  await expect(banner).toContainText('1/8');
   expect(await page.evaluate(() => localStorage.getItem('krokosha:eggs'))).toContain('lost_packet');
+});
+
+test('the last egg found brings the golden root@krokosha', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'krokosha:eggs',
+      JSON.stringify(['konami', 'sudo', 'croc', 'cat', 'reboot', 'croc5', 'lost_packet']),
+    ),
+  );
+  await page.reload();
+  await page.waitForFunction(() => 'krokosha' in window);
+  await page.locator('body').click({ position: { x: 5, y: 200 } });
+  await page.evaluate(() =>
+    (window as unknown as { krokosha: { hello(): string } }).krokosha.hello(),
+  );
+  const banner = page.locator('#kro-achievement');
+  await expect(banner).toContainText('Almost a colleague');
+  await expect(banner).toContainText('8/8');
+  // A click puts the banner away, as in Steam; the next one in the queue comes.
+  await banner.locator(':scope > div').click();
+  await expect(banner).toContainText('root@krokosha');
+  await expect(banner).toContainText('Every easter egg found');
+  await expect(page.locator('[data-eggs-caption]').first()).toHaveText('eggs 8/8');
 });
 
 test('typing sudo opens the terminal, which answers in the language of the page', async ({
@@ -81,6 +109,8 @@ test('typing sudo opens the terminal, which answers in the language of the page'
   await page.keyboard.type('sudo');
   const terminal = page.locator('#kro-term');
   await expect(terminal).toBeVisible();
+  // The egg is an achievement: the Steam-style banner in the corner, in the language of the page.
+  await expect(page.locator('#kro-achievement')).toContainText('Суперкористувач');
   await terminal.locator('input').fill('whoami');
   await terminal.locator('input').press('Enter');
   await expect(terminal.locator('pre')).toContainText('root тут — Денис');
