@@ -38,15 +38,23 @@ for (const locale of LOCALES) {
   });
 }
 
-test('navigation anchors scroll to their sections', async ({ page }) => {
+test('navigation leads to sections of the page and to pages of the site', async ({
+  page,
+  request,
+}) => {
   await page.goto('/');
   const links = page.locator('.site-header [data-slot="site.nav"] a');
   const count = await links.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
-    const href = await links.nth(i).getAttribute('href');
-    expect(href).toMatch(/^#[a-z-]+$/);
-    await expect(page.locator(href!)).toHaveCount(1);
+    const href = (await links.nth(i).getAttribute('href')) ?? '';
+    if (href.startsWith('#')) {
+      expect(href).toMatch(/^#[a-z-]+$/);
+      await expect(page.locator(href)).toHaveCount(1);
+    } else {
+      expect(href).toMatch(/^\/([a-z]+\/)+$/);
+      expect((await request.get(href)).status(), href).toBe(200);
+    }
   }
 });
 

@@ -1,0 +1,936 @@
+---
+// The map of the internet (docs/netmap.md): every network and the links between them, rebuilt every
+// night on the server; a route between two addresses, network by network. The page is static and in
+// the design of the site — a dot matrix of the world, mono labels, the accent for what moves; the
+// map itself is drawn by scripts/netmap/ from the overview the server publishes under /netmap/data/.
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import Base from '../../layouts/Base.astro';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+import { breadcrumbsJsonLd, serializeJsonLd } from '../../lib/seo.ts';
+import { VIEWS } from '../../scripts/netmap/projection.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const { map } = data.site;
+const origin = Astro.site ?? new URL(import.meta.env.SITE);
+const breadcrumbs = breadcrumbsJsonLd(origin, lang, [
+  { name: data.profile.nickname, page: '' },
+  { name: map.title, page: 'map' },
+]);
+---
+
+<Base
+  data={data}
+  page="map"
+  title={`${map.title} — ${data.profile.nickname}`}
+  description={map.description}
+  jsonLd={[breadcrumbs]}
+>
+  <div class="netmap" data-netmap>
+    <script
+      is:inline
+      type="application/json"
+      data-map-texts
+      set:html={serializeJsonLd(map)}
+    ></script>
+    <header class="netmap-head">
+      <p class="eyebrow">{map.status}</p>
+      <h1>{map.title}</h1>
+      <p class="lead">{map.lead}</p>
+      <dl class="netmap-stats">
+        <div>
+          <dt>{map.stats.networks}</dt>
+          <dd class="mono" data-stat="networks">
+            —
+          </dd>
+        </div>
+        <div>
+          <dt>{map.stats.links}</dt>
+          <dd class="mono" data-stat="links">
+            —
+          </dd>
+        </div>
+        <div>
+          <dt>{map.stats.exchanges}</dt>
+          <dd class="mono" data-stat="exchanges">
+            —
+          </dd>
+        </div>
+        <div>
+          <dt>{map.stats.updated}</dt>
+          <dd class="mono" data-stat="updated">
+            —
+          </dd>
+        </div>
+      </dl>
+    </header>
+
+    {/* eslint-disable astro/jsx-a11y/no-noninteractive-tabindex -- the stage is a widget: arrows move the map, + and − zoom it, 0 shows the whole world */}
+    <section
+      class="netmap-stage needs-js"
+      data-map-stage
+      tabindex="0"
+      aria-label={map.title}
+      aria-describedby="netmap-hint"
+    >
+      {/* eslint-enable astro/jsx-a11y/no-noninteractive-tabindex */}
+      <div class="netmap-halo" data-map-halo aria-hidden="true"></div>
+      <canvas class="netmap-canvas" data-map-canvas aria-hidden="true"></canvas>
+      <div class="netmap-labels" data-map-labels aria-hidden="true"></div>
+      <p class="netmap-tip mono" data-map-tip hidden></p>
+
+      <div class="netmap-toolbar">
+        <div class="netmap-views" role="group" aria-label={map.views.label}>
+          {VIEWS.map((view) => (
+            <button
+              type="button"
+              class="netmap-view mono"
+              data-view={view}
+              aria-pressed={view === 'map' ? 'true' : 'false'}
+            >
+              {map.views[view]}
+            </button>
+          ))}
+        </div>
+        <div class="netmap-zoom">
+          <button
+            type="button"
+            class="netmap-round"
+            data-zoom="in"
+            aria-label={map.controls.zoom_in}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+          <button
+            type="button"
+            class="netmap-round"
+            data-zoom="out"
+            aria-label={map.controls.zoom_out}
+          >
+            <span aria-hidden="true">−</span>
+          </button>
+          <button
+            type="button"
+            class="netmap-round"
+            data-zoom="home"
+            aria-label={map.controls.reset}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <circle
+                cx="7"
+                cy="7"
+                r="5.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.2"
+              ></circle>
+              <path
+                d="M1.5 7h11M7 1.5c2 1.6 2 9.4 0 11M7 1.5c-2 1.6-2 9.4 0 11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1"
+              ></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <p class="netmap-core-hint" data-view-hint hidden>
+        {map.views.core_hint}
+      </p>
+      <p class="netmap-status mono" data-map-status role="status"></p>
+
+      <ul class="netmap-legend mono">
+        <li>
+          <i class="legend-dot" aria-hidden="true"></i>
+          {map.legend.network}
+        </li>
+        <li>
+          <i class="legend-ring" aria-hidden="true"></i>
+          {map.legend.exchange}
+        </li>
+        <li>
+          <i class="legend-line" aria-hidden="true"></i>
+          {map.legend.bundle}
+        </li>
+        <li>
+          <i class="legend-route" aria-hidden="true"></i>
+          {map.legend.route}
+        </li>
+      </ul>
+      <p class="netmap-hint mono" id="netmap-hint">
+        {map.controls.hint}
+      </p>
+
+      <aside class="network-card" data-network-card hidden>
+        <button
+          type="button"
+          class="netmap-round network-close"
+          data-network-close
+          aria-label={map.network.close}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+        <div data-network-body></div>
+      </aside>
+    </section>
+    <noscript>
+      <p class="netmap-noscript">{map.no_webgl}</p>
+    </noscript>
+
+    <section class="netmap-route" aria-labelledby="route-heading">
+      <h2 class="eyebrow" id="route-heading">
+        {map.form.heading}
+      </h2>
+      <form class="route-form" method="get" action={localePath(lang, 'map')} data-route-form>
+        <p class="route-field">
+          <label for="route-from">{map.form.from}</label>
+          <input
+            id="route-from"
+            name="from"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="45"
+            placeholder={map.form.from_placeholder}
+            required
+          />
+        </p>
+        <button
+          type="button"
+          class="netmap-round route-swap"
+          data-route-swap
+          aria-label={map.form.swap}
+        >
+          <span aria-hidden="true">⇄</span>
+        </button>
+        <p class="route-field">
+          <label for="route-to">{map.form.to}</label>
+          <input
+            id="route-to"
+            name="to"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="45"
+            placeholder={map.form.to_placeholder}
+            required
+          />
+        </p>
+        <button class="pill pill-inverse route-submit" type="submit">
+          {map.form.submit}
+          <span class="arrow" aria-hidden="true">
+            →
+          </span>
+        </button>
+      </form>
+      <p class="route-mine mono" data-route-mine hidden></p>
+      <p class="route-examples">
+        <span class="muted">{map.form.examples_label}:</span>
+        {map.form.examples.map((example) => (
+          <button type="button" class="route-example mono needs-js" data-example={example.ip}>
+            {example.label} <span class="muted">{example.ip}</span>
+          </button>
+        ))}
+      </p>
+      <div class="route-result" data-route-result aria-live="polite" hidden></div>
+    </section>
+
+    <section class="netmap-about" aria-labelledby="about-heading">
+      <div>
+        <h2 class="eyebrow" id="about-heading">
+          {map.about.heading}
+        </h2>
+        {map.about.paragraphs.map((paragraph) => (
+          <p>{paragraph}</p>
+        ))}
+      </div>
+      <div>
+        <h2 class="eyebrow">{map.credits.heading}</h2>
+        <ul class="credits">
+          {map.credits.items.map((item) => (
+            <li>
+              <a href={item.url} rel="noopener">
+                {item.name}
+              </a>
+              <span class="muted"> — {item.text}</span>
+            </li>
+          ))}
+        </ul>
+        <p class="citation mono muted">{map.credits.citation}</p>
+      </div>
+    </section>
+  </div>
+</Base>
+
+<script>
+  import { initMap } from '../../scripts/netmap/map.ts';
+
+  initMap();
+</script>
+
+<style>
+  .netmap {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 2.5rem);
+    padding: clamp(1.5rem, 4vw, 3rem) 0 clamp(2rem, 6vw, 4.5rem);
+  }
+
+  .netmap-head,
+  .netmap-route,
+  .netmap-about,
+  .netmap-noscript {
+    width: 100%;
+    max-width: var(--page);
+    margin: 0 auto;
+    padding: 0 var(--gutter);
+  }
+
+  .netmap-head {
+    display: grid;
+    gap: 1rem;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.2rem, 6vw, 4.2rem);
+    font-weight: 500;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+  }
+
+  .lead {
+    max-width: 44rem;
+    margin: 0;
+    color: var(--fg-2);
+    font-size: clamp(1rem, 1.6vw, 1.15rem);
+    line-height: 1.55;
+  }
+
+  .netmap-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 2.5rem;
+    margin: 0.5rem 0 0;
+  }
+
+  .netmap-stats div {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .netmap-stats dd {
+    order: -1;
+    margin: 0;
+    min-width: 6ch;
+    font-size: clamp(1.3rem, 2.6vw, 1.8rem);
+    color: var(--fg);
+  }
+
+  .netmap-stats dt {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  /* The stage: the map across the whole width, the controls over it. */
+  .netmap-stage {
+    position: relative;
+    height: clamp(26rem, 72vh, 48rem);
+    overflow: hidden;
+    border-block: 1px solid var(--line);
+    background: radial-gradient(ellipse at 50% 40%, var(--accent-soft), transparent 60%), var(--bg);
+    outline: none;
+    touch-action: none;
+  }
+
+  .netmap-stage:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  .netmap-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+
+  .netmap-canvas:active {
+    cursor: grabbing;
+  }
+
+  .netmap-halo {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 34%, var(--surface-2), var(--bg-2) 70%);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 0 80px -20px var(--accent-soft);
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  .netmap-labels {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .netmap-labels :global(.map-label) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  .netmap-tip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    max-width: 22rem;
+    margin: 0;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-s);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+    font-size: 0.72rem;
+    pointer-events: none;
+  }
+
+  .netmap-toolbar {
+    position: absolute;
+    top: 1rem;
+    left: var(--gutter);
+    right: var(--gutter);
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    pointer-events: none;
+  }
+
+  .netmap-views,
+  .netmap-zoom {
+    display: flex;
+    gap: 0.35rem;
+    pointer-events: auto;
+  }
+
+  .netmap-views {
+    padding: 0.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(6px);
+  }
+
+  .netmap-view {
+    padding: 0.4rem 0.85rem;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition:
+      background var(--dur-1),
+      color var(--dur-1);
+  }
+
+  .netmap-view:hover {
+    color: var(--fg);
+  }
+
+  .netmap-view[aria-pressed='true'] {
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+
+  .netmap-round {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: border-color var(--dur-1);
+  }
+
+  .netmap-round:hover {
+    border-color: var(--fg);
+  }
+
+  .netmap-core-hint {
+    position: absolute;
+    top: 4.2rem;
+    left: var(--gutter);
+    z-index: 2;
+    max-width: 22rem;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .netmap-status {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    margin: 0;
+    transform: translate(-50%, -50%);
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .netmap-status:empty {
+    display: none;
+  }
+
+  /* Without WebGL there is no map: the stage keeps only the words why; routes work below. */
+  .netmap-stage.is-flat {
+    height: auto;
+    padding: 2.5rem var(--gutter);
+  }
+
+  .netmap-stage.is-flat > :not(.netmap-status) {
+    display: none;
+  }
+
+  .netmap-stage.is-flat .netmap-status {
+    position: static;
+    transform: none;
+  }
+
+  .netmap-legend {
+    position: absolute;
+    left: var(--gutter);
+    bottom: 1rem;
+    z-index: 2;
+    display: grid;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: 0.68rem;
+    pointer-events: none;
+  }
+
+  .netmap-legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .netmap-legend i {
+    display: inline-block;
+    flex: none;
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .legend-dot {
+    background: radial-gradient(circle, var(--dot) 28%, transparent 34%);
+  }
+
+  .legend-ring {
+    border: 1.5px solid var(--accent-line);
+    border-radius: 50%;
+    transform: scale(0.8);
+  }
+
+  .legend-line {
+    height: 1px !important;
+    background: var(--accent);
+    opacity: 0.6;
+  }
+
+  .legend-route {
+    height: 3px !important;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .netmap-hint {
+    position: absolute;
+    right: var(--gutter);
+    bottom: 1rem;
+    z-index: 2;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.68rem;
+    pointer-events: none;
+  }
+
+  .network-card {
+    position: absolute;
+    top: 4rem;
+    right: var(--gutter);
+    z-index: 3;
+    width: min(24rem, calc(100% - 2 * var(--gutter)));
+    max-height: calc(100% - 5.5rem);
+    overflow: auto;
+    padding: 1.1rem 1.2rem 1.2rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+  }
+
+  .network-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  .network-card :global(.network-head) {
+    display: grid;
+    gap: 0.4rem;
+    padding-right: 2.2rem;
+  }
+
+  .network-card :global(.network-title) {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .network-card :global(.network-facts) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 0.6rem 1rem;
+    margin: 1rem 0;
+  }
+
+  .network-card :global(.network-facts dt) {
+    font-size: 0.7rem;
+  }
+
+  .network-card :global(.network-facts dd) {
+    margin: 0.1rem 0 0;
+    font-size: 0.95rem;
+  }
+
+  .network-card :global(.network-lists) {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .network-card :global(.network-list ul) {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.8rem;
+  }
+
+  .network-card :global(.network-list .mono) {
+    color: var(--accent);
+  }
+
+  /* The route: a form in one line on wide screens, the result under it. */
+  .netmap-route {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .route-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.75rem;
+    padding: clamp(1rem, 2.5vw, 1.5rem);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .route-form[aria-busy='true'] .route-submit {
+    opacity: 0.6;
+  }
+
+  .route-field {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .route-field label {
+    font-size: 0.85rem;
+    color: var(--fg-2);
+  }
+
+  .route-field input {
+    width: 100%;
+    height: 2.9rem;
+    padding: 0 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color var(--dur-1);
+  }
+
+  .route-field input:focus {
+    border-color: var(--fg);
+  }
+
+  .route-swap {
+    margin-bottom: 0.3rem;
+  }
+
+  .route-submit {
+    height: 2.9rem;
+    padding: 0 1.35rem;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .route-mine {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .route-examples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .route-example {
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--fg);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color var(--dur-1);
+  }
+
+  .route-example:hover {
+    border-color: var(--accent);
+  }
+
+  .route-result {
+    display: grid;
+    gap: 1rem;
+    padding: clamp(1rem, 2.5vw, 1.5rem);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .route-result[hidden] {
+    display: none;
+  }
+
+  .route-result :global(.route-head) {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .route-result :global(.route-summary) {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .route-result :global(.route-summary b) {
+    color: var(--accent);
+    font-size: 1.5rem;
+    font-weight: 500;
+  }
+
+  .route-result :global(.route-ends) {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+
+  .route-result :global(.route-table-wrap) {
+    overflow-x: auto;
+    border-radius: var(--radius-s);
+    outline: none;
+  }
+
+  .route-result :global(.route-table-wrap:focus-visible) {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  .route-result :global(.route-table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .route-result :global(th) {
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    border-bottom: 1px solid var(--line-strong);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .route-result :global(td) {
+    padding: 0.65rem 0.75rem 0.65rem 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  .route-result :global(.hop-number) {
+    color: var(--accent);
+  }
+
+  .route-result :global(.hop-network),
+  .route-result :global(.hop-meeting) {
+    min-width: 12rem;
+  }
+
+  .route-result :global(.hop-network > span),
+  .route-result :global(.hop-meeting > span) {
+    display: block;
+  }
+
+  .route-result :global(.hop-asn),
+  .route-result :global(.meet-kind) {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .route-result :global(.hop-ports),
+  .route-result :global(.hop-delay) {
+    white-space: nowrap;
+  }
+
+  .route-result :global(.route-notes) {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .route-result :global(.route-note) {
+    max-width: 52rem;
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+
+  .netmap-about {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+  }
+
+  .netmap-about p {
+    max-width: 44rem;
+    color: var(--fg-2);
+    line-height: 1.65;
+  }
+
+  .credits {
+    display: grid;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+  }
+
+  .credits a {
+    color: var(--fg);
+    text-decoration: underline;
+    text-decoration-color: var(--accent-line);
+    text-underline-offset: 0.2em;
+  }
+
+  .citation {
+    font-size: 0.7rem;
+    line-height: 1.5;
+  }
+
+  .netmap-noscript {
+    color: var(--muted);
+  }
+
+  @media (max-width: 760px) {
+    .netmap-stage {
+      height: 64vh;
+    }
+
+    .netmap-legend,
+    .netmap-hint {
+      display: none;
+    }
+
+    .network-card {
+      top: auto;
+      bottom: 0.75rem;
+      max-height: 60%;
+    }
+
+    .route-form {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .route-form .route-field:last-of-type {
+      grid-column: 1;
+    }
+
+    .route-submit {
+      grid-column: 1 / -1;
+      justify-content: center;
+    }
+
+    .netmap-about {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .netmap-view,
+    .netmap-round,
+    .route-example {
+      transition: none;
+    }
+  }
+</style>

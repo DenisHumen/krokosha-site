@@ -71,6 +71,7 @@ nav:
   - { number: "02", anchor: skills,   label: { en: "Skills",   uk: "Навички", ru: "Навыки" } }
   - { number: "03", anchor: projects, label: { en: "Projects", uk: "Проєкти", ru: "Проекты" } }
   - { number: "04", anchor: contacts, label: { en: "Contact",  uk: "Контакти", ru: "Контакты" } }
+  - { number: "05", page: map,        label: { en: "Map",      uk: "Карта",   ru: "Карта" } }       # отдельная страница /map
 
 hero:                                   # черновик
   headline:
@@ -354,6 +355,154 @@ eggs:
 
 # То, что видят поисковики и соцсети: <title>, описание в выдаче, карточка при отправке ссылки.
 # В site.json (данные для дизайна) не попадает.
+map:                                    # страница /map — карта интернета (docs/netmap.md)
+  title: { en: "Map of the internet", uk: "Карта інтернету", ru: "Карта интернета" }
+  status: "/MAP · BGP"
+  lead:
+    en: "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go — network by network, where they meet and how long it takes."
+    uk: "Усі мережі інтернету та зв'язки між ними, щоночі наново з відкритих даних маршрутизації. Введіть дві адреси — карта намалює, яким шляхом, імовірно, підуть пакети: мережа за мережею, де вони стикуються і скільки це займе."
+    ru: "Все сети интернета и связи между ними, каждую ночь заново из открытых данных маршрутизации. Введите два адреса — карта нарисует, каким путём, вероятно, пойдут пакеты: сеть за сетью, где они стыкуются и сколько это займёт."
+  description:
+    en: "An interactive map of the internet: 80 thousand networks, the links between them and the exchange points where they meet. Trace the likely route between any two IP addresses."
+    uk: "Інтерактивна карта інтернету: 80 тисяч мереж, зв'язки між ними і точки обміну трафіком. Прокладіть імовірний маршрут між будь-якими двома IP-адресами."
+    ru: "Интерактивная карта интернета: 80 тысяч сетей, связи между ними и точки обмена трафиком. Проложите вероятный маршрут между любыми двумя IP-адресами."
+  stats:
+    networks: { en: "networks", uk: "мереж", ru: "сетей" }
+    links: { en: "links between them", uk: "зв'язків між ними", ru: "связей между ними" }
+    exchanges: { en: "exchange points", uk: "точок обміну", ru: "точек обмена" }
+    updated: { en: "rebuilt", uk: "оновлено", ru: "обновлено" }
+  views:
+    label: { en: "View", uk: "Вигляд", ru: "Вид" }
+    map: { en: "Map", uk: "Карта", ru: "Карта" }
+    core: { en: "Core", uk: "Ядро", ru: "Ядро" }
+    globe: { en: "Globe", uk: "Глобус", ru: "Глобус" }
+    core_hint:
+      en: "The core: the largest networks in the middle, the smallest on the rim; the angle is where on Earth they are."
+      uk: "Ядро: найбільші мережі в центрі, найменші — на краю; кут — де на Землі вони є."
+      ru: "Ядро: крупнейшие сети в центре, самые маленькие — на краю; угол — где на Земле они находятся."
+  controls:
+    zoom_in: { en: "Zoom in", uk: "Наблизити", ru: "Приблизить" }
+    zoom_out: { en: "Zoom out", uk: "Віддалити", ru: "Отдалить" }
+    reset: { en: "Show the whole world", uk: "Показати весь світ", ru: "Показать весь мир" }
+    hint:
+      en: "wheel — zoom · drag — move · dot — a network"
+      uk: "коліщатко — масштаб · тягніть — рух · точка — мережа"
+      ru: "колесо — масштаб · тяните — движение · точка — сеть"
+  legend:
+    network: { en: "a network (the bigger, the more networks it carries)", uk: "мережа (що більша, то більше мереж вона везе)", ru: "сеть (чем больше, тем больше сетей она везёт)" }
+    exchange: { en: "an exchange point", uk: "точка обміну трафіком", ru: "точка обмена трафиком" }
+    bundle: { en: "links between places", uk: "зв'язки між містами", ru: "связи между городами" }
+    route: { en: "the route", uk: "маршрут", ru: "маршрут" }
+  form:
+    heading: { en: "Trace a route", uk: "Прокласти маршрут", ru: "Проложить маршрут" }
+    from: { en: "From", uk: "Звідки", ru: "Откуда" }
+    to: { en: "To", uk: "Куди", ru: "Куда" }
+    from_placeholder: { en: "your address", uk: "ваша адреса", ru: "ваш адрес" }
+    to_placeholder: { en: "e.g. 1.1.1.1", uk: "наприклад, 1.1.1.1", ru: "например, 1.1.1.1" }
+    submit: { en: "Trace", uk: "Прокласти", ru: "Проложить" }
+    swap: { en: "Swap", uk: "Поміняти місцями", ru: "Поменять местами" }
+    mine: { en: "your address", uk: "ваша адреса", ru: "ваш адрес" }
+    examples_label: { en: "Try", uk: "Спробуйте", ru: "Попробуйте" }
+    examples:
+      - { ip: "1.1.1.1", label: "Cloudflare DNS" }
+      - { ip: "8.8.8.8", label: "Google DNS" }
+      - { ip: "9.9.9.9", label: "Quad9" }
+      - { ip: "140.82.121.4", label: "GitHub" }
+      - { ip: "46.175.147.165", label: { en: "this site", uk: "цей сайт", ru: "этот сайт" } }
+  panel:
+    estimated: { en: "an estimate by the routing model", uk: "оцінка за моделлю маршрутизації", ru: "оценка по модели маршрутизации" }
+    observed: { en: "a path seen in real routing tables", uk: "шлях із реальних таблиць маршрутизації", ru: "путь из реальных таблиц маршрутизации" }
+    networks: { en: ["network", "networks"], uk: ["мережа", "мережі", "мереж"], ru: ["сеть", "сети", "сетей"] }
+    rtt: { en: "there and back", uk: "туди й назад", ru: "туда и обратно" }
+    ms: { en: "ms", uk: "мс", ru: "мс" }
+    columns:
+      hop: "#"
+      network: { en: "Network", uk: "Мережа", ru: "Сеть" }
+      relation: { en: "Link", uk: "Зв'язок", ru: "Связь" }
+      meeting: { en: "Where they meet", uk: "Де стикуються", ru: "Где стыкуются" }
+      ports: { en: "Ports", uk: "Порти", ru: "Порты" }
+      delay: { en: "Delay", uk: "Затримка", ru: "Задержка" }
+      loss: { en: "Loss", uk: "Втрати", ru: "Потери" }
+    rel:
+      customer: { en: "buys transit", uk: "купує транзит", ru: "покупает транзит" }
+      provider: { en: "its customer", uk: "її клієнт", ru: "её клиент" }
+      peer: { en: "peering", uk: "пірінг", ru: "пиринг" }
+      unknown: { en: "a link", uk: "зв'язок", ru: "связь" }
+    meet:
+      ix: { en: "exchange point", uk: "точка обміну", ru: "точка обмена" }
+      facility: { en: "data centre", uk: "дата-центр", ru: "дата-центр" }
+      guess: { en: "place not published", uk: "місце не опубліковано", ru: "место не опубликовано" }
+    start: { en: "start", uk: "початок", ru: "начало" }
+    not_measured: { en: "not measured", uk: "не вимірювалось", ru: "не измерялось" }
+    anycast:
+      en: "{ip} is anycast: the same address is served from many places, and the closest one answers."
+      uk: "{ip} — anycast: ту саму адресу обслуговують багато місць, відповідає найближче."
+      ru: "{ip} — anycast: один и тот же адрес обслуживают много мест, отвечает ближайшее."
+    note:
+      en: "The path is what the routing policies of the networks make likely; the delay is estimated from the distance along the cables, the ports are what the networks declare in PeeringDB. Real routers may choose another way, and loss can only be measured."
+      uk: "Шлях — те, що роблять імовірним правила маршрутизації мереж; затримка оцінена за відстанню вздовж кабелів, порти — те, що мережі вказали в PeeringDB. Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти."
+      ru: "Путь — то, что делают вероятным правила маршрутизации сетей; задержка оценена по расстоянию вдоль кабелей, порты — то, что сети указали в PeeringDB. Настоящие роутеры могут выбрать другой путь, а потери можно только измерить."
+  network:
+    heading: { en: "Network", uk: "Мережа", ru: "Сеть" }
+    cone: { en: "networks in its cone", uk: "мереж у її конусі", ru: "сетей в её конусе" }
+    rank: { en: "place by size", uk: "місце за розміром", ru: "место по размеру" }
+    customers: { en: "customers", uk: "клієнти", ru: "клиенты" }
+    providers: { en: "providers", uk: "провайдери", ru: "провайдеры" }
+    peers: { en: "peers", uk: "піри", ru: "пиры" }
+    exchanges: { en: "exchange points", uk: "точки обміну", ru: "точки обмена" }
+    close: { en: "Close", uk: "Закрити", ru: "Закрыть" }
+  errors:
+    bad_address: { en: "That is not an IP address.", uk: "Це не IP-адреса.", ru: "Это не IP-адрес." }
+    private_address:
+      en: "This address is not on the internet: private networks, carrier NAT and documentation ranges are not routed."
+      uk: "Ця адреса не в інтернеті: приватні мережі, NAT провайдера й документаційні діапазони не маршрутизуються."
+      ru: "Этот адрес не в интернете: частные сети, NAT провайдера и документационные диапазоны не маршрутизируются."
+    not_routed: { en: "Nobody announces this address right now.", uk: "Цю адресу зараз ніхто не анонсує.", ru: "Этот адрес сейчас никто не анонсирует." }
+    no_path: { en: "These networks are not connected in the map.", uk: "Ці мережі не з'єднані на карті.", ru: "Эти сети не связаны на карте." }
+    busy: { en: "Too many requests — try again in a minute.", uk: "Забагато запитів — спробуйте за хвилину.", ru: "Слишком много запросов — попробуйте через минуту." }
+    not_ready: { en: "The map is being built — try again in a few minutes.", uk: "Карта будується — спробуйте за кілька хвилин.", ru: "Карта строится — попробуйте через несколько минут." }
+    network: { en: "The server did not answer — try again.", uk: "Сервер не відповів — спробуйте ще раз.", ru: "Сервер не ответил — попробуйте ещё раз." }
+  loading: { en: "Loading the map…", uk: "Завантажую карту…", ru: "Загружаю карту…" }
+  no_webgl:
+    en: "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them."
+    uk: "Ваш браузер не може намалювати карту (WebGL вимкнено). Маршрути працюють: їх покаже таблиця нижче."
+    ru: "Ваш браузер не может нарисовать карту (WebGL выключен). Маршруты работают: их покажет таблица ниже."
+  no_data: { en: "The map data is not ready yet.", uk: "Дані карти ще не готові.", ru: "Данные карты ещё не готовы." }
+  about:
+    heading: { en: "How it works", uk: "Як це працює", ru: "Как это работает" }
+    paragraphs:
+      - en: "The internet is some 80 thousand autonomous systems — providers, hosting, clouds, companies — and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away."
+        uk: "Інтернет — це близько 80 тисяч автономних систем: провайдери, хостинги, хмари, компанії. Кожна сама вирішує, з ким з'єднатися і чий трафік везти, і повідомляє про це іншим через BGP. Колектори, з якими говорять BGP багато мереж, відкривають свої таблиці: з них, з дослідження CAIDA про типи зв'язків і з PeeringDB, де мережі пишуть, де їх можна зустріти, карта будується щоночі. Записується лише те, що змінилося: нові зв'язки і ті, що зникли."
+        ru: "Интернет — это около 80 тысяч автономных систем: провайдеры, хостинги, облака, компании. Каждая сама решает, с кем соединиться и чей трафик везти, и сообщает об этом другим через BGP. Коллекторы, с которыми говорят BGP многие сети, открывают свои таблицы: из них, из исследования CAIDA о типах связей и из PeeringDB, где сети пишут, где их можно встретить, карта строится каждую ночь. Записывается только то, что изменилось: новые связи и пропавшие."
+      - en: "A route is the chain of networks their policies make likely: a network would rather hand traffic to a customer, who pays, than to a peer, and to a peer rather than to its own provider. Where two networks meet is seen from the exchange points and data centres they share. The delay is estimated from the distance: light in fibre covers about 200 km in a millisecond, and cables are longer than straight lines."
+        uk: "Маршрут — ланцюжок мереж, який роблять імовірним їхні правила: мережа охочіше віддає трафік клієнту, що платить, ніж піру, а піру — охочіше, ніж власному провайдеру. Де мережі стикуються, видно зі спільних точок обміну та дата-центрів. Затримку оцінено за відстанню: світло в оптиці проходить близько 200 км за мілісекунду, а кабелі довші за прямі."
+        ru: "Маршрут — цепочка сетей, которую делают вероятной их правила: сеть охотнее отдаёт трафик клиенту, который платит, чем пиру, а пиру — охотнее, чем собственному провайдеру. Где сети стыкуются, видно по общим точкам обмена и дата-центрам. Задержка оценена по расстоянию: свет в оптике проходит около 200 км за миллисекунду, а кабели длиннее прямых."
+      - en: "Real routers may choose another way, and loss can only be measured. Measurements are coming: traceroute from this site's server and, through RIPE Atlas, from a probe in the sender's own network."
+        uk: "Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти. Скоро тут будуть виміри: traceroute із сервера сайту і, через RIPE Atlas, — із зонда в мережі відправника."
+        ru: "Настоящие роутеры могут выбрать другой путь, а потери можно только измерить. Скоро здесь будут замеры: traceroute с сервера сайта и, через RIPE Atlas, — с зонда в сети отправителя."
+  credits:
+    heading: { en: "Data", uk: "Дані", ru: "Данные" }
+    items:
+      - name: "CAIDA AS Relationships"
+        url: "https://www.caida.org/catalog/datasets/as-relationships/"
+        text: { en: "links between networks and their kinds, monthly", uk: "зв'язки між мережами та їхні типи, щомісяця", ru: "связи между сетями и их типы, ежемесячно" }
+      - name: "University of Oregon RouteViews"
+        url: "https://www.routeviews.org/"
+        text: { en: "routing tables of the collectors, daily", uk: "таблиці маршрутизації колекторів, щодня", ru: "таблицы маршрутизации коллекторов, ежедневно" }
+      - name: "PeeringDB"
+        url: "https://www.peeringdb.com/"
+        text: { en: "exchange points, data centres, port speeds", uk: "точки обміну, дата-центри, швидкості портів", ru: "точки обмена, дата-центры, скорости портов" }
+      - name: "iptoasn"
+        url: "https://iptoasn.com/"
+        text: { en: "which network announces an address", uk: "яка мережа анонсує адресу", ru: "какая сеть анонсирует адрес" }
+      - name: "IP Geolocation by DB-IP"
+        url: "https://db-ip.com"
+        text: { en: "where an address is (CC BY 4.0)", uk: "де знаходиться адреса (CC BY 4.0)", ru: "где находится адрес (CC BY 4.0)" }
+      - name: "Natural Earth"
+        url: "https://www.naturalearthdata.com/"
+        text: { en: "the outline of the land", uk: "обриси суходолу", ru: "очертания суши" }
+    citation: "The CAIDA UCSD AS Relationships Dataset, https://catalog.caida.org/dataset/as_relationships_serial_2"
+
 seo:                                    # черновик; ключевые запросы — бриф B7, упомянуты только подтверждённые навыки
   title:                                # до ~60 символов
     en: "Denis (Krokosha) — Network & Infrastructure Engineer, DevOps"

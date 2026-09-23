@@ -206,6 +206,24 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
   }
 }
 
+// The map of the internet (docs/netmap.md): the page and the land it is drawn on. Its data come
+// from the server (/netmap/data/, rebuilt every night), never from the build.
+for (const [lang, prefix] of Object.entries(LOCALES)) {
+  const file = `${prefix}map/index.html`;
+  const html = checkPage(file, lang, { indexable: true });
+  if (!html) continue;
+  checkInternalLinks(file, html);
+  for (const hook of ['data-netmap', 'data-map-texts', 'data-map-canvas', 'data-route-form']) {
+    if (!html.includes(hook)) fail(file, `${hook} is missing: the script of the map needs it`);
+  }
+}
+{
+  const land = read('netmap/land.bin');
+  if (land !== null && !land.startsWith('KLD1')) fail('netmap/land.bin', 'not a land file (KLD1)');
+  if (existsSync(join(dist, 'netmap/data')))
+    fail('netmap/data', 'the data of the map belong to the server, not to the build');
+}
+
 // The statistics script: present on every page, readable, and small (brief B5: < 3 KB gzip).
 {
   const script = read('assets/analytics.js');
@@ -239,8 +257,10 @@ const sitemap = read('sitemap.xml');
 if (sitemap) {
   const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
   for (const prefix of Object.values(LOCALES)) {
-    if (!locs.some((loc) => new URL(loc).pathname === `/${prefix}`)) {
-      fail('sitemap.xml', `home page /${prefix} is missing`);
+    for (const page of ['', 'map/']) {
+      if (!locs.some((loc) => new URL(loc).pathname === `/${prefix}${page}`)) {
+        fail('sitemap.xml', `page /${prefix}${page} is missing`);
+      }
     }
   }
   for (const loc of locs) {

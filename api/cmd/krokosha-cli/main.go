@@ -36,6 +36,7 @@ Usage:
   krokosha-cli indexnow [flags]
                                tell the search engines of IndexNow which pages of a new
                                release changed (build-release.sh does it after every release)
+  krokosha-cli netmap <cmd>    the map of the internet of /map: fetch, build, route
 
 Run "krokosha-cli <command> -h" for the flags of a command.
 
@@ -69,6 +70,8 @@ func run() int {
 		err = runAlert(ctx, args)
 	case "indexnow":
 		err = runIndexNow(ctx, args)
+	case "netmap":
+		err = runNetmap(ctx, args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

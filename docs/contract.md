@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.5** (2026-09-22). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]**.
+**Версия 1.6** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -11,6 +11,7 @@
 | 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
 | 1.4 | **Файлы в форме** (§7), только при `form.attachments: true`: поле `files`, `enctype="multipart/form-data"`. В `site.json` добавлены `form.labels.{attachments, attachments_hint}` и `form.errors.{too_many_files, file_too_big, file_type}` |
 | 1.5 | **Интеграция дизайна v1.** Тексты, которые дизайн держал в коде, — теперь в `site.json`: `ui.{skills_headline, menu, socials, contents, draft}`, `not_found.game.*`, `footer.play_status`, `eggs.*` (§2.4). События пасхалок (§4) |
+| 1.6 | **Карта интернета** (§8): страница `/map`, её тексты — `site.json → map.*`. Пункт меню может вести на другую страницу: `nav[]` — `{ number, label, anchor }` или `{ number, label, page }` |
 
 ---
 
@@ -131,7 +132,7 @@
 | Ключ | Что это |
 |---|---|
 | **[v1.2]** `i18n` | `{ locale, default, locales: [{ code, label, href }] }` — переключатель языка: `EN` → `/`, `UA` → `/uk/`, `RU` → `/ru/` |
-| `nav[]` | `{ number, label, anchor }` — пункты верхней навигации |
+| `nav[]` | `{ number, label, anchor }` — пункты верхней навигации; **[v1.6]** или `{ number, label, page }` — ссылка на страницу сайта на том же языке (`page: map` → `/map/`, `/uk/map/`). У пункта ровно одно из двух. Подсветка раздела при прокрутке (`data-nav`) — только у якорей |
 | `hero` | `headline.muted` (серая строка) + `headline.strong` (чёрная), `lead`, `experience_label`, `captions.{left,center,right}`, `link_caption`, `cta.{telegram,email,discuss}` |
 | `services[]` | `{ id, number, title, subtitle, text }` — секция с липкими номерами. `id` = якорь (`/#networks`) |
 | `stats` | подписи к цифрам |
@@ -143,6 +144,7 @@
 | `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub`; **[v1.5]** `play_status` — строка над заглушкой `/play` («HATCH SEALED · ACCESS LATER») |
 | **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found`, `all` (тосты), `night` (подпись «ночного режима»), `croc`, `croc5`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
+| **[v1.6]** `map` | страница `/map` (§8): `title`, `status`, `lead`, `description`, `stats.*`, `views.{label, map, core, globe, core_hint}`, `controls.*`, `legend.*`, `form.*` (с `examples[]` — `{ ip, label }`), `panel.*` — таблица маршрута (`networks` — формы слова для числа: две в английском, три в украинском и русском; `anycast` с подстановкой `{ip}`), `network.*` — карточка сети, `errors.*` — по кодам ответа API, `loading`, `no_webgl`, `no_data`, `about.{heading, paragraphs[]}`, `credits.{heading, items[], citation}` |
 
 Значения с пометкой «черновик» в YAML — рабочие тексты, их будут править. Вёрстка не должна зависеть от их точной длины.
 
@@ -294,3 +296,41 @@
 | `%%TELEGRAM_CLASS%%` | класс блока с кнопкой (`data-field="telegram"`) | `is-shown` или пусто |
 
 В собранном виде (без замены) страница должна выглядеть законченной: виден заголовок без номера, заголовок с номером и кнопка Telegram скрыты. CSS: `.thanks-numbered`, `.thanks-telegram` скрыты по умолчанию и показываются с `.is-shown`; `.thanks-generic.is-hidden` скрыт.
+
+---
+
+## 8. [v1.6] Карта интернета
+
+Страница `/map/` (`/uk/map/`, `/ru/map/`): все сети интернета и связи между ними, маршрут между двумя адресами. Как устроено и откуда данные — [netmap.md](netmap.md). Вёрстка сделана из токенов и компонентов дизайна (точечная матрица, моно-подписи, пилюли, акцент для того, что движется); сама карта рисуется скриптом `web/src/scripts/netmap/` на WebGL, без сторонних библиотек и тайлов.
+
+**Данные.** Сборка сайта их не содержит: сервер перестраивает их каждую ночь и отдаёт по `/netmap/data/`.
+
+| Путь | Что это |
+|---|---|
+| `/netmap/land.bin` | суша для точечной карты (в сборке, `web/scripts/gen-land.mjs`, формат `KLD1`) |
+| `/netmap/data/overview.json` | манифест: `{ file, version, built, networks, links, exchanges, bytes }` |
+| `/netmap/data/<file>` | обзор карты, бинарный формат `KNM1` (см. netmap.md); имя меняется с содержимым, кэшируется надолго |
+| `GET /api/net/me` | адрес посетителя и его сеть — чтобы подставить в «Откуда». Не сохраняется, `Cache-Control: no-store` |
+| `GET /api/net/route?from=&to=` | маршрут: сети по порядку, где они встречаются, порты, оценка задержки |
+| `GET /api/net/as/{asn}` | карточка сети: размер, соседи, точки обмена |
+| `GET /api/net/search?q=` | поиск сети по номеру или имени |
+
+Ошибки API — `{ "error": "<код>" }`; коды совпадают с ключами `map.errors`: `bad_address`, `private_address`, `not_routed`, `no_path`, `unknown_as`, `busy` (429), `not_ready` (503).
+
+**Разметка, на которую опирается скрипт:**
+
+| Атрибут | Что это |
+|---|---|
+| `data-netmap` | корень страницы; класс `is-ready` — обзор загружен |
+| `script[type="application/json"][data-map-texts]` | `site.map` целиком — тексты для скрипта |
+| `data-stat="networks\|links\|exchanges\|updated"` | числа под заголовком, заполняет скрипт |
+| `data-map-stage` | сцена (фокусируемая: стрелки, `+`, `−`, `0`); класс `is-flat` — WebGL нет, видна только причина |
+| `data-map-canvas`, `data-map-halo`, `data-map-labels`, `data-map-tip` | холст, ореол глобуса, подписи маршрута, подсказка при наведении |
+| `data-view="map\|core\|globe"` + `aria-pressed` | переключатель вида; `data-view-hint` — пояснение к ядру |
+| `data-zoom="in\|out\|home"` | кнопки масштаба |
+| `data-map-status` (`role="status"`) | состояние: загрузка, нет WebGL, нет данных, ошибка маршрута |
+| `data-network-card`, `data-network-body`, `data-network-close` | карточка сети по клику на точку |
+| `data-route-form` с полями `name="from"`, `name="to"` | форма маршрута; без JavaScript — обычный GET на эту же страницу |
+| `data-route-swap`, `data-example="<ip>"`, `data-route-mine`, `data-route-result` | обмен полей, примеры, «ваш адрес», таблица маршрута |
+
+Адрес страницы хранит маршрут: `?from=me&to=1.1.1.1` (`me` — адрес того, кто открыл ссылку), маршрут строится при открытии.

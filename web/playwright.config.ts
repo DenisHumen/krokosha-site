@@ -33,5 +33,8 @@ export default defineConfig({
     url: `http://localhost:${PORT}/`,
     reuseExistingServer: !isCI,
     timeout: 60_000,
+    // Astro sends `preview` to the background when it thinks an AI agent runs it, and Playwright
+    // would take the exit for a crash: the variable keeps the server in the foreground.
+    env: { ASTRO_PREVIEW_BACKGROUND: '0' },
   },
 });

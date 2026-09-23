@@ -50,7 +50,9 @@ function fontFamily(
 export default defineConfig({
   site: siteUrl(),
   output: 'static',
-  trailingSlash: 'always',
+  // Pages end with a slash. While the map page is developed against `krokosha-cli netmap serve`,
+  // the dev server must let /api/net/… (no slash) through to its proxy instead of answering 404.
+  trailingSlash: process.env.NETMAP_DEV_API ? 'ignore' : 'always',
   build: { format: 'directory' },
   // HTML-aware whitespace handling: markup that comes from design/ is plain HTML,
   // where a line break between inline elements is a space. The 'jsx' default would glue them together.
@@ -84,7 +86,18 @@ export default defineConfig({
   ],
   devToolbar: { enabled: false },
   vite: {
-    // content/ and mock/ live next to web/, one level above the Vite root.
-    server: { fs: { allow: ['..'] } },
+    server: {
+      // content/ and mock/ live next to web/, one level above the Vite root.
+      fs: { allow: ['..'] },
+      // The map page asks the API; while developing, `krokosha-cli netmap serve` stands in for it.
+      ...(process.env.NETMAP_DEV_API
+        ? {
+            proxy: {
+              '/api/net': process.env.NETMAP_DEV_API,
+              '/netmap/data': process.env.NETMAP_DEV_API,
+            },
+          }
+        : {}),
+    },
   },
 });
