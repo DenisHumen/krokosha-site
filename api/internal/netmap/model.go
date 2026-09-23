@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -24,9 +25,16 @@ type Model struct {
 	Prefixes   *Prefixes
 	IXs        []IX
 	Facilities []Facility
-	ports      [][]Port  // per node: its ports at exchange points, one per IX, ordered by IX
-	sites      [][]int32 // per node: the data centres it is present in, ordered
-	lans       []lan     // peering LANs of exchange points, for the hops of a traceroute
+	ports      [][]Port              // per node: its ports at exchange points, one per IX, ordered by IX
+	sites      [][]int32             // per node: the data centres it is present in, ordered
+	lans       []lan                 // peering LANs of exchange points, for the hops of a traceroute
+	ixAddrs    map[netip.Addr]ixPort // the address of a network's port at an exchange point
+}
+
+// ixPort is whose port an address in a peering LAN is, and at which exchange point.
+type ixPort struct {
+	node int32
+	ix   int32
 }
 
 // Node is one AS.
@@ -110,6 +118,13 @@ func (m *Model) Ports(node int32) []Port { return m.ports[node] }
 // Sites are the data centres a network is present in.
 func (m *Model) Sites(node int32) []int32 { return m.sites[node] }
 
+// PortOf finds the network whose port at an exchange point has this address: a hop of a
+// traceroute that answers from a peering LAN is the router of that network.
+func (m *Model) PortOf(addr netip.Addr) (node, ix int32, ok bool) {
+	port, ok := m.ixAddrs[addr.Unmap()]
+	return port.node, port.ix, ok
+}
+
 // ExchangeOf finds the exchange point whose peering LAN an address belongs to.
 func (m *Model) ExchangeOf(addr netip.Addr) (int32, bool) {
 	addr = addr.Unmap()
@@ -155,6 +170,7 @@ func Build(sources Sources) *Model {
 	} else {
 		m.ports = make([][]Port, len(m.Nodes))
 		m.sites = make([][]int32, len(m.Nodes))
+		m.ixAddrs = map[netip.Addr]ixPort{}
 	}
 	m.place(sources.Geo)
 	return m
@@ -386,11 +402,17 @@ func (m *Model) addPeeringDB(db *PeeringDB) {
 
 	m.ports = make([][]Port, len(m.Nodes))
 	members := make([]map[int32]struct{}, len(m.IXs))
+	m.ixAddrs = map[netip.Addr]ixPort{}
 	for _, p := range db.Ports {
 		node, okN := m.index[p.ASN]
 		x, okX := ixIndex[p.IX]
 		if !okN || !okX || !p.Operational {
 			continue
+		}
+		for _, text := range []string{p.IPv4, p.IPv6} {
+			if addr, err := netip.ParseAddr(strings.TrimSpace(text)); err == nil {
+				m.ixAddrs[addr.Unmap()] = ixPort{node: node, ix: x}
+			}
 		}
 		m.IXs[x].Capacity += p.Speed
 		if members[x] == nil {

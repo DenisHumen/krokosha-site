@@ -79,12 +79,66 @@ const ROUTE = {
   ],
 };
 
-/** The data and the API of the map; returns the queries of the routes asked. */
+// The way from the site's server to 1.1.1.1, as /api/net/trace measures it.
+const TRACE = {
+  from: { ip: '46.175.147.165', asn: 6000, name: 'SIX', country: 'UA', lat: 50.45, lon: 30.52 },
+  to: { ip: '1.1.1.1', asn: 7000, name: 'Seven', country: 'US', lat: 40.71, lon: -74 },
+  reached: true,
+  hops: [
+    {
+      ttl: 1,
+      ip: '46.175.147.1',
+      host: 'gw.six.example',
+      asn: 6000,
+      name: 'SIX',
+      country: 'UA',
+      lat: 50.45,
+      lon: 30.52,
+      sent: 3,
+      rtts: [0.8, 0.7, 0.9],
+    },
+    { ttl: 2, lat: null, lon: null, sent: 3, rtts: [] },
+    {
+      ttl: 3,
+      ip: '80.81.192.7',
+      others: ['80.81.192.8'],
+      ix: 'TEST-IX',
+      lat: 50.11,
+      lon: 8.68,
+      sent: 3,
+      rtts: [21.3],
+    },
+    {
+      ttl: 4,
+      ip: '1.1.1.1',
+      asn: 7000,
+      name: 'Seven',
+      country: 'US',
+      lat: 40.71,
+      lon: -74,
+      sent: 3,
+      rtts: [90.1, 91, 90.4],
+      reached: true,
+    },
+  ],
+  connect: { port: 443, sent: 5, rtts: [90.2, 90.4, 91, 90.3, 90.8] },
+  at: '2026-09-23T17:00:00Z',
+};
+
+/** The data and the API of the map; returns the queries of the routes (and traces) asked. */
 async function mockMap(
   page: Page,
   answer: { status: number; json: unknown } = { status: 200, json: ROUTE },
+  traceAnswer: { status: number; json: unknown } = { status: 200, json: TRACE },
 ): Promise<string[]> {
   const asked: string[] = [];
+  await page.route(
+    (url) => url.pathname === '/api/net/trace',
+    (route) => {
+      asked.push(`trace${new URL(route.request().url()).search}`);
+      return route.fulfill(traceAnswer);
+    },
+  );
   await page.route('**/netmap/data/overview.json', (route) =>
     route.fulfill({
       json: {
@@ -177,6 +231,67 @@ test.describe('the map of the internet', () => {
     await expect(page.getByLabel('To', { exact: true })).toHaveValue('8.8.8.8');
   });
 
+  test("measures the way from the site's server, and shows either way on the map", async ({
+    page,
+  }) => {
+    const asked = await mockMap(page);
+    await page.goto('/map/?from=me&to=1.1.1.1');
+    await expect(page.locator('[data-route-result] tbody tr')).toHaveCount(4);
+    // Nothing is measured until asked: every measurement sends packets from the server.
+    expect(asked.filter((query) => query.startsWith('trace'))).toEqual([]);
+    await expect(page.locator('[data-show="model"]')).toBeHidden();
+
+    await page.getByRole('button', { name: "Measure from this site's server" }).click();
+    const measured = page.locator('[data-trace-result]');
+    await expect(measured).toBeVisible();
+    expect(asked.filter((query) => query.startsWith('trace'))).toEqual(['trace?to=1.1.1.1']);
+    await expect(measured.locator('.route-summary')).toHaveText('90 ms there and back · 4 hops');
+    await expect(measured.locator('.route-ends')).toHaveText('46.175.147.165 AS6000 SIX → 1.1.1.1');
+    const rows = measured.locator('tbody tr');
+    await expect(rows).toHaveCount(4);
+    await expect(rows.nth(0)).toContainText('gw.six.example');
+    await expect(rows.nth(1)).toContainText('* no answer');
+    await expect(rows.nth(1).locator('.hop-answered')).toHaveText('0/3');
+    await expect(rows.nth(2)).toContainText('exchange point · TEST-IX');
+    await expect(rows.nth(2)).toContainText('+ 80.81.192.8');
+    await expect(rows.nth(2).locator('.hop-delay')).toHaveText('21 ms');
+    await expect(rows.nth(3).locator('.hop-answered')).toHaveText('3/3the address itself');
+    await expect(measured).toContainText('TCP handshakes with port 443: 5 of 5, 90 ms');
+    await expect(
+      page.getByRole('button', { name: "Measure from this site's server" }),
+    ).toBeHidden();
+
+    // Either way can be put on the map.
+    const model = page.locator('[data-show="model"]');
+    const trace = page.locator('[data-show="trace"]');
+    await expect(trace).toHaveAttribute('aria-pressed', 'true');
+    await expect(model).toHaveAttribute('aria-pressed', 'false');
+    await model.click();
+    await expect(model).toHaveAttribute('aria-pressed', 'true');
+    await expect(trace).toHaveAttribute('aria-pressed', 'false');
+
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
+      .analyze();
+    expect(results.violations.map((violation) => violation.id)).toEqual([]);
+  });
+
+  test('a measurement that fails is said in words, and can be asked again', async ({
+    page,
+    problems,
+  }) => {
+    await mockMap(page, undefined, { status: 502, json: { error: 'trace_failed' } });
+    await page.goto('/map/?from=me&to=1.1.1.1');
+    const button = page.getByRole('button', { name: "Measure from this site's server" });
+    await button.click();
+    await expect(page.locator('[data-map-status]')).toHaveText(
+      'The measurement failed — try again later.',
+    );
+    await expect(button).toBeEnabled();
+    await expect(page.locator('[data-trace-result]')).toBeHidden();
+    expectProblems(problems, /502/);
+  });
+
   test('says in words what went wrong', async ({ page, problems }) => {
     await mockMap(page, { status: 400, json: { error: 'private_address' } });
     await page.goto('/map/');
@@ -231,6 +346,17 @@ test.describe('the map of the internet', () => {
     await page.goto('/map/');
     await expect(page.locator('[data-map-status]')).toHaveText('The map data is not ready yet.');
     expectProblems(problems, /404/);
+  });
+
+  test('fits the screen: nothing makes the page scroll sideways', async ({ page }) => {
+    await mockMap(page);
+    await page.goto('/ru/map/?from=me&to=1.1.1.1'); // the longest texts, a route and its table
+    await expect(page.locator('[data-route-result] tbody tr')).toHaveCount(4);
+    const [scroll, client] = await page.evaluate(() => [
+      document.documentElement.scrollWidth,
+      document.documentElement.clientWidth,
+    ]);
+    expect(scroll).toBeLessThanOrEqual(client);
   });
 
   test('speaks the language of its address', async ({ page }) => {

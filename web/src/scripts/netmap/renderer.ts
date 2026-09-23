@@ -184,6 +184,8 @@ export class Renderer {
   private lines: Program;
   private layers = new Map<string, Layer>();
   private palette: Palette | null = null;
+  /** The colour of the route: the accent for the model's route, «ok» for a measured way. */
+  private routeTone: 'accent' | 'ok' = 'accent';
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -217,6 +219,11 @@ export class Renderer {
   clearLayer(name: string): void {
     const layer = this.layers.get(name);
     if (layer) layer.count = 0;
+  }
+
+  /** Draws the route in the accent (the model's) or in «ok» (measured). */
+  setRouteTone(tone: 'accent' | 'ok'): void {
+    this.routeTone = tone;
   }
 
   setPalette(palette: Palette): void {
@@ -286,8 +293,9 @@ export class Renderer {
     );
     // The route: a trail of light, the places it passes, the packet — along the arcs on the map
     // and the globe, from network to network in the core.
-    this.drawPoints('route', frame, GEO, palette.accent, 1, 2, 0, common);
-    this.drawPoints('routeCore', frame, CORE, palette.accent, 1, 2, 0, common);
+    const tone = palette[this.routeTone];
+    this.drawPoints('route', frame, GEO, tone, 1, 2, 0, common);
+    this.drawPoints('routeCore', frame, CORE, tone, 1, 2, 0, common);
     this.drawPoints('stops', frame, GEO, palette.fg, 1, 3, 0, common);
     this.drawPoints('stopsCore', frame, CORE, palette.fg, 1, 3, 0, common);
     this.drawPoints('packet', frame, GEO, palette.fg, 1, 2, 0, common);

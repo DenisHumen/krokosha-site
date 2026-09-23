@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.6** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]**.
+**Версия 1.7** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -11,6 +11,7 @@
 | 1.3 | **Форма заявки работает** (§7): разметка формы, обязательные `name`-атрибуты полей, блоки сообщений, страница «спасибо» с метками `%%…%%`. В `site.json` добавлены `form.labels.{contact_value, choose}` и `form.messages.{success_generic, success_text, invalid}`. Трек `form-continue-telegram` |
 | 1.4 | **Файлы в форме** (§7), только при `form.attachments: true`: поле `files`, `enctype="multipart/form-data"`. В `site.json` добавлены `form.labels.{attachments, attachments_hint}` и `form.errors.{too_many_files, file_too_big, file_type}` |
 | 1.5 | **Интеграция дизайна v1.** Тексты, которые дизайн держал в коде, — теперь в `site.json`: `ui.{skills_headline, menu, socials, contents, draft}`, `not_found.game.*`, `footer.play_status`, `eggs.*` (§2.4). События пасхалок (§4) |
+| 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
 | 1.6 | **Карта интернета** (§8): страница `/map`, её тексты — `site.json → map.*`. Пункт меню может вести на другую страницу: `nav[]` — `{ number, label, anchor }` или `{ number, label, page }` |
 
 ---
@@ -144,7 +145,7 @@
 | `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub`; **[v1.5]** `play_status` — строка над заглушкой `/play` («HATCH SEALED · ACCESS LATER») |
 | **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found`, `all` (тосты), `night` (подпись «ночного режима»), `croc`, `croc5`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
-| **[v1.6]** `map` | страница `/map` (§8): `title`, `status`, `lead`, `description`, `stats.*`, `views.{label, map, core, globe, core_hint}`, `controls.*`, `legend.*`, `form.*` (с `examples[]` — `{ ip, label }`), `panel.*` — таблица маршрута (`networks` — формы слова для числа: две в английском, три в украинском и русском; `anycast` с подстановкой `{ip}`), `network.*` — карточка сети, `errors.*` — по кодам ответа API, `loading`, `no_webgl`, `no_data`, `about.{heading, paragraphs[]}`, `credits.{heading, items[], citation}` |
+| **[v1.6]** `map` | страница `/map` (§8): `title`, `status`, `lead`, `description`, `stats.*`, `views.{label, map, core, globe, core_hint}`, `controls.*`, `legend.*`, `form.*` (с `examples[]` — `{ ip, label }`), `panel.*` — таблица маршрута (`networks` — формы слова для числа: две в английском, три в украинском и русском; `anycast` с подстановкой `{ip}`), `network.*` — карточка сети, **[v1.7]** `trace.*` — замер пути с сервера сайта (`hops` — формы слова для числа), `errors.*` — по кодам ответа API, `loading`, `no_webgl`, `no_data`, `about.{heading, paragraphs[]}`, `credits.{heading, items[], citation}` |
 
 Значения с пометкой «черновик» в YAML — рабочие тексты, их будут править. Вёрстка не должна зависеть от их точной длины.
 
@@ -312,10 +313,11 @@
 | `/netmap/data/<file>` | обзор карты, бинарный формат `KNM1` (см. netmap.md); имя меняется с содержимым, кэшируется надолго |
 | `GET /api/net/me` | адрес посетителя и его сеть — чтобы подставить в «Откуда». Не сохраняется, `Cache-Control: no-store` |
 | `GET /api/net/route?from=&to=` | маршрут: сети по порядку, где они встречаются, порты, оценка задержки |
+| **[v1.7]** `GET /api/net/trace?to=` | путь, измеренный с сервера сайта: хопы с адресами, именами, сетями, точками обмена, временем и числом ответов; TCP-рукопожатия с адресом. Несколько секунд; 3 в минуту с посетителя, 2 одновременно на весь сервер |
 | `GET /api/net/as/{asn}` | карточка сети: размер, соседи, точки обмена |
 | `GET /api/net/search?q=` | поиск сети по номеру или имени |
 
-Ошибки API — `{ "error": "<код>" }`; коды совпадают с ключами `map.errors`: `bad_address`, `private_address`, `not_routed`, `no_path`, `unknown_as`, `busy` (429), `not_ready` (503).
+Ошибки API — `{ "error": "<код>" }`; коды совпадают с ключами `map.errors`: `bad_address`, `private_address`, `not_routed`, `no_path`, `unknown_as`, `busy` (429), `not_ready` (503), **[v1.7]** `trace_failed` (502).
 
 **Разметка, на которую опирается скрипт:**
 
@@ -332,5 +334,6 @@
 | `data-network-card`, `data-network-body`, `data-network-close` | карточка сети по клику на точку |
 | `data-route-form` с полями `name="from"`, `name="to"` | форма маршрута; без JavaScript — обычный GET на эту же страницу |
 | `data-route-swap`, `data-example="<ip>"`, `data-route-mine`, `data-route-result` | обмен полей, примеры, «ваш адрес», таблица маршрута |
+| **[v1.7]** `data-route-trace="<ip>"`, `data-trace-result`, `data-show="model\|trace"` | кнопка замера с сервера сайта, блок измеренного пути, переключатель «что на карте» (с `aria-pressed`); всё это рисует скрипт |
 
 Адрес страницы хранит маршрут: `?from=me&to=1.1.1.1` (`me` — адрес того, кто открыл ссылку), маршрут строится при открытии.

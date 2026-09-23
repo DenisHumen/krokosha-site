@@ -25,6 +25,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
 	"github.com/DenisHumen/krokosha-site/api/internal/netmap"
+	"github.com/DenisHumen/krokosha-site/api/internal/trace"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
 
@@ -38,6 +39,8 @@ The map of the internet of the /map page (docs/netmap.md).
            iptoasn, today's RouteViews snapshots, PeeringDB
   build    build the map from the data directory and write the overview, without MySQL
   route    print the likely path between two addresses: krokosha-cli netmap route FROM TO
+  trace    measure the way from this server to an address, hop by hop: krokosha-cli netmap trace TO
+           (UDP probes as tracepath sends them — no privileges needed — and TCP handshakes)
   serve    for development: answer /api/net/* and serve the overview from memory, without MySQL
            (the web dev server passes them on with NETMAP_DEV_API=http://127.0.0.1:8091)
 
@@ -125,6 +128,20 @@ func runNetmap(ctx context.Context, args []string) error {
 		return nil
 	case "serve":
 		return serveNetmap(ctx, *data, *geoip, places.Collectors, *out, *listen, *me)
+	case "trace":
+		if flags.NArg() != 1 {
+			return errors.New("usage: krokosha-cli netmap trace ADDRESS")
+		}
+		to, err := netip.ParseAddr(flags.Arg(0))
+		if err != nil {
+			return err
+		}
+		result, err := trace.Run(ctx, to, trace.Options{})
+		if err != nil && result == nil {
+			return err
+		}
+		printTrace(result)
+		return err
 	}
 	fmt.Print(netmapUsage)
 	return fmt.Errorf("unknown netmap command %q", command)
@@ -395,6 +412,38 @@ func printRoute(route *netmap.Route) {
 			}
 			fmt.Printf("      ↓ %s, ~%.0f ms%s\n", where, meeting.RTT, speeds)
 		}
+	}
+}
+
+func printTrace(result *trace.Result) {
+	fmt.Printf("%s → %s, %s\n", result.From, result.To, result.Took.Round(time.Millisecond))
+	for _, hop := range result.Hops {
+		who := "*"
+		if hop.Addr.IsValid() {
+			who = hop.Addr.String()
+			for _, other := range hop.Others {
+				who += " " + other.String()
+			}
+		}
+		times := make([]string, len(hop.RTTs))
+		for i, rtt := range hop.RTTs {
+			times[i] = fmt.Sprintf("%.1f ms", float64(rtt.Microseconds())/1000)
+		}
+		note := ""
+		switch {
+		case hop.Reached:
+			note = "  ← the address itself"
+		case hop.Refused != "":
+			note = "  ← " + hop.Refused
+		}
+		fmt.Printf("%2d  %-40s %d/%d  %s%s\n", hop.TTL, who, len(hop.RTTs), hop.Sent, strings.Join(times, "  "), note)
+	}
+	if c := result.Connect; c != nil {
+		times := make([]string, len(c.RTTs))
+		for i, rtt := range c.RTTs {
+			times[i] = fmt.Sprintf("%.1f ms", float64(rtt.Microseconds())/1000)
+		}
+		fmt.Printf("TCP %d: %d/%d  %s\n", c.Port, len(c.RTTs), c.Sent, strings.Join(times, "  "))
 	}
 }
 

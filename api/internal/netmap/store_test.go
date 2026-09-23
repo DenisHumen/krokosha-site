@@ -95,6 +95,7 @@ func TestStoreGivesTheSameModelBack(t *testing.T) {
 		{"rel", m.rel, built.rel}, {"src", m.src, built.src}, {"IXs", m.IXs, built.IXs},
 		{"facilities", m.Facilities, built.Facilities}, {"ports", m.ports, built.ports},
 		{"sites", m.sites, built.sites}, {"lans", m.lans, built.lans}, {"prefixes", m.Prefixes, built.Prefixes},
+		{"ports of exchange points", m.ixAddrs, built.ixAddrs},
 	} {
 		if !reflect.DeepEqual(field.got, field.wants) {
 			t.Errorf("%s:\n%+v\n%+v", field.name, field.got, field.wants)

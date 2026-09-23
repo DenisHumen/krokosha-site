@@ -380,6 +380,33 @@
       "anycast": "{ip} is anycast: the same address is served from many places, and the closest one answers.",
       "note": "The path is what the routing policies of the networks make likely; the delay is estimated from the distance along the cables, the ports are what the networks declare in PeeringDB. Real routers may choose another way, and loss can only be measured."
     },
+    "trace": {
+      "measure": "Measure from this site's server",
+      "measuring": "Measuring: the probes take a few seconds…",
+      "heading": "measured from this site's server",
+      "model": "by the model",
+      "show": "Show on the map",
+      "shown": "On the map",
+      "hops": [
+        "hop",
+        "hops"
+      ],
+      "columns": {
+        "hop": "#",
+        "address": "Address",
+        "network": "Network",
+        "answered": "Answered",
+        "time": "Time"
+      },
+      "silent": "no answer",
+      "arrived": "the address itself",
+      "refused": "will not pass it on",
+      "exchange": "exchange point",
+      "tcp": "TCP handshakes with port {port}: {answered} of {sent}, {ms} ms",
+      "no_tcp": "The address answered no handshake on ports 443 and 80.",
+      "not_reached": "The address itself did not answer the probes — many hosts do not; the handshakes tell the time to it.",
+      "note": "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss — what the address itself answers does."
+    },
     "network": {
       "heading": "Network",
       "cone": "networks in its cone",
@@ -397,7 +424,8 @@
       "no_path": "These networks are not connected in the map.",
       "busy": "Too many requests — try again in a minute.",
       "not_ready": "The map is being built — try again in a few minutes.",
-      "network": "The server did not answer — try again."
+      "network": "The server did not answer — try again.",
+      "trace_failed": "The measurement failed — try again later."
     },
     "loading": "Loading the map…",
     "no_webgl": "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them.",

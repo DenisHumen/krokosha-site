@@ -218,10 +218,11 @@ krokosha-cli indexnow --release DIR [--previous DIR] [--all]
 krokosha-cli netmap sync                        # ночная работа (krokosha-netmap.timer): источники → модель → изменения в MySQL → обзор
 krokosha-cli netmap fetch|build                 # то же по частям, без MySQL
 krokosha-cli netmap route [flags] FROM TO       # маршрут в терминале
+krokosha-cli netmap trace TO                    # путь с этого сервера, хоп за хопом (UDP-зонды, без привилегий)
 krokosha-cli netmap serve --me IP               # /api/net/* без остального API — для работы над страницей
 ```
 
-API отвечает на `GET /api/net/route`, `/api/net/as/{asn}`, `/api/net/search`, `/api/net/me` (лимиты — в Redis, маршруты кэшируются там же на 10 минут) и раз в 30 секунд проверяет `netmap_sync`: появилась новая удачная карта — загружает её из MySQL (~1,4 с) и подменяет старую.
+API отвечает на `GET /api/net/route`, `/api/net/trace` (путь, измеренный с сервера: `internal/trace`), `/api/net/as/{asn}`, `/api/net/search`, `/api/net/me` (лимиты — в Redis, маршруты и замеры кэшируются там же на 10 минут) и раз в 30 секунд проверяет `netmap_sync`: появилась новая удачная карта — загружает её из MySQL (~1,4 с) и подменяет старую.
 
 ## `krokosha-cli sync`
 
@@ -261,6 +262,7 @@ api/
 │   ├── geo/              страна и город по локальной базе MaxMind DB (DB-IP, GeoLite2); geotest — крошечная база для тестов
 │   ├── indexnow/         какие страницы релиза изменились → IndexNow
 │   ├── netmap/           карта интернета /map: источники, модель, маршруты, обзор для страницы, хранение в MySQL, API
+│   ├── trace/            путь до адреса с этого сервера: UDP-зонды с растущим TTL (IP_RECVERR, без привилегий) и TCP-рукопожатия
 │   ├── admin/            страницы админки: вход, обзор, визиты, заявки, SSE-лента, экспорт CSV, SVG-графики (шаблоны и статика встроены в бинарник)
 │   ├── leads/            заявки: проверка формы, антиспам, proof-of-work, хранение, письма; crm.go — статусы, «взять», ответы, заметки, шаблоны, воронка; files.go — вложения; retention.go — срок хранения
 │   ├── outbox/           надёжная доставка уведомлений: одна транзакция с заявкой, повторы, идемпотентность; alert.go — оповещения владельца
