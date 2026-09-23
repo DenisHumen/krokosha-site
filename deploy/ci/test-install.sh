@@ -349,6 +349,18 @@ geo_recorded() { # geo_recorded ID 'CC City' — a page view with that id gets t
 check "a page view gets its country and city from the database" geo_recorded 00112233aabbcc77 'PL Warsaw'
 check "…the address itself is still not stored" test "$(sql "SELECT COUNT(*) FROM analytics_pageviews WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
 check "the overview names the country" grep -q 'Польша' <(both_days /)
+# After the second run of the installer the admin area is read once more. By then this test has
+# signed out and run into the limit of sign-ins (five wrong attempts per login and per network),
+# so a session for that is opened now.
+GEO_JAR=$(mktemp)
+geo_login=$("${CURL[@]}" --output /dev/null --write-out '%{http_code}' --cookie-jar "$GEO_JAR" --user-agent "$BROWSER" \
+  --request POST "$ADMIN/login" --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")
+check "…a session is kept for the checks after the second run" test "$geo_login" = 303
+geo_page_says() { # geo_page_says PATH TEXT — that page of the admin area, read in that session, says TEXT
+  local page
+  page=$("${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN$1")
+  grep -q "$2" <<<"$page" || { grep -o 'База GeoIP.\{0,160\}\|<footer.\{0,300\}\|<title>[^<]*' <<<"$page" | head -n 3; return 1; }
+}
 # geoipupdate would bring the real GeoLite2 one day; a file written by the test stands in for it.
 # The next run of the installer (the second run below) is to switch the API over to it.
 MMDB_TYPE=GeoLite2-City python3 "$SOURCE/deploy/ci/mmdb.py" /var/lib/GeoIP/GeoLite2-City.mmdb 127.0.0.0/8=UA:Kyiv
@@ -681,10 +693,9 @@ check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
 check "GeoLite2 has come: the API reads it now, and DB-IP is gone" bash -c "[[ \$(sed -n 's/^GEOIP_DB=//p' /etc/krokosha/env) == /var/lib/GeoIP/GeoLite2-City.mmdb && ! -e /var/lib/GeoIP/dbip-city-lite.mmdb ]] && ! systemctl is-enabled --quiet krokosha-dbip.timer"
 check "…a page view gets its place from GeoLite2" geo_recorded 00112233aabbcc78 'UA Kyiv'
-# The session of the admin area ended above («signing out ends the session»).
-admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD" >/dev/null || true
-check "…the status screen names it" geo_status 'GeoLite2-City от 10.09.2026'
-check "…and the admin area credits MaxMind instead of DB-IP" bash -c "grep -q 'GeoLite2 data created by MaxMind' <<<\"\$1\" && ! grep -q 'DB-IP' <<<\"\$1\"" _ "$(admin_get "$ADMIN/")"
+check "…the status screen names it" geo_page_says /status 'GeoLite2-City от 10.09.2026'
+check "…and the admin area credits MaxMind" geo_page_says / 'GeoLite2 data created by MaxMind'
+check "…instead of DB-IP" bash -c "! grep -q 'IP Geolocation by DB-IP' <<<\"\$1\"" _ "$("${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN/")"
 
 echo "::group::update.sh"
 /opt/krokosha/repo/deploy/update.sh
