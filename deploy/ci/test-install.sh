@@ -142,6 +142,7 @@ done
 rm -f "$acme_probe"
 check "…while the mail name leads nowhere else than the site" test "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 5 -H "Host: mail.$DOMAIN" http://127.0.0.1/anything)" = "301 https://$DOMAIN/"
 check "sitemap.xml" grep -q "<loc>https://$DOMAIN/uk/</loc>" <(body "https://$DOMAIN/sitemap.xml")
+check "the map of the internet" grep -q 'data-netmap' <(body "https://$DOMAIN/uk/map/")
 check "requests for another host name get no answer" bash -c "! curl -s --max-time 5 -o /dev/null http://127.0.0.1/"
 check "dotfiles are not served" test "$(status "https://$DOMAIN/.env")" = 404
 
@@ -316,7 +317,7 @@ check "the button is in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_l
 echo "IndexNow"
 key_served() { [[ $INDEXNOW_KEY =~ ^[0-9a-f]{32}$ && $(body "https://$DOMAIN/$INDEXNOW_KEY.txt") == "$INDEXNOW_KEY" ]]; }
 check "the installer generated a key and the site serves it" key_served
-check "the first release told the engines about every page of the sitemap, with the key and where it is served" test "$(submission 1)" = "{\"host\": \"$DOMAIN\", \"key\": \"$INDEXNOW_KEY\", \"keyLocation\": \"https://$DOMAIN/$INDEXNOW_KEY.txt\", \"urlList\": [\"https://$DOMAIN/\", \"https://$DOMAIN/uk/\", \"https://$DOMAIN/ru/\"]}"
+check "the first release told the engines about every page of the sitemap, with the key and where it is served" test "$(submission 1)" = "{\"host\": \"$DOMAIN\", \"key\": \"$INDEXNOW_KEY\", \"keyLocation\": \"https://$DOMAIN/$INDEXNOW_KEY.txt\", \"urlList\": [\"https://$DOMAIN/\", \"https://$DOMAIN/uk/\", \"https://$DOMAIN/ru/\", \"https://$DOMAIN/map/\", \"https://$DOMAIN/uk/map/\", \"https://$DOMAIN/ru/map/\"]}"
 check "…the rebuild above, with nothing changed, told them nothing" test "$(submissions)" = 1
 # A change of the English home page only: the engines hear about that page and about nothing
 # else (a page whose HTML is byte for byte the release before did not change).
