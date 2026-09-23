@@ -40,6 +40,11 @@
       "number": "04",
       "anchor": "contacts",
       "label": "Contact"
+    },
+    {
+      "number": "05",
+      "page": "map",
+      "label": "Map"
     }
   ],
   "hero": {
@@ -276,6 +281,170 @@
       "uptime": "up 9 years, 0 incidents caused by coffee",
       "ping": "he answers fast",
       "rm": "nice try. Snapshot restored in 0.2 s"
+    }
+  },
+  "map": {
+    "title": "Map of the internet",
+    "status": "/MAP · BGP",
+    "lead": "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go — network by network, where they meet and how long it takes.",
+    "description": "An interactive map of the internet: 80 thousand networks, the links between them and the exchange points where they meet. Trace the likely route between any two IP addresses.",
+    "stats": {
+      "networks": "networks",
+      "links": "links between them",
+      "exchanges": "exchange points",
+      "updated": "rebuilt"
+    },
+    "views": {
+      "label": "View",
+      "map": "Map",
+      "core": "Core",
+      "globe": "Globe",
+      "core_hint": "The core: the largest networks in the middle, the smallest on the rim; the angle is where on Earth they are."
+    },
+    "controls": {
+      "zoom_in": "Zoom in",
+      "zoom_out": "Zoom out",
+      "reset": "Show the whole world",
+      "hint": "wheel — zoom · drag — move · dot — a network"
+    },
+    "legend": {
+      "network": "a network (the bigger, the more networks it carries)",
+      "exchange": "an exchange point",
+      "bundle": "links between places",
+      "route": "the route"
+    },
+    "form": {
+      "heading": "Trace a route",
+      "from": "From",
+      "to": "To",
+      "from_placeholder": "your address",
+      "to_placeholder": "e.g. 1.1.1.1",
+      "submit": "Trace",
+      "swap": "Swap",
+      "mine": "your address",
+      "examples_label": "Try",
+      "examples": [
+        {
+          "ip": "1.1.1.1",
+          "label": "Cloudflare DNS"
+        },
+        {
+          "ip": "8.8.8.8",
+          "label": "Google DNS"
+        },
+        {
+          "ip": "9.9.9.9",
+          "label": "Quad9"
+        },
+        {
+          "ip": "140.82.121.4",
+          "label": "GitHub"
+        },
+        {
+          "ip": "46.175.147.165",
+          "label": "this site"
+        }
+      ]
+    },
+    "panel": {
+      "estimated": "an estimate by the routing model",
+      "observed": "a path seen in real routing tables",
+      "networks": [
+        "network",
+        "networks"
+      ],
+      "rtt": "there and back",
+      "ms": "ms",
+      "columns": {
+        "hop": "#",
+        "network": "Network",
+        "relation": "Link",
+        "meeting": "Where they meet",
+        "ports": "Ports",
+        "delay": "Delay",
+        "loss": "Loss"
+      },
+      "rel": {
+        "customer": "buys transit",
+        "provider": "its customer",
+        "peer": "peering",
+        "unknown": "a link"
+      },
+      "meet": {
+        "ix": "exchange point",
+        "facility": "data centre",
+        "guess": "place not published"
+      },
+      "start": "start",
+      "not_measured": "not measured",
+      "anycast": "{ip} is anycast: the same address is served from many places, and the closest one answers.",
+      "note": "The path is what the routing policies of the networks make likely; the delay is estimated from the distance along the cables, the ports are what the networks declare in PeeringDB. Real routers may choose another way, and loss can only be measured."
+    },
+    "network": {
+      "heading": "Network",
+      "cone": "networks in its cone",
+      "rank": "place by size",
+      "customers": "customers",
+      "providers": "providers",
+      "peers": "peers",
+      "exchanges": "exchange points",
+      "close": "Close"
+    },
+    "errors": {
+      "bad_address": "That is not an IP address.",
+      "private_address": "This address is not on the internet: private networks, carrier NAT and documentation ranges are not routed.",
+      "not_routed": "Nobody announces this address right now.",
+      "no_path": "These networks are not connected in the map.",
+      "busy": "Too many requests — try again in a minute.",
+      "not_ready": "The map is being built — try again in a few minutes.",
+      "network": "The server did not answer — try again."
+    },
+    "loading": "Loading the map…",
+    "no_webgl": "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them.",
+    "no_data": "The map data is not ready yet.",
+    "about": {
+      "heading": "How it works",
+      "paragraphs": [
+        "The internet is some 80 thousand autonomous systems — providers, hosting, clouds, companies — and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away.",
+        "A route is the chain of networks their policies make likely: a network would rather hand traffic to a customer, who pays, than to a peer, and to a peer rather than to its own provider. Where two networks meet is seen from the exchange points and data centres they share. The delay is estimated from the distance: light in fibre covers about 200 km in a millisecond, and cables are longer than straight lines.",
+        "Real routers may choose another way, and loss can only be measured. Measurements are coming: traceroute from this site's server and, through RIPE Atlas, from a probe in the sender's own network."
+      ]
+    },
+    "credits": {
+      "heading": "Data",
+      "items": [
+        {
+          "name": "CAIDA AS Relationships",
+          "url": "https://www.caida.org/catalog/datasets/as-relationships/",
+          "text": "links between networks and their kinds, monthly"
+        },
+        {
+          "name": "University of Oregon RouteViews",
+          "url": "https://www.routeviews.org/",
+          "text": "routing tables of the collectors, daily"
+        },
+        {
+          "name": "PeeringDB",
+          "url": "https://www.peeringdb.com/",
+          "text": "exchange points, data centres, port speeds"
+        },
+        {
+          "name": "iptoasn",
+          "url": "https://iptoasn.com/",
+          "text": "which network announces an address"
+        },
+        {
+          "name": "IP Geolocation by DB-IP",
+          "url": "https://db-ip.com",
+          "text": "where an address is (CC BY 4.0)"
+        },
+        {
+          "name": "Natural Earth",
+          "url": "https://www.naturalearthdata.com/",
+          "text": "the outline of the land"
+        }
+      ],
+      "citation": "The CAIDA UCSD AS Relationships Dataset, https://catalog.caida.org/dataset/as_relationships_serial_2"
     }
   },
   "flags": {

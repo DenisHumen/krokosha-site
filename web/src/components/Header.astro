@@ -38,7 +38,10 @@ const home = localePath(lang);
       <ul data-slot="site.nav">
         {site.nav.map((item) => (
           <li>
-            <a href={`#${item.anchor}`} data-nav={item.anchor}>
+            <a
+              href={item.page ? localePath(lang, item.page) : `#${item.anchor}`}
+              data-nav={item.anchor}
+            >
               <span class="nav-number mono" data-field="number">
                 {item.number}
               </span>
@@ -77,7 +80,7 @@ const home = localePath(lang);
   /* A popover: opens and closes without JavaScript, with Esc and a tap outside. */
   <nav class="site-menu" id="site-menu" popover aria-label={profile.nickname}>
     {site.nav.map((item) => (
-      <a href={`#${item.anchor}`}>
+      <a href={item.page ? localePath(lang, item.page) : `#${item.anchor}`}>
         <span class="mono">{item.number}</span>
         {item.label}
       </a>

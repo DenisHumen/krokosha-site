@@ -31,10 +31,16 @@ linters:
         - (*database/sql.Conn).Close
         - (*database/sql.Rows).Close
         - (*github.com/DenisHumen/krokosha-site/api/internal/cache.Cache).Close
+        - (*github.com/DenisHumen/krokosha-site/api/internal/netmap.GeoIP).Close
   exclusions:
     rules:
       - path: _test\.go
         linters: [gosec, noctx, errcheck]
+      # The maintenance tool works with the files and directories its operator names in flags;
+      # the API keeps the check, where a path could come from a request.
+      - path: cmd/krokosha-cli/
+        linters: [gosec]
+        text: G703
 
 formatters:
   enable:

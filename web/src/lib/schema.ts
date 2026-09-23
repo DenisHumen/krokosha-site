@@ -43,6 +43,108 @@ export const tierSchema = z.enum(['featured', 'standard', 'compact']);
 
 const option = z.strictObject({ id: slug, label: localized });
 
+/** Texts of the /map page (docs/netmap.md). */
+const mapSchema = z.strictObject({
+  title: localized,
+  status: text,
+  lead: localized,
+  description: localized,
+  stats: z.strictObject({
+    networks: localized,
+    links: localized,
+    exchanges: localized,
+    updated: localized,
+  }),
+  views: z.strictObject({
+    label: localized,
+    map: localized,
+    core: localized,
+    globe: localized,
+    core_hint: localized,
+  }),
+  controls: z.strictObject({
+    zoom_in: localized,
+    zoom_out: localized,
+    reset: localized,
+    hint: localized,
+  }),
+  legend: z.strictObject({
+    network: localized,
+    exchange: localized,
+    bundle: localized,
+    route: localized,
+  }),
+  form: z.strictObject({
+    heading: localized,
+    from: localized,
+    to: localized,
+    from_placeholder: localized,
+    to_placeholder: localized,
+    submit: localized,
+    swap: localized,
+    mine: localized,
+    examples_label: localized,
+    examples: z
+      .array(z.strictObject({ ip: z.union([z.ipv4(), z.ipv6()]), label: localized }))
+      .min(1),
+  }),
+  panel: z.strictObject({
+    estimated: localized,
+    observed: localized,
+    networks: pluralForms,
+    rtt: localized,
+    ms: localized,
+    columns: z.strictObject({
+      hop: text,
+      network: localized,
+      relation: localized,
+      meeting: localized,
+      ports: localized,
+      delay: localized,
+      loss: localized,
+    }),
+    rel: z.strictObject({
+      customer: localized,
+      provider: localized,
+      peer: localized,
+      unknown: localized,
+    }),
+    meet: z.strictObject({ ix: localized, facility: localized, guess: localized }),
+    start: localized,
+    not_measured: localized,
+    anycast: localized,
+    note: localized,
+  }),
+  network: z.strictObject({
+    heading: localized,
+    cone: localized,
+    rank: localized,
+    customers: localized,
+    providers: localized,
+    peers: localized,
+    exchanges: localized,
+    close: localized,
+  }),
+  errors: z.strictObject({
+    bad_address: localized,
+    private_address: localized,
+    not_routed: localized,
+    no_path: localized,
+    busy: localized,
+    not_ready: localized,
+    network: localized,
+  }),
+  loading: localized,
+  no_webgl: localized,
+  no_data: localized,
+  about: z.strictObject({ heading: localized, paragraphs: z.array(localized).min(1) }),
+  credits: z.strictObject({
+    heading: localized,
+    items: z.array(z.strictObject({ name: text, url: httpsUrl, text: localized })).min(1),
+    citation: text,
+  }),
+});
+
 export const siteSchema = z.strictObject({
   url: httpsUrl,
   profile: z.strictObject({
@@ -79,7 +181,19 @@ export const siteSchema = z.strictObject({
       }),
     )
     .min(1),
-  nav: z.array(z.strictObject({ number: text, anchor: slug, label: localized })),
+  // A section of the home page (anchor) or a page of its own (page), never both.
+  nav: z.array(
+    z
+      .strictObject({
+        number: text,
+        anchor: slug.optional(),
+        page: slug.optional(),
+        label: localized,
+      })
+      .refine((item) => (item.anchor === undefined) !== (item.page === undefined), {
+        message: 'a nav item has either an anchor or a page',
+      }),
+  ),
   hero: z.strictObject({
     headline: z.strictObject({ muted: localized, strong: localized }),
     lead: localized,
@@ -197,6 +311,7 @@ export const siteSchema = z.strictObject({
       })
       .optional(),
   }),
+  map: mapSchema,
   flags: z.strictObject({
     skills: z.strictObject({ show_unconfirmed: z.boolean() }),
     ads: z.strictObject({ pixels: z.boolean(), consent_banner: z.boolean() }),

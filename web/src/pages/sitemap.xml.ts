@@ -26,6 +26,8 @@ export const GET: APIRoute = async ({ site }) => {
 
   const pages: { page: string; lastmod: string | null }[] = [
     { page: '', lastmod: lastPush ?? null },
+    // The map of the internet: its data are rebuilt every night on the server, not in the build.
+    { page: 'map', lastmod: null },
   ];
   const texts = await getCollection('pages', ({ data }) => data.status === 'published');
   for (const name of new Set(texts.map((entry) => entry.id.split('.')[0] ?? ''))) {
