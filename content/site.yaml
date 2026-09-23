@@ -442,6 +442,40 @@ map:                                    # страница /map — карта �
       en: "The path is what the routing policies of the networks make likely; the delay is estimated from the distance along the cables, the ports are what the networks declare in PeeringDB. Real routers may choose another way, and loss can only be measured."
       uk: "Шлях — те, що роблять імовірним правила маршрутизації мереж; затримка оцінена за відстанню вздовж кабелів, порти — те, що мережі вказали в PeeringDB. Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти."
       ru: "Путь — то, что делают вероятным правила маршрутизации сетей; задержка оценена по расстоянию вдоль кабелей, порты — то, что сети указали в PeeringDB. Настоящие роутеры могут выбрать другой путь, а потери можно только измерить."
+  trace:                                # замер пути с сервера сайта (/api/net/trace)
+    measure: { en: "Measure from this site's server", uk: "Виміряти з сервера сайту", ru: "Измерить с сервера сайта" }
+    measuring: { en: "Measuring: the probes take a few seconds…", uk: "Вимірюю: зонди йдуть кілька секунд…", ru: "Измеряю: зонды идут несколько секунд…" }
+    heading: { en: "measured from this site's server", uk: "виміряно з сервера сайту", ru: "измерено с сервера сайта" }
+    model: { en: "by the model", uk: "за моделлю", ru: "по модели" }
+    show: { en: "Show on the map", uk: "Показати на карті", ru: "Показать на карте" }
+    shown: { en: "On the map", uk: "На карті", ru: "На карте" }
+    hops: { en: ["hop", "hops"], uk: ["крок", "кроки", "кроків"], ru: ["шаг", "шага", "шагов"] }
+    columns:
+      hop: "#"
+      address: { en: "Address", uk: "Адреса", ru: "Адрес" }
+      network: { en: "Network", uk: "Мережа", ru: "Сеть" }
+      answered: { en: "Answered", uk: "Відповіли", ru: "Ответили" }
+      time: { en: "Time", uk: "Час", ru: "Время" }
+    silent: { en: "no answer", uk: "немає відповіді", ru: "нет ответа" }
+    arrived: { en: "the address itself", uk: "сама адреса", ru: "сам адрес" }
+    refused: { en: "will not pass it on", uk: "не пропускає далі", ru: "не пропускает дальше" }
+    exchange: { en: "exchange point", uk: "точка обміну", ru: "точка обмена" }
+    tcp:
+      en: "TCP handshakes with port {port}: {answered} of {sent}, {ms} ms"
+      uk: "TCP-рукостискання з портом {port}: {answered} з {sent}, {ms} мс"
+      ru: "TCP-рукопожатия с портом {port}: {answered} из {sent}, {ms} мс"
+    no_tcp:
+      en: "The address answered no handshake on ports 443 and 80."
+      uk: "Адреса не відповіла на рукостискання портами 443 і 80."
+      ru: "Адрес не ответил на рукопожатия портами 443 и 80."
+    not_reached:
+      en: "The address itself did not answer the probes — many hosts do not; the handshakes tell the time to it."
+      uk: "Сама адреса не відповіла на зонди — багато хто не відповідає; час до неї показують рукостискання."
+      ru: "Сам адрес не ответил на зонды — многие не отвечают; время до него показывают рукопожатия."
+    note:
+      en: "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss — what the address itself answers does."
+      uk: "Це шлях із сервера сайту, а не від вас. Роутери відповідають на зонди, коли мають час: крок, що пропустив частину, ще не доводить втрат — доводить те, що відповідає сама адреса."
+      ru: "Это путь с сервера сайта, а не от вас. Роутеры отвечают на зонды, когда им есть время: шаг, пропустивший часть, ещё не доказывает потерь — доказывает то, что отвечает сам адрес."
   network:
     heading: { en: "Network", uk: "Мережа", ru: "Сеть" }
     cone: { en: "networks in its cone", uk: "мереж у її конусі", ru: "сетей в её конусе" }
@@ -462,6 +496,7 @@ map:                                    # страница /map — карта �
     busy: { en: "Too many requests — try again in a minute.", uk: "Забагато запитів — спробуйте за хвилину.", ru: "Слишком много запросов — попробуйте через минуту." }
     not_ready: { en: "The map is being built — try again in a few minutes.", uk: "Карта будується — спробуйте за кілька хвилин.", ru: "Карта строится — попробуйте через несколько минут." }
     network: { en: "The server did not answer — try again.", uk: "Сервер не відповів — спробуйте ще раз.", ru: "Сервер не ответил — попробуйте ещё раз." }
+    trace_failed: { en: "The measurement failed — try again later.", uk: "Виміряти не вдалося — спробуйте пізніше.", ru: "Измерить не удалось — попробуйте позже." }
   loading: { en: "Loading the map…", uk: "Завантажую карту…", ru: "Загружаю карту…" }
   no_webgl:
     en: "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them."

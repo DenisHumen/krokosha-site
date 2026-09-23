@@ -855,6 +855,72 @@ const breadcrumbs = breadcrumbsJsonLd(origin, lang, [
     line-height: 1.5;
   }
 
+  /* Two parts: the route of the model, and the way measured from the site's server. */
+  .route-result :global(.route-part) {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .route-result :global(.route-part[hidden]) {
+    display: none;
+  }
+
+  .route-result :global(.route-part + .route-part) {
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .route-result :global([data-trace-result] .route-summary b) {
+    color: var(--ok);
+  }
+
+  .route-result :global(.route-head) {
+    position: relative;
+  }
+
+  .route-result :global(.route-show) {
+    justify-self: start;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+
+  .route-result :global(.route-show[aria-pressed='true']) {
+    background: var(--inverse-bg);
+    border-color: var(--inverse-bg);
+    color: var(--inverse-fg);
+    cursor: default;
+  }
+
+  .route-result :global(.route-show[hidden]) {
+    display: none;
+  }
+
+  .route-result :global(.route-measure) {
+    justify-self: start;
+    cursor: pointer;
+  }
+
+  .route-result :global(.route-measure[disabled]) {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .route-result :global(.hop-host) {
+    display: block;
+    max-width: 22rem;
+    overflow-wrap: anywhere;
+    font-size: 0.7rem;
+  }
+
+  .route-result :global(.hop-answered) {
+    white-space: nowrap;
+  }
+
   .netmap-about {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);

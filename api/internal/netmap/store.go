@@ -114,6 +114,9 @@ func Save(ctx context.Context, db *sql.DB, m *Model, opt SaveOptions) (SaveStats
 	if _, err := lanTable.save(ctx, db, lanRows(m), day); err != nil {
 		return stats, err
 	}
+	if _, err := ixAddrTable.save(ctx, db, ixAddrRows(m), day); err != nil {
+		return stats, err
+	}
 	return stats, changes.write(ctx, db)
 }
 
@@ -237,6 +240,9 @@ func Load(ctx context.Context, db *sql.DB) (*Model, int64, error) {
 	if s.lans, err = lanTable.alive(ctx, db); err != nil {
 		return nil, 0, err
 	}
+	if s.ixAddrs, err = ixAddrTable.alive(ctx, db); err != nil {
+		return nil, 0, err
+	}
 	return s.restore(built), id, nil
 }
 
@@ -284,6 +290,12 @@ type siteRow struct {
 type lanRow struct {
 	prefix string
 	ix     int
+}
+
+type ixAddrRow struct {
+	addr string // the bytes of the address
+	asn  uint32
+	ix   int
 }
 
 func asRows(m *Model) []asRow {
@@ -356,6 +368,14 @@ func lanRows(m *Model) []lanRow {
 	rows := make([]lanRow, len(m.lans))
 	for i, l := range m.lans {
 		rows[i] = lanRow{prefix: l.prefix.String(), ix: m.IXs[l.ix].ID}
+	}
+	return rows
+}
+
+func ixAddrRows(m *Model) []ixAddrRow {
+	rows := make([]ixAddrRow, 0, len(m.ixAddrs))
+	for addr, port := range m.ixAddrs {
+		rows = append(rows, ixAddrRow{addr: string(addr.AsSlice()), asn: m.Nodes[port.node].ASN, ix: m.IXs[port.ix].ID})
 	}
 	return rows
 }
@@ -472,6 +492,20 @@ var lanTable = table[string, lanRow]{
 	scan: func(s scanner) (lanRow, error) {
 		var r lanRow
 		return r, s.Scan(&r.prefix, &r.ix)
+	},
+}
+
+var ixAddrTable = table[string, ixAddrRow]{
+	name: "netmap_ixaddr", columns: []string{"addr", "asn", "ix"}, keys: 1,
+	key:     func(r ixAddrRow) string { return r.addr },
+	keyArgs: func(k string) []any { return []any{[]byte(k)} },
+	values:  func(r ixAddrRow) []any { return []any{[]byte(r.addr), r.asn, r.ix} },
+	scan: func(s scanner) (ixAddrRow, error) {
+		var r ixAddrRow
+		var addr []byte
+		err := s.Scan(&addr, &r.asn, &r.ix)
+		r.addr = string(addr)
+		return r, err
 	},
 }
 
@@ -719,6 +753,7 @@ type stored struct {
 	ports      []portRow
 	sites      []siteRow
 	lans       []lanRow
+	ixAddrs    []ixAddrRow
 }
 
 // restore makes the model again: the same one Build made, as far as the tables keep it.
@@ -800,5 +835,14 @@ func (s *stored) restore(built time.Time) *Model {
 		}
 	}
 	sort.Slice(m.lans, func(i, j int) bool { return m.lans[i].prefix.String() < m.lans[j].prefix.String() })
+	m.ixAddrs = make(map[netip.Addr]ixPort, len(s.ixAddrs))
+	for _, row := range s.ixAddrs {
+		addr, okA := netip.AddrFromSlice([]byte(row.addr))
+		node, okN := m.index[row.asn]
+		x, okX := ixIndex[row.ix]
+		if okA && okN && okX {
+			m.ixAddrs[addr.Unmap()] = ixPort{node: node, ix: x}
+		}
+	}
 	return m
 }

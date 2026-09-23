@@ -1,7 +1,7 @@
 // The /map page: loads the map of the internet, draws it in three views, answers the pointer and
 // the keyboard, and traces routes. The page itself is static; everything that moves is here.
 
-import { ApiError, getJSON, type NetworkJSON, type RouteJSON } from './api.ts';
+import { ApiError, getJSON, type NetworkJSON, type RouteJSON, type TraceJSON } from './api.ts';
 import { readLand, readOverview, type Manifest, type Overview } from './data.ts';
 import {
   bundleVertices,
@@ -16,7 +16,7 @@ import {
   type Places,
   type Trails,
 } from './layers.ts';
-import { renderNetwork, renderRoute, type MapTexts } from './panel.ts';
+import { markShown, renderNetwork, renderRoute, renderTrace, type MapTexts } from './panel.ts';
 import {
   equalEarth,
   HOME,
@@ -139,6 +139,10 @@ async function start(root: HTMLElement): Promise<void> {
   // The places of the current route and their labels.
   let stops: { lon: number; lat: number; label: string }[] = [];
   const labelNodes: HTMLElement[] = [];
+  // The last route drawn, and the way measured to its address (both can be put on the map).
+  let lastRoute: RouteJSON | null = null;
+  let lastTrace: TraceJSON | null = null;
+  let measuring: AbortController | null = null;
 
   const size = () => {
     const box = el.canvas.getBoundingClientRect();
@@ -634,6 +638,9 @@ async function start(root: HTMLElement): Promise<void> {
       shared.searchParams.set('from', me && source === me.ip ? 'me' : source);
       shared.searchParams.set('to', target);
       history.replaceState(null, '', shared);
+      measuring?.abort();
+      lastRoute = route;
+      lastTrace = null;
       renderRoute(el.result, route, texts, locale);
       el.result.hidden = false;
       showRoute(route);
@@ -679,16 +686,116 @@ async function start(root: HTMLElement): Promise<void> {
       const place = geo[Math.min(i + 1, geo.length - 1)]!;
       return { lon: place.lon, coreR: 0.97 };
     });
-    trails = routeTrails(geo, networks);
+    drawWay(stops, networks, route.hops.length, 'accent');
+  }
+
+  // The way measured from the site's server: the server, every hop that has a place (a port at an
+  // exchange point is where the exchange point is), the address. Drawn in the colour of «ok».
+  function showTrace(measured: TraceJSON): void {
+    if (!at) return;
+    const points: { lon: number; lat: number; label: string }[] = [];
+    const asns: (number | undefined)[] = [];
+    const add = (lon: number | null, lat: number | null, label: string, asn?: number) => {
+      const place = located(lon, lat);
+      if (!place) return;
+      const previous = points.at(-1);
+      if (
+        previous &&
+        Math.abs(previous.lon - place.lon) < 0.05 &&
+        Math.abs(previous.lat - place.lat) < 0.05
+      ) {
+        previous.label = label; // hops in one place: the last one names it
+        asns[asns.length - 1] = asn ?? asns.at(-1);
+        return;
+      }
+      points.push({ ...place, label });
+      asns.push(asn);
+    };
+    add(measured.from.lon, measured.from.lat, measured.from.ip, measured.from.asn);
+    for (const hop of measured.hops) {
+      if (hop.ip && !hop.reached) add(hop.lon, hop.lat, hop.ix || hop.ip, hop.asn);
+    }
+    add(measured.to.lon, measured.to.lat, measured.to.ip, measured.to.asn);
+    const first = points[0];
+    if (!first) return;
+    if (points.length === 1) points.push({ ...first });
+    const networks = points.map((point, i) => {
+      const asn = asns[Math.min(i, asns.length - 1)];
+      const index = asn === undefined ? undefined : at?.byASN.get(asn);
+      if (index !== undefined && at) return { lon: at.lon[index]!, coreR: at.coreR[index]! };
+      return { lon: point.lon, coreR: 0.97 };
+    });
+    drawWay(points, networks, measured.hops.length, 'ok');
+  }
+
+  function drawWay(
+    points: { lon: number; lat: number; label: string }[],
+    networks: { lon: number; coreR: number }[],
+    hops: number,
+    tone: 'accent' | 'ok',
+  ): void {
+    stops = points;
+    trails = routeTrails(
+      points.map(({ lon, lat }) => ({ lon, lat })),
+      networks,
+    );
+    renderer?.setRouteTone(tone);
     renderer?.setLayer('route', trails.geo);
     renderer?.setLayer('routeCore', trails.core);
     renderer?.setLayer('stops', trails.geoMarks);
     renderer?.setLayer('stopsCore', trails.coreMarks);
     routeStartedAt = performance.now();
-    routeDuration = 1400 + 450 * route.hops.length;
+    routeDuration = 1400 + 450 * hops;
     progress = reduced.matches ? 1 : 0;
     fitRoute();
     wake();
+  }
+
+  // --- measuring -----------------------------------------------------------------------------
+  el.result.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const measureButton = target?.closest<HTMLButtonElement>('[data-route-trace]');
+    if (measureButton) {
+      void measure(measureButton);
+      return;
+    }
+    const show = target?.closest<HTMLButtonElement>('[data-show]');
+    if (show?.dataset['show'] === 'trace' && lastTrace) {
+      showTrace(lastTrace);
+      markShown(el.result, 'trace', texts);
+    } else if (show?.dataset['show'] === 'model' && lastRoute) {
+      showRoute(lastRoute);
+      markShown(el.result, 'model', texts);
+    }
+  });
+
+  async function measure(button: HTMLButtonElement): Promise<void> {
+    const target = button.dataset['routeTrace'];
+    const container = el.result.querySelector<HTMLElement>('[data-trace-result]');
+    if (!target || !container) return;
+    measuring?.abort();
+    measuring = new AbortController();
+    button.disabled = true;
+    button.textContent = texts.trace.measuring;
+    el.status.textContent = '';
+    try {
+      const measured = await getJSON<TraceJSON>(
+        `/api/net/trace?${new URLSearchParams({ to: target })}`,
+        measuring.signal,
+      );
+      lastTrace = measured;
+      renderTrace(container, measured, texts, locale);
+      button.hidden = true;
+      showTrace(measured);
+      markShown(el.result, 'trace', texts);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      const code = error instanceof ApiError ? error.code : 'network';
+      el.status.textContent =
+        texts.errors[code as keyof MapTexts['errors']] ?? texts.errors.network;
+      button.disabled = false;
+      button.textContent = texts.trace.measure;
+    }
   }
 
   function fitRoute(): void {

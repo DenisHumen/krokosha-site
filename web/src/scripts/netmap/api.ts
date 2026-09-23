@@ -42,6 +42,33 @@ export interface RouteJSON {
   built: string;
 }
 
+/** One hop of a way measured from the site's server (/api/net/trace). */
+export interface TraceHopJSON {
+  ttl: number;
+  ip?: string; // none: nobody answered
+  others?: string[]; // more routers that answered the same probes (load balancing)
+  host?: string; // reverse DNS
+  asn?: number;
+  name?: string;
+  country?: string;
+  ix?: string; // the exchange point the address is a port of
+  lat: number | null;
+  lon: number | null;
+  sent: number;
+  rtts: number[]; // ms, of the probes that were answered
+  reached?: boolean; // the address itself
+  refused?: string; // a router would not pass the probes on
+}
+
+export interface TraceJSON {
+  from: EndpointJSON; // the site's server
+  to: EndpointJSON;
+  hops: TraceHopJSON[];
+  reached: boolean;
+  connect?: { port: number; sent: number; rtts: number[] }; // TCP handshakes with the address
+  at: string;
+}
+
 export interface BriefJSON {
   asn: number;
   name: string;

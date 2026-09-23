@@ -3,14 +3,18 @@ package netmap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/trace"
 )
 
 // countingLimiter allows `limit` requests per key.
@@ -242,5 +246,120 @@ func TestServiceKeepsRoutes(t *testing.T) {
 	get()
 	if len(store.values) != 2 {
 		t.Errorf("%d routes kept after a new map", len(store.values))
+	}
+}
+
+func TestServiceTraces(t *testing.T) {
+	store := &mapCache{values: map[string]string{}}
+	var calls atomic.Int32
+	release := make(chan struct{})
+	service := NewService(ServiceOptions{
+		Cache:    store,
+		Geo:      fakeGeo{netip.MustParsePrefix("81.0.0.0/24"): kyiv},
+		ClientIP: func(context.Context) net.IP { return net.ParseIP("203.0.113.9") },
+		Resolve: func(_ context.Context, addr string) ([]string, error) {
+			if addr == "81.0.0.1" {
+				return []string{"gw.six.example."}, nil
+			}
+			return nil, errors.New("no name")
+		},
+		Trace: func(ctx context.Context, to netip.Addr) (*trace.Result, error) {
+			calls.Add(1)
+			if to == netip.MustParseAddr("82.0.0.99") { // a slow one, to fill the places
+				<-release
+			}
+			ms := func(v float64) time.Duration { return time.Duration(v * float64(time.Millisecond)) }
+			return &trace.Result{
+				From: netip.MustParseAddr("81.0.0.10"), To: to, Reached: true,
+				Hops: []trace.Hop{
+					{TTL: 1, Addr: netip.MustParseAddr("81.0.0.1"), Sent: 3, RTTs: []time.Duration{ms(0.8), ms(0.7), ms(0.75)}},
+					{TTL: 2, Sent: 3},
+					{TTL: 3, Addr: netip.MustParseAddr("80.81.192.7"), Others: []netip.Addr{netip.MustParseAddr("80.81.192.8")}, Sent: 3, RTTs: []time.Duration{ms(21.34)}},
+					{TTL: 4, Addr: to, Sent: 3, RTTs: []time.Duration{ms(30), ms(31), ms(30.5)}, Reached: true},
+				},
+				Connect: &trace.Connect{Port: 443, Sent: 5, RTTs: []time.Duration{ms(30.2)}},
+			}, nil
+		},
+	})
+	mux := http.NewServeMux()
+	service.Register(mux)
+	m := testWorld(t)
+	for _, r := range []struct {
+		prefix string
+		asn    uint32
+	}{{"81.0.0.0/24", 6000}, {"82.0.0.0/24", 7000}} {
+		prefix := netip.MustParsePrefix(r.prefix)
+		last := prefix.Addr().As4()
+		last[3] = 255
+		m.Prefixes.add(prefix.Addr(), netip.AddrFrom4(last), r.asn)
+	}
+	m.Prefixes.sort()
+	c := client{t: t, handler: mux}
+	if status, _, body := c.get("/api/net/trace?to=82.0.0.20"); status != http.StatusServiceUnavailable || body["error"] != "not_ready" {
+		t.Errorf("before the map: %d %v", status, body)
+	}
+	service.Use(m)
+
+	status, header, body := c.get("/api/net/trace?to=82.0.0.20")
+	if status != http.StatusOK || header.Get("Cache-Control") != traceCaching {
+		t.Fatalf("trace: %d %v", status, body)
+	}
+	from, _ := body["from"].(map[string]any)
+	if from["ip"] != "81.0.0.10" || from["asn"] != float64(6000) || from["lat"] != kyiv[0] {
+		t.Errorf("from: %v", from)
+	}
+	hops, _ := body["hops"].([]any)
+	if len(hops) != 4 || body["reached"] != true {
+		t.Fatalf("hops: %v", body)
+	}
+	first, second, third := hops[0].(map[string]any), hops[1].(map[string]any), hops[2].(map[string]any)
+	if first["host"] != "gw.six.example" || first["name"] != "SIX" || first["asn"] != float64(6000) || len(first["rtts"].([]any)) != 3 {
+		t.Errorf("the first hop: %v", first)
+	}
+	if second["ip"] != nil || second["sent"] != float64(3) || len(second["rtts"].([]any)) != 0 {
+		t.Errorf("a silent hop: %v", second)
+	}
+	// A port at an exchange point is placed at the exchange point.
+	if third["ix"] != "TEST-IX" || third["lat"] != frankfurt[0] || third["others"].([]any)[0] != "80.81.192.8" || third["rtts"].([]any)[0] != 21.3 {
+		t.Errorf("the hop at the exchange point: %v", third)
+	}
+	// …whose address is the port of 7000 there, as PeeringDB lists it.
+	if third["asn"] != float64(7000) || third["name"] != "SEVEN" {
+		t.Errorf("whose port: %v", third)
+	}
+	if connect, _ := body["connect"].(map[string]any); connect["port"] != float64(443) || connect["sent"] != float64(5) {
+		t.Errorf("connect: %v", connect)
+	}
+
+	// The same measurement again comes from the cache: nothing is sent.
+	if status, _, _ := c.get("/api/net/trace?to=82.0.0.20"); status != http.StatusOK || calls.Load() != 1 {
+		t.Errorf("the second time: %d, %d traces", status, calls.Load())
+	}
+	// Addresses that are not on the internet are not traced.
+	if status, _, body := c.get("/api/net/trace?to=10.1.2.3"); status < 400 || body["error"] != "private_address" {
+		t.Errorf("a private address: %d %v", status, body)
+	}
+
+	// Two traces at once at most: a third waits for nobody, it is told to try again.
+	done := make(chan int, 2)
+	for range 2 {
+		go func() {
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/net/trace?to=82.0.0.99", nil))
+			done <- recorder.Code
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(service.tracing) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if status, _, body := c.get("/api/net/trace?to=82.0.0.30"); status != http.StatusTooManyRequests || body["error"] != "busy" {
+		t.Errorf("a third trace at once: %d %v", status, body)
+	}
+	close(release)
+	for range 2 {
+		if code := <-done; code != http.StatusOK {
+			t.Errorf("a trace that waited: %d", code)
+		}
 	}
 }

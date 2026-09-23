@@ -18,12 +18,14 @@ import (
 // Service answers the questions of the /map page:
 //
 //	GET /api/net/route?from=IP&to=IP   the likely path between two addresses
+//	GET /api/net/trace?to=IP           the way measured from this server, hop by hop (trace_http.go)
 //	GET /api/net/as/{asn}              one network: its size, neighbours, exchange points
 //	GET /api/net/search?q=…            networks by number or name
 //	GET /api/net/me                    the visitor's own address, to start a path from — not kept
 type Service struct {
-	model atomic.Pointer[Model]
-	opts  ServiceOptions
+	model   atomic.Pointer[Model]
+	opts    ServiceOptions
+	tracing chan struct{} // a place for every trace that may run at once
 }
 
 // ServiceOptions are what the service works with. Only ClientIP is required.
@@ -31,6 +33,8 @@ type ServiceOptions struct {
 	Geo      Locator                          // where an address is
 	Limit    Limiter                          // requests per visitor; nil — no limit
 	Cache    Cache                            // answers kept for a while; nil — none
+	Trace    Tracer                           // measures ways from this server; nil — no /api/net/trace
+	Resolve  Resolver                         // names the hops of a measured way; nil — the system's DNS
 	ClientIP func(ctx context.Context) net.IP // the visitor, as nginx tells it
 	Log      *slog.Logger
 }
@@ -63,7 +67,7 @@ func NewService(opts ServiceOptions) *Service {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
-	return &Service{opts: opts}
+	return &Service{opts: opts, tracing: make(chan struct{}, tracesAtOnce)}
 }
 
 // Use puts a fresh map in service; requests under way finish with the old one.
@@ -75,6 +79,9 @@ func (s *Service) Model() *Model { return s.model.Load() }
 // Register adds the routes to a mux.
 func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/net/route", s.route)
+	if s.opts.Trace != nil {
+		mux.HandleFunc("GET /api/net/trace", s.trace)
+	}
 	mux.HandleFunc("GET /api/net/as/{asn}", s.as)
 	mux.HandleFunc("GET /api/net/search", s.search)
 	mux.HandleFunc("GET /api/net/me", s.me)

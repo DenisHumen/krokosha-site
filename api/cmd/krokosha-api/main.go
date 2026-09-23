@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -37,6 +38,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
+	"github.com/DenisHumen/krokosha-site/api/internal/trace"
 	"github.com/DenisHumen/krokosha-site/api/migrations"
 )
 
@@ -214,7 +216,13 @@ func run() error {
 	if locator != nil {
 		mapGeo = locator
 	}
-	maps := netmap.NewService(netmap.ServiceOptions{Geo: mapGeo, Limit: store, Cache: store, ClientIP: server.ClientIP, Log: log})
+	maps := netmap.NewService(netmap.ServiceOptions{
+		Geo: mapGeo, Limit: store, Cache: store, ClientIP: server.ClientIP, Log: log,
+		// The way from this server, measured on request: UDP probes and TCP handshakes, no privileges.
+		Trace: func(ctx context.Context, to netip.Addr) (*trace.Result, error) {
+			return trace.Run(ctx, to, trace.Options{})
+		},
+	})
 	maps.Register(srv.Mux())
 
 	// The Telegram bot (brief B10.3). Who has access is kept whether or not there is a token:
