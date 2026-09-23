@@ -111,7 +111,8 @@
           <div><dt>База GeoIP</dt><dd>
             {{- with $s.Geo}}
               {{- if .Loaded}}<span class="dot dot-ok"></span>{{.Type}} от {{.Built.Format "02.01.2006"}}
-              {{- else}}<span class="dot"></span>не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>
+              {{- else}}<span class="dot"></span>не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>.
+                Установщик скачивает её сам: <span class="mono">sudo /opt/krokosha/repo/deploy/update.sh</span>; почему не скачалась — <span class="mono">sudo journalctl -u krokosha-dbip -u krokosha-geoipupdate</span>
               {{- end}}
             {{- else}}<span class="dot"></span>выключена (GEOIP_DB=off)
             {{- end -}}

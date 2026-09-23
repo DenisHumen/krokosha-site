@@ -41,12 +41,14 @@ main() {
 
   step "Stopping services"
   systemctl disable --now krokosha-sync.timer krokosha-rebuild.path krokosha-api.service \
-    krokosha-backup.timer krokosha-certwatch.timer krokosha-geoipupdate.timer 2>/dev/null || true
-  systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service krokosha-geoipupdate.service 2>/dev/null || true
+    krokosha-backup.timer krokosha-certwatch.timer krokosha-geoipupdate.timer krokosha-dbip.timer 2>/dev/null || true
+  systemctl stop krokosha-sync.service krokosha-backup.service krokosha-certwatch.service krokosha-geoipupdate.service \
+    krokosha-dbip.service 2>/dev/null || true
   rm -rf /etc/systemd/system/krokosha-sync.service /etc/systemd/system/krokosha-sync.timer \
     /etc/systemd/system/krokosha-backup.service /etc/systemd/system/krokosha-backup.timer \
     /etc/systemd/system/krokosha-certwatch.service /etc/systemd/system/krokosha-certwatch.timer \
     /etc/systemd/system/krokosha-geoipupdate.service /etc/systemd/system/krokosha-geoipupdate.timer \
+    /etc/systemd/system/krokosha-dbip.service /etc/systemd/system/krokosha-dbip.timer \
     /etc/systemd/system/krokosha-rebuild.path \
     /etc/systemd/system/krokosha-api.service /etc/systemd/system/krokosha-api.service.d
   systemctl daemon-reload
@@ -72,6 +74,9 @@ main() {
   rm -rf "$KROKOSHA_ROOT" "$KROKOSHA_WWW" "$KROKOSHA_STATE" /var/log/krokosha
   [[ $(readlink /usr/local/bin/krokosha-cli 2>/dev/null) != "$KROKOSHA_ROOT"/* ]] || rm -f /usr/local/bin/krokosha-cli
   rm -f /usr/local/bin/krokosha-mailbox
+  # The DB-IP database is of use to nobody else, and nothing would keep it fresh any more.
+  rm -f /var/lib/GeoIP/dbip-city-lite.mmdb /var/lib/GeoIP/dbip-city-lite.mmdb.month /var/lib/GeoIP/.dbip.lock \
+    /var/lib/GeoIP/.dbip-city-lite.*
   if [[ $purge == yes ]]; then
     rm -rf "$KROKOSHA_ETC"
     if [[ -n $data_dir && $data_dir == /* && $data_dir != / && -d $data_dir ]]; then

@@ -37,7 +37,10 @@
       {{template "content" .}}
     </main>
 
-    {{if .Session}}<footer class="footnote muted">версия {{.Version}}</footer>{{end}}
+    {{if .Session}}<footer class="footnote muted">версия {{.Version}}
+      {{- if eq .GeoSource "DB-IP"}} · <a href="https://db-ip.com" rel="noopener noreferrer" target="_blank">IP Geolocation by DB-IP</a>
+      {{- else if eq .GeoSource "MaxMind"}} · This product includes GeoLite2 data created by MaxMind, available from <a href="https://www.maxmind.com" rel="noopener noreferrer" target="_blank">https://www.maxmind.com</a>
+      {{- end}}</footer>{{end}}
   </body>
 </html>
 

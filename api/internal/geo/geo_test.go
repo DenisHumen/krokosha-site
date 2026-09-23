@@ -50,6 +50,23 @@ func TestLocate(t *testing.T) {
 	}
 }
 
+func TestSource(t *testing.T) {
+	for _, tc := range []struct {
+		info Info
+		want string
+	}{
+		{Info{Loaded: true, Type: "DBIP-City-Lite"}, "DB-IP"},
+		{Info{Loaded: true, Type: "GeoLite2-City"}, "MaxMind"},
+		{Info{Loaded: true, Type: "Test-City"}, ""},
+		{Info{Loaded: false, Type: "DBIP-City-Lite"}, ""}, // nothing is shown from a database that is not open
+		{Info{}, ""},
+	} {
+		if got := tc.info.Source(); got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.info, got, tc.want)
+		}
+	}
+}
+
 func TestANewDatabaseIsNoticed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "GeoLite2-City.mmdb")
 	locator := Open(path, quiet) // the file is not there yet: geoipupdate has not run

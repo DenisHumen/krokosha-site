@@ -1,5 +1,6 @@
-// Package geo tells the country and the city of a visitor from a local database (brief B5): a
-// GeoLite2 file that geoipupdate keeps fresh, or any other database in the MaxMind DB format.
+// Package geo tells the country and the city of a visitor from a local database (brief B5): the
+// free DB-IP City Lite that krokosha-dbip.timer brings every month, GeoLite2 that geoipupdate keeps
+// fresh when there is a MaxMind key, or any other database in the MaxMind DB format.
 // Nothing is asked over the network, and the address itself is never stored — the answer is.
 //
 // Without a database everything works, and the «countries» of the dashboard stay empty.
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -27,8 +29,23 @@ type Place struct {
 type Info struct {
 	Path   string
 	Loaded bool
-	Type   string    // «GeoLite2-City»
-	Built  time.Time // when MaxMind built it
+	Type   string    // «DBIP-City-Lite», «GeoLite2-City»
+	Built  time.Time // when its maker built it
+}
+
+// Source names the maker of the database when its licence asks to be credited where the results
+// are shown: «DB-IP» (DB-IP City Lite, CC BY 4.0) or «MaxMind» (GeoLite2). Empty for anything else.
+func (i Info) Source() string {
+	if !i.Loaded {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(i.Type, "DBIP-"):
+		return "DB-IP"
+	case strings.HasPrefix(i.Type, "GeoLite2-"):
+		return "MaxMind"
+	}
+	return ""
 }
 
 // Locator answers «where is this address?».
@@ -42,7 +59,7 @@ type Locator struct {
 	checked  time.Time
 }
 
-// recheckEvery is how often the file is looked at: geoipupdate replaces it about once a week.
+// recheckEvery is how often the file is looked at: GeoLite2 is replaced twice a week, DB-IP monthly.
 const recheckEvery = 10 * time.Minute
 
 // maxCityBytes is the width of the city column.

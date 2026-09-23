@@ -2,6 +2,7 @@
 """Writes a MaxMind DB small enough for a test: IPv4 networks with a country and a city.
 
     mmdb.py OUT.mmdb 127.0.0.0/8=UA:Kyiv 203.0.113.0/24=DE:
+    MMDB_TYPE=DBIP-City-Lite mmdb.py OUT.mmdb …      (the database_type; Test-City by default)
 
 The format (https://maxmind.github.io/MaxMind-DB/): a binary search tree over the bits of an
 address, sixteen zero bytes, the data the leaves point to, a marker, the metadata. The same
@@ -90,7 +91,8 @@ def database(networks):
     out += b'\xab\xcd\xefMaxMind.com'
     out += encode({
         'binary_format_major_version': (5, 2), 'binary_format_minor_version': (5, 0),
-        'build_epoch': (9, 1789000000), 'database_type': 'Test-City', 'description': {'en': 'written by a test'},
+        'build_epoch': (9, 1789000000), 'database_type': os.environ.get('MMDB_TYPE', 'Test-City'),
+        'description': {'en': 'written by a test'},
         'ip_version': (5, 4), 'languages': ['en'], 'node_count': (6, len(inner)), 'record_size': (5, 24),
     })
     return bytes(out)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 )
 
@@ -152,6 +153,65 @@ func TestStatusScreenAndRebuildButton(t *testing.T) {
 	}
 	if got := s.do(http.MethodPost, prefix+"/status/rebuild", url.Values{"csrf": {s.csrf()}}, nil); got.status != http.StatusInternalServerError || !strings.Contains(got.body, "systemctl start krokosha-sync.service") {
 		t.Errorf("rebuild without the requests directory: %d", got.status)
+	}
+}
+
+// DB-IP gives its database away for a link wherever the results are shown (CC BY 4.0), and
+// GeoLite2 asks for a line of its own: the footer of every page of the admin area carries it.
+func TestTheMakerOfTheGeoDatabaseIsCredited(t *testing.T) {
+	s := newSite(t)
+	s.signIn()
+	footer := func(path string) string {
+		t.Helper()
+		page := s.do(http.MethodGet, prefix+path, nil, nil)
+		if page.status != http.StatusOK {
+			t.Fatalf("%s: %d", path, page.status)
+		}
+		at := strings.LastIndex(page.body, "<footer")
+		if at < 0 {
+			t.Fatalf("%s has no footer", path)
+		}
+		return page.body[at:]
+	}
+
+	if got := footer("/"); strings.Contains(got, "DB-IP") || strings.Contains(got, "MaxMind") {
+		t.Errorf("a credit without a database: %s", got)
+	}
+	s.geo = geo.Info{Path: "/var/lib/GeoIP/dbip-city-lite.mmdb", Loaded: true, Type: "DBIP-City-Lite", Built: reportDay}
+	for _, path := range []string{"/", "/status", "/leads"} {
+		if got := footer(path); !strings.Contains(got, `<a href="https://db-ip.com" rel="noopener noreferrer" target="_blank">IP Geolocation by DB-IP</a>`) {
+			t.Errorf("%s does not credit DB-IP: %s", path, got)
+		}
+	}
+	s.geo = geo.Info{Path: "/var/lib/GeoIP/GeoLite2-City.mmdb", Loaded: true, Type: "GeoLite2-City", Built: reportDay}
+	if got := footer("/"); !strings.Contains(got, "GeoLite2 data created by MaxMind") || strings.Contains(got, "DB-IP") {
+		t.Errorf("GeoLite2 is not credited: %s", got)
+	}
+	s.geo = geo.Info{Path: "/var/lib/GeoIP/dbip-city-lite.mmdb"} // the file has not come yet
+	if got := footer("/"); strings.Contains(got, "DB-IP") {
+		t.Errorf("a database that is not there is credited: %s", got)
+	}
+
+	// The status screen says which database it is, or how to get one.
+	status := func() string {
+		t.Helper()
+		body := s.do(http.MethodGet, prefix+"/status", nil, nil).body
+		at := strings.Index(body, "База GeoIP")
+		if at < 0 {
+			t.Fatal("the status screen has no line about GeoIP")
+		}
+		end := strings.Index(body[at:], "</dd>")
+		if end < 0 {
+			t.Fatal("the line about GeoIP does not end")
+		}
+		return body[at : at+end]
+	}
+	if got := status(); !strings.Contains(got, "не установлена") || !strings.Contains(got, "/var/lib/GeoIP/dbip-city-lite.mmdb") || !strings.Contains(got, "journalctl -u krokosha-dbip") {
+		t.Errorf("without the file: %s", got)
+	}
+	s.geo = geo.Info{Path: "/var/lib/GeoIP/dbip-city-lite.mmdb", Loaded: true, Type: "DBIP-City-Lite", Built: reportDay}
+	if got := status(); !strings.Contains(got, "DBIP-City-Lite от 19.09.2026") {
+		t.Errorf("with DB-IP: %s", got)
 	}
 }
 

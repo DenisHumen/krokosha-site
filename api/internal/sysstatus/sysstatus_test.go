@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 )
 
@@ -229,6 +230,15 @@ func TestProblems(t *testing.T) {
 		"certificates unwatched": {func(s *Status) {
 			s.CertWatch = CertWatch{Known: true, OK: true, CheckedAt: now.Add(-100 * time.Hour)}
 		}, "warn", "не проверялись больше трёх суток"},
+		"db-ip is old": {func(s *Status) {
+			s.Geo = &geo.Info{Loaded: true, Type: "DBIP-City-Lite", Built: now.AddDate(0, 0, -50)}
+		}, "warn", "systemctl status krokosha-dbip.timer"},
+		"geolite2 is old": {func(s *Status) {
+			s.Geo = &geo.Info{Loaded: true, Type: "GeoLite2-City", Built: now.AddDate(0, 0, -50)}
+		}, "warn", "systemctl status krokosha-geoipupdate.timer"},
+		"an own database is old": {func(s *Status) {
+			s.Geo = &geo.Info{Path: "/srv/geo/own.mmdb", Loaded: true, Type: "Own-City", Built: now.AddDate(0, 0, -50)}
+		}, "warn", "База GeoIP /srv/geo/own.mmdb собрана"},
 	} {
 		status := healthy()
 		tc.breakIt(status)
@@ -244,6 +254,19 @@ func TestProblems(t *testing.T) {
 		quiet.Inbox = mail
 		if got := problems(quiet, now); len(got) != 0 {
 			t.Errorf("incoming mail %+v: %+v", mail, got)
+		}
+	}
+
+	// DB-IP of last month is as fresh as DB-IP gets; a database that is not there yet is told about
+	// on the status screen, not as a problem.
+	for _, info := range []geo.Info{
+		{Loaded: true, Type: "DBIP-City-Lite", Built: now.AddDate(0, 0, -33)},
+		{Path: "/var/lib/GeoIP/dbip-city-lite.mmdb"},
+	} {
+		quiet := healthy()
+		quiet.Geo = &info
+		if got := problems(quiet, now); len(got) != 0 {
+			t.Errorf("GeoIP %+v: %+v", info, got)
 		}
 	}
 
