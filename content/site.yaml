@@ -8,7 +8,7 @@
 
 # Адрес сайта: из него строятся canonical, hreflang, sitemap.xml и Open Graph.
 # При установке на другой домен перекрывается переменной окружения SITE_URL.
-url: https://krokosha.xyz
+url: https://krokosha.com
 
 profile:
   name: { en: "Denis", uk: "Денис", ru: "Денис" }
@@ -59,7 +59,7 @@ socials:
     primary: true
   - id: email
     label: { en: "Email", uk: "Пошта", ru: "Почта" }
-    url: mailto:denis@krokosha.xyz
+    url: mailto:denis@krokosha.com
     primary: true
   - id: github
     label: GitHub

@@ -713,6 +713,7 @@ check "a new release was published" test "$(readlink -f /var/www/krokosha/curren
 check "generated secrets were kept" test "$(grep -E '^(MYSQL_PASSWORD|REDIS_PASSWORD|ADMIN_PATH|APP_SECRET)=' /etc/krokosha/env | sha256sum)" = "$secrets_before"
 check "administrators survived" test "$(krokosha-cli admin list | wc -l)" = 2
 check "the mail server, its mailboxes and its key survived" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && [[ \$(sha256sum /srv/krokosha/mail/config/postfix-accounts.cf \"/srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt\" | sha256sum) == '$mail_before' ]]"
+check "…and rspamd can still read that key, the mail server running on" docker exec krokosha-mail-1 su _rspamd -s /bin/sh -c "cat /tmp/docker-mailserver/rspamd/dkim/rsa-2048-mail-$DOMAIN.private.txt >/dev/null"
 check "the bot and its owner survived" bash -c "grep -q '^TELEGRAM_BOT_TOKEN=.' /etc/krokosha/env && krokosha-cli bot users | grep -q 'owner'"
 check "the admin area still answers" test "$(status "$ADMIN/login")" = 200
 check "firewall has no duplicate rules" test "$(ufw status | grep -cE '^443/tcp +ALLOW')" = 1
@@ -774,6 +775,61 @@ check "the mail server is healthy, and the client's mailbox opens with its old p
 mailbox_read() { grep -q 'на связи' <(admin_get "$ADMIN/status"); }
 check "the service reads its mailbox again" wait_for 60 mailbox_read
 rm -rf "$elsewhere"
+
+# The site gets another domain (deploy/README.md, «Смена домена»): a new --domain is all it takes.
+# The old name works on while it points here — its pages redirect, its addresses get mail — and is
+# let go with --old-domain none (or by itself once it points elsewhere; this test skips DNS).
+NEW_DOMAIN=moved.krokosha.test
+CURL+=(--resolve "$NEW_DOMAIN:443:127.0.0.1" --resolve "$NEW_DOMAIN:80:127.0.0.1" --resolve "www.$NEW_DOMAIN:443:127.0.0.1")
+letters_before=$(mailcheck count "owner@$DOMAIN" "$MAILBOX_PASSWORD")
+webhooks_before=$(bot_called setWebhook)
+echo "::group::A new domain"
+"$SOURCE/deploy/install.sh" --from-env --yes --domain "$NEW_DOMAIN" 2>&1 | tee "$INSTALL_LOG"
+echo "::endgroup::"
+echo "A new domain"
+check "the site answers under the new name" test "$(status "https://$NEW_DOMAIN/")" = 200
+check "…and calls itself by it" grep -q "rel=\"canonical\" href=\"https://$NEW_DOMAIN/\"" <(body "https://$NEW_DOMAIN/")
+check "the name it had is remembered as the old one" grep -qx "OLD_DOMAIN=$DOMAIN" /etc/krokosha/env
+check "a page at the old name redirects to the same page at the new one" test "$(header "https://$DOMAIN/uk/map/?from=1.1.1.1" location)" = "https://$NEW_DOMAIN/uk/map/?from=1.1.1.1"
+check "…over plain HTTP as well" test "$(header "http://$DOMAIN/ru/" location)" = "https://$NEW_DOMAIN/ru/"
+check "…and from www. and mail. of the old name" test "$(header "https://www.$DOMAIN/" location) $(curl -s -o /dev/null -w '%{redirect_url}' --max-time 5 -H "Host: mail.$DOMAIN" http://127.0.0.1/x)" = "https://$NEW_DOMAIN/ https://$NEW_DOMAIN/x"
+install -D -m 0644 /dev/null "$acme_probe" && echo ci-acme >"$acme_probe"
+for name in "$NEW_DOMAIN" "mail.$NEW_DOMAIN" "$DOMAIN" "mail.$DOMAIN"; do
+  check "Let's Encrypt reaches its challenge under $name" test "$(curl -s --max-time 5 -H "Host: $name" http://127.0.0.1/.well-known/acme-challenge/ci-probe)" = ci-acme
+done
+rm -f "$acme_probe"
+check "the mailboxes moved to the new domain" test "$(krokosha-mailbox list | sort | paste -sd ' ')" = "client@$NEW_DOMAIN leads@$NEW_DOMAIN owner@$NEW_DOMAIN second@$NEW_DOMAIN"
+check "…each with its password" mailcheck login "owner@$NEW_DOMAIN" "$MAILBOX_PASSWORD"
+check "…and its letters" test "$(mailcheck count "owner@$NEW_DOMAIN" "$MAILBOX_PASSWORD")" -ge "$letters_before"
+check "…of which there were some" test "$letters_before" -ge 1
+check "the site writes in the owner's name at the new domain and reads its mailbox there" bash -c "grep -q '^MAIL_FROM=CI Owner <owner@$NEW_DOMAIN>\$' /etc/krokosha/env && grep -q '^MAILBOX=owner@$NEW_DOMAIN\$' /etc/krokosha/env && grep -q '^MAIL_INBOX=leads@$NEW_DOMAIN\$' /etc/krokosha/env"
+check "a letter to an old address" mailcheck send "client@$NEW_DOMAIN" "$CLIENT_PASSWORD" "client@$NEW_DOMAIN" "owner@$DOMAIN" 'Written to the old address. OLD-NAME-LETTER'
+old_address_works() { mailcheck find "owner@$NEW_DOMAIN" "$MAILBOX_PASSWORD" OLD-NAME-LETTER; }
+check "…arrives in the moved mailbox" wait_for 60 old_address_works
+check "an answer to a request's address at the old name reaches the service mailbox" mailcheck send "owner@$NEW_DOMAIN" "$MAILBOX_PASSWORD" "owner@$NEW_DOMAIN" "leads+k-0001.aaaaaaaaaaaaaaaa@$DOMAIN" 'Answered to the old name. OLD-NAME-ANSWER'
+old_answer_arrived() { mailcheck find "leads@$NEW_DOMAIN" "$SERVICE_PASSWORD" OLD-NAME-ANSWER; }
+check "…whatever follows the plus sign" wait_for 90 old_answer_arrived
+check "the new domain has a DKIM key, and letters of both names are signed" bash -c "test -s /srv/krokosha/mail/config/rspamd/dkim/rsa-2048-mail-$NEW_DOMAIN.private.txt && grep -q '^    $NEW_DOMAIN {' /srv/krokosha/mail/config/rspamd/override.d/dkim_signing.conf && grep -q '^    $DOMAIN {' /srv/krokosha/mail/config/rspamd/override.d/dkim_signing.conf"
+check "a letter from the new domain" mailcheck send "owner@$NEW_DOMAIN" "$MAILBOX_PASSWORD" "owner@$NEW_DOMAIN" "owner@$NEW_DOMAIN" 'Signed by the new domain. NEW-NAME-SIGNED'
+new_letter() { docker exec krokosha-mail-1 sh -c "grep -rl 'NEW-NAME-SIGNED' /var/mail/$NEW_DOMAIN/owner/ | head -n 1"; }
+signed_by_new() { [[ -n $(new_letter) ]] && docker exec krokosha-mail-1 cat "$(new_letter)" | tr -d '\r\n\t ' | grep -qi "DKIM-Signature:[^:]*d=$NEW_DOMAIN;"; }
+check "…is signed with its key" wait_for 60 signed_by_new
+check "the mail server calls itself by the new name" test "$(docker inspect --format '{{.Config.Hostname}}' krokosha-mail-1)" = "mail.$NEW_DOMAIN"
+check "…with a certificate for that name" bash -c "openssl s_client -connect 127.0.0.1:993 -servername mail.$NEW_DOMAIN </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName | grep -q 'DNS:mail.$NEW_DOMAIN'"
+check "the DNS records to enter are the new domain's" grep -q "MX .*10 mail.$NEW_DOMAIN\\." /srv/krokosha/mail/DNS.txt
+webhook_moved() { [[ $(bot_called setWebhook) -gt $webhooks_before ]] && grep 'setWebhook' "$BOT_CALLS" | tail -n 1 | grep -q "https://$NEW_DOMAIN/api/telegram/"; }
+check "the bot's webhook moved to the new name" wait_for 30 webhook_moved
+check "the admin area is there, under the same secret path" grep -q 'name="password"' <(body "https://$NEW_DOMAIN$ADMIN_PATH/login")
+check "the engines were told about the pages under the new name" grep -q "\"host\": \"$NEW_DOMAIN\"" "$INDEXNOW_CALLS"
+echo "::group::The old name is let go"
+"$SOURCE/deploy/install.sh" --from-env --yes --old-domain none 2>&1 | tee "$INSTALL_LOG"
+echo "::endgroup::"
+echo "The old name let go"
+check "it is forgotten" grep -qx 'OLD_DOMAIN=' /etc/krokosha/env
+check "…nothing answers under it" bash -c "! curl -s --max-time 5 -o /dev/null -H 'Host: $DOMAIN' http://127.0.0.1/"
+check "…and its addresses get no mail" bash -c "! grep -q '@$DOMAIN ' /srv/krokosha/mail/config/postfix-virtual.cf"
+check "…while the site serves on under its name" test "$(status "https://$NEW_DOMAIN/")" = 200
+check "…and the mailboxes stay where they moved" test "$(krokosha-mailbox list | sort | paste -sd ' ')" = "client@$NEW_DOMAIN leads@$NEW_DOMAIN owner@$NEW_DOMAIN second@$NEW_DOMAIN"
 
 echo "::group::Uninstall"
 /opt/krokosha/repo/deploy/uninstall.sh --yes --purge

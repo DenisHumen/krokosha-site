@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "krokosha.xyz — static site (Astro). Data comes from ../content and ../content/generated.",
+  "description": "krokosha.com — static site (Astro). Data comes from ../content and ../content/generated.",
   "engines": {
     "node": ">=22.12.0"
   },

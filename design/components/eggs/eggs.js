@@ -90,7 +90,7 @@ export function initEggs({ flags = {}, texts = {}, experience = 9 } = {}) {
   configure({ flags, experience });
   const on = (k) => flags.enabled !== false && flags[k] !== false;
   if (on('console_message')) {
-    console.log('%c krokosha.xyz %c link up · 10Gbps · full-duplex ', 'background:#111;color:#fff;padding:4px 8px;border-radius:4px 0 0 4px;font-family:Fira Code,monospace', 'background:#6b4de6;color:#fff;padding:4px 8px;border-radius:0 4px 4px 0;font-family:Fira Code,monospace');
+    console.log('%c krokosha.com %c link up · 10Gbps · full-duplex ', 'background:#111;color:#fff;padding:4px 8px;border-radius:4px 0 0 4px;font-family:Fira Code,monospace', 'background:#6b4de6;color:#fff;padding:4px 8px;border-radius:0 4px 4px 0;font-family:Fira Code,monospace');
     window.krokosha = { hello: () => { found('console', texts); return 'ack · link up'; } };
     console.log('%c' + (texts.console || 'кто читает консоль — тот уже почти коллега. krokosha.hello()  ·  или набери sudo на странице  ·  или ↑↑↓↓←→←→BA'), 'color:#6a6a66;font-family:Fira Code,monospace');
   }
