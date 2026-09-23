@@ -905,6 +905,12 @@ const breadcrumbs = breadcrumbsJsonLd(origin, lang, [
     cursor: pointer;
   }
 
+  /* .pill sets its own display, which would beat the hidden attribute: after a measurement the
+     button goes. */
+  .route-result :global(.route-measure[hidden]) {
+    display: none;
+  }
+
   .route-result :global(.route-measure[disabled]) {
     cursor: progress;
     opacity: 0.7;
