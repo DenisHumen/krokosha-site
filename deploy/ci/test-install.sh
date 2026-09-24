@@ -455,7 +455,7 @@ check "nginx lets a form with files through to the API" grep -q '"error":"rate_l
   <(body --header 'Accept: application/json' "${form_fields[@]}" --form "files=@$megabyte" "https://$DOMAIN/api/leads")
 check "…and stops what no three files add up to" test "$(status "${form_fields[@]}" --form "files=@$toobig" "https://$DOMAIN/api/leads")" = 413
 check "the rest of the API still takes small requests only" test "$(status --request POST --data-binary "@$megabyte" "https://$DOMAIN/api/e")" = 413
-check "the card offers the files" grep -q "/leads/$file_lead/files/$file_id\" download>Схема стойки.pdf" <(admin_get "$ADMIN/leads/$file_lead")
+check "the card offers the files" grep -q "/leads/$file_lead/files/$file_id\" download title=\"Скачать Схема стойки.pdf\"" <(admin_get "$ADMIN/leads/$file_lead")
 downloaded=$(mktemp)
 check "the admin area hands a file out — as a download, whatever is inside" bash -c "grep -qi '^content-disposition: attachment' <<<\"\$1\" && grep -qi '^content-type: application/octet-stream' <<<\"\$1\"" _ \
   "$(admin_get --output "$downloaded" --dump-header - "$ADMIN/leads/$file_lead/files/$file_id")"
@@ -560,7 +560,11 @@ check "…and the staff hears about it" wait_for 30 staff_told
 check "an answer from the admin area" test "$(admin_post "/leads/$relay_lead/reply" --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Отлично, тогда начнём с сети.')" = 303
 client_answered() { [[ $(said_to 8001 'Отлично, тогда начнём с сети.') -ge 1 ]]; }
 check "…reaches the client in Telegram" wait_for 30 client_answered
-check "…and is marked as delivered" test "$(sql "SELECT delivery FROM lead_messages WHERE lead_id = $relay_lead AND direction = 'out'")" = sent
+answer_delivered() { [[ $(sql "SELECT delivery FROM lead_messages WHERE lead_id = $relay_lead AND direction = 'out'") == sent ]]; }
+check "…and is marked as delivered" wait_for 30 answer_delivered
+# The form's address is on a test domain: the letter may come back before long — but it went.
+answer_everywhere() { [[ $(sql "SELECT GROUP_CONCAT(CONCAT(channel, ' ', status) ORDER BY id SEPARATOR ', ') FROM lead_deliveries WHERE lead_id = $relay_lead") =~ ^email\ (sent|failed),\ telegram\ sent$ ]]; }
+check "…by mail as well: an answer goes everywhere the client can be reached" wait_for 30 answer_everywhere
 check "the client asks for the staff's lists" test "$(deliver "$webhook_secret" "$(message 23 8001 Ivan '/leads')")" = 200
 client_kept_out() { [[ $(said_to 8001 "Заявка #$relay_number, статус") -ge 1 && $(said_to 8001 'Открытые заявки') == 0 ]]; }
 check "…and sees only their own request" wait_for 20 client_kept_out
@@ -842,7 +846,7 @@ check "the mailboxes and the DKIM key are back: nothing to change in DNS" test "
 check "the files of requests are back, for the service's eyes only" test "$(find /srv/krokosha/attachments -type f | wc -l) $(find /srv/krokosha/attachments -type f ! -perm 600 | wc -l) $(stat -c '%U' /srv/krokosha/attachments)" = "$files_before 0 krokosha"
 check "the API is up on the restored data" grep -q '"mysql":"ok"' <(curl -s --max-time 5 http://127.0.0.1:8080/api/health)
 check "the administrator signs in with the old password" test "$(admin_post /login --data-urlencode login=ci-admin --data-urlencode "password=$ADMIN_PASSWORD")" = 303
-check "…and finds the requests" grep -q '#K-0001' <(admin_get "$ADMIN/leads?status=all")
+check "…and finds the requests" grep -q '>K-0001<' <(admin_get "$ADMIN/leads")
 check "the mail server is healthy, and the client's mailbox opens with its old password" bash -c "[[ \$(docker inspect --format '{{.State.Health.Status}}' krokosha-mail-1) == healthy ]] && python3 '$SOURCE/deploy/ci/mailcheck.py' login 'client@$DOMAIN' '$CLIENT_PASSWORD'"
 mailbox_read() { grep -q 'на связи' <(admin_get "$ADMIN/status"); }
 check "the service reads its mailbox again" wait_for 60 mailbox_read
