@@ -440,7 +440,11 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	if err := f.leads.AddNote(ctx, id, "denis", "внутренняя заметка: клиент торопится"); err != nil {
 		t.Fatal(err)
 	}
+	if item := b.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any)[0].(map[string]any); item["answered"] != nil {
+		t.Errorf("answered before any answer: %v", item["answered"])
+	}
 	f.now = f.now.Add(time.Minute)
+	replied := f.now
 	if _, err := f.leads.Reply(ctx, id, "denis", "Здравствуйте! Нужны детали."); err != nil {
 		t.Fatal(err)
 	}
@@ -448,6 +452,10 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	list := b.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any)
 	if item := list[0].(map[string]any); item["status"] != leads.StatusWaitingClient || item["unread"] != true {
 		t.Errorf("the list: %v", item)
+	}
+	// When the answer came: the account's header says «answer: today 09:12».
+	if at, err := time.Parse(time.RFC3339Nano, fmt.Sprint(list[0].(map[string]any)["answered"])); err != nil || !at.Equal(replied.Truncate(time.Millisecond)) {
+		t.Errorf("answered = %v (%v), want %v", list[0].(map[string]any)["answered"], err, replied)
 	}
 	view := b.send(http.MethodGet, "/api/account/leads/"+number, nil)
 	raw := view.raw

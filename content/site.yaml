@@ -55,6 +55,14 @@ plurals:
     en: [order, orders]
     uk: [замовлення, замовлення, замовлень]
     ru: [заказ, заказа, заказов]
+  requests:                             # личный кабинет: «Открыто: 2 заявки»
+    en: [request, requests]
+    uk: [заявка, заявки, заявок]
+    ru: [заявка, заявки, заявок]
+  open:                                 # личный кабинет: «3 / 1 открыта»
+    en: [open, open]
+    uk: [відкрита, відкриті, відкрито]
+    ru: [открыта, открыты, открыто]
 
 socials:
   - id: telegram
@@ -449,9 +457,10 @@ eggs:
     ping: { en: "he answers fast", uk: "він відповідає швидко", ru: "он отвечает быстро" }
     rm: { en: "nice try. Snapshot restored in 0.2 s", uk: "гарна спроба. Знімок відновлено за 0.2 с", ru: "хорошая попытка. Снапшот восстановлен за 0.2 с" }
 
-# Личный кабинет клиента: /account/ (api/internal/clients, docs/architecture.md, 2026-09-24).
-# Заявки и обращения, их статусы и переписка, скидка и уровень, контакты и соцсети, устройства.
-# Вход без пароля: одноразовый код на почту или от Telegram-бота. {…} — подставляет скрипт страницы.
+# Личный кабинет клиента: /account/ (api/internal/clients, docs/architecture.md, 2026-09-24; дизайн v3).
+# Заявки и обращения, их статусы и переписка, скидка и уровень, ачивки, контакты,
+# способы входа, устройства. Вход без пароля: одноразовый код на почту или от Telegram-бота.
+# {…} — подставляет скрипт страницы (web/src/scripts/account.ts).
 account:
   title: { en: "Personal account", uk: "Особистий кабінет", ru: "Личный кабинет" }
   description:
@@ -465,36 +474,49 @@ account:
     ru: "Личному кабинету нужен JavaScript. Заявку можно отправить и без него — формой на главной."
   loading: { en: "Checking the session…", uk: "Перевіряємо сесію…", ru: "Проверяем сессию…" }
   login:
-    lead:
-      en: "Your requests and inquiries, their statuses and answers, your discount and level. No password: a one-time code comes by email or from the Telegram bot."
-      uk: "Ваші заявки й звернення, їхні статуси та відповіді, знижка й рівень. Без пароля: одноразовий код прийде на пошту або від Telegram-бота."
-      ru: "Ваши заявки и обращения, их статусы и ответы, скидка и уровень. Без пароля: одноразовый код придёт на почту или от Telegram-бота."
-    method: { en: "Sign in with", uk: "Спосіб входу", ru: "Способ входа" }
-    email: { en: "Email", uk: "Пошта", ru: "Почта" }
-    telegram: "Telegram"
-    email_label: { en: "Your email", uk: "Ваша пошта", ru: "Ваша почта" }
-    send: { en: "Send the code", uk: "Надіслати код", ru: "Прислать код" }
+    title: { en: "Sign in", uk: "Вхід", ru: "Вход" }
+    lead: { en: "Requests, conversation and your discount", uk: "Заявки, листування та ваша знижка", ru: "Заявки, переписка и ваша скидка" }
+    languages: { en: "Language", uk: "Мова", ru: "Язык" }
+    home: { en: "To the home page", uk: "На головну", ru: "На главную" }
+    telegram: { en: "Sign in with Telegram", uk: "Увійти через Telegram", ru: "Войти через Telegram" }
+    or: { en: "or", uk: "або", ru: "или" }
+    email_label: { en: "Email", uk: "Пошта", ru: "Почта" }
+    email_placeholder: { en: "Your email", uk: "Ваша пошта", ru: "Ваша почта" }
+    email_hint:
+      en: "A six-digit code will come. No password needed."
+      uk: "Прийде шестизначний код. Пароль не потрібен."
+      ru: "Придёт шестизначный код. Пароль не нужен."
+    send: { en: "Get the code", uk: "Отримати код", ru: "Получить код" }
+    no_account: { en: "No account yet?", uk: "Ще немає кабінету?", ru: "Ещё нет кабинета?" }
+    note:
+      en: "It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it."
+      uk: "Він з'явиться з першим входом, а заявки, надіслані раніше з тієї ж пошти чи Telegram, приєднаються до нього."
+      ru: "Он появится при первом входе, а заявки, отправленные раньше с той же почты или Telegram, присоединятся к нему."
+    telegram_title: "Telegram"
     telegram_text:
-      en: "The site's bot will send you a code for this page."
-      uk: "Бот сайту надішле код для цієї сторінки."
-      ru: "Бот сайта пришлёт код для этой страницы."
+      en: "Open the bot and press «Start». The code comes in the chat — bring it back here."
+      uk: "Відкрийте бота й натисніть «Start». Код прийде в чат — поверніться з ним сюди."
+      ru: "Откройте бота и нажмите «Start». Код придёт в чат — вернитесь с ним сюда."
     telegram_open: { en: "Open the bot", uk: "Відкрити бота", ru: "Открыть бота" }
+    telegram_open_named: { en: "Open @{bot}", uk: "Відкрити @{bot}", ru: "Открыть @{bot}" }
+    by_email: { en: "Sign in with email", uk: "Увійти поштою", ru: "Войти по почте" }
+    code_email: { en: "The code from the letter", uk: "Код із листа", ru: "Код из письма" }
+    code_telegram: { en: "The code from Telegram", uk: "Код із Telegram", ru: "Код из Telegram" }
     sent_email:
-      en: "The code went to {address}. It is valid for 15 minutes; the letter also has a button that signs you in at once."
-      uk: "Код надіслано на {address}. Він діє 15 хвилин; у листі є й кнопка, що одразу впускає."
-      ru: "Код отправлен на {address}. Он действует 15 минут; в письме есть и кнопка, которая сразу впускает."
+      en: "The code went to {address}: type it here or press the button in the letter. No letter? Look in «Spam»."
+      uk: "Код надіслано на {address}: введіть його тут або натисніть кнопку в листі. Листа немає — загляньте в «Спам»."
+      ru: "Код отправлен на {address}: введите его здесь или нажмите кнопку в письме. Письма нет — загляните в «Спам»."
     sent_telegram:
-      en: "Press Start in the bot, and it will send the code. The code is valid for 15 minutes."
-      uk: "Натисніть Start у боті — і він надішле код. Код діє 15 хвилин."
-      ru: "Нажмите Start в боте — и он пришлёт код. Код действует 15 минут."
+      en: "Press «Start» in the bot, and it will send the code."
+      uk: "Натисніть «Start» у боті — і він надішле код."
+      ru: "Нажмите «Start» в боте — и он пришлёт код."
     code: { en: "Code", uk: "Код", ru: "Код" }
+    code_hint: { en: "The code is valid for 15 minutes.", uk: "Код діє 15 хвилин.", ru: "Код действует 15 минут." }
+    resend_in: { en: "Send again in {time}", uk: "Надіслати знову через {time}", ru: "Отправить снова через {time}" }
+    resend: { en: "Send again", uk: "Надіслати знову", ru: "Отправить снова" }
     submit: { en: "Sign in", uk: "Увійти", ru: "Войти" }
     back: { en: "Another way", uk: "Інший спосіб", ru: "Другой способ" }
     link: { en: "Signing you in…", uk: "Входимо…", ru: "Входим…" }
-    note:
-      en: "No account yet? It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it."
-      uk: "Ще немає кабінету? Він з'явиться з першим входом, а заявки, надіслані раніше з тієї ж пошти чи Telegram, приєднаються до нього."
-      ru: "Ещё нет кабинета? Он появится при первом входе, а заявки, отправленные раньше с той же почты или Telegram, присоединятся к нему."
   errors:
     bad_email: { en: "Check the email address", uk: "Перевірте адресу пошти", ru: "Проверьте адрес почты" }
     bad_code: { en: "The code does not fit or has expired", uk: "Код не підходить або застарів", ru: "Код не подходит или устарел" }
@@ -511,29 +533,91 @@ account:
     no_way_back: { en: "Add an email or Telegram first: there is nowhere to answer.", uk: "Спершу додайте пошту або Telegram — нікуди відповісти.", ru: "Сначала добавьте почту или Telegram — некуда ответить." }
     server: { en: "Something went wrong. Please try again a little later.", uk: "Щось пішло не так. Спробуйте трохи згодом.", ru: "Что-то пошло не так. Попробуйте чуть позже." }
     network: { en: "No connection to the site. Check the internet and try again.", uk: "Немає зв'язку із сайтом. Перевірте інтернет і спробуйте ще раз.", ru: "Нет связи с сайтом. Проверьте интернет и попробуйте ещё раз." }
+  # Левая панель кабинета: разделы (они же заголовки экранов, кроме главной и профиля).
+  nav:
+    label: { en: "Sections of the account", uk: "Розділи кабінету", ru: "Разделы кабинета" }
+    home: { en: "Home", uk: "Головна", ru: "Главная" }
+    requests: { en: "Requests", uk: "Заявки", ru: "Заявки" }
+    new: { en: "New inquiry", uk: "Нове звернення", ru: "Новое обращение" }
+    loyalty: { en: "Discount and level", uk: "Знижка й рівень", ru: "Скидка и уровень" }
+    achievements: { en: "Achievements", uk: "Ачівки", ru: "Ачивки" }
+    profile: { en: "Profile", uk: "Профіль", ru: "Профиль" }
+  # Строка в шапке: скидка, уровень, открытые заявки, время последнего ответа.
+  ticker:
+    label: { en: "At a glance", uk: "Коротко", ru: "Коротко" }
+    discount: { en: "Discount", uk: "Знижка", ru: "Скидка" }
+    level: { en: "Level", uk: "Рівень", ru: "Уровень" }
+    open: { en: "Open", uk: "Відкрито", ru: "Открыто" }
+    answer: { en: "Answer", uk: "Відповідь", ru: "Ответ" }
+    today: { en: "today {time}", uk: "сьогодні {time}", ru: "сегодня {time}" }
+    yesterday: { en: "yesterday {time}", uk: "учора {time}", ru: "вчера {time}" }
+  menu:
+    open: { en: "Account menu", uk: "Меню кабінету", ru: "Меню кабинета" }
+    language: { en: "Language", uk: "Мова", ru: "Язык" }
+    site: { en: "To the site", uk: "На сайт", ru: "На сайт" }
+    sign_out: { en: "Sign out", uk: "Вийти", ru: "Выйти" }
   home:
     hello: { en: "Hello, {name}", uk: "Вітаю, {name}", ru: "Здравствуйте, {name}" }
     hello_plain: { en: "Hello", uk: "Вітаю", ru: "Здравствуйте" }
-    since: { en: "Client since {date}", uk: "Клієнт з {date}", ru: "Клиент с {date}" }
-    new_request: { en: "New request", uk: "Нова заявка", ru: "Новая заявка" }
-    sign_out: { en: "Sign out", uk: "Вийти", ru: "Выйти" }
+    since: { en: "With us since {date}", uk: "З нами з {date}", ru: "С нами с {date}" }
+    inquiry: { en: "Inquiry", uk: "Звернення", ru: "Обращение" }          # кнопка «+» в шапке
+    discount: { en: "Discount on a request", uk: "Знижка на заявку", ru: "Скидка на заявку" }
+    requests: { en: "Requests", uk: "Заявки", ru: "Заявки" }
+    new_answer: { en: "New answer", uk: "Нова відповідь", ru: "Новый ответ" }
+    last_answer: { en: "Last answer", uk: "Остання відповідь", ru: "Последний ответ" }
+    no_answers: { en: "No answers yet", uk: "Відповідей поки немає", ru: "Ответов пока нет" }
+    ordered: { en: "Ordered", uk: "Замовлено", ru: "Заказано" }
+    latest: { en: "Latest requests", uk: "Останні заявки", ru: "Последние заявки" }
+    all: { en: "All requests", uk: "Усі заявки", ru: "Все заявки" }
+    ask_title: { en: "A question or an idea?", uk: "Є питання чи ідея?", ru: "Есть вопрос или идея?" }
+    ask_text:
+      en: "Write an inquiry — the answer comes here and {channel}"
+      uk: "Напишіть звернення — відповідь прийде сюди й {channel}"
+      ru: "Напишите обращение — ответ придёт сюда и {channel}"
+    by_telegram: { en: "to Telegram", uk: "у Telegram", ru: "в Telegram" }
+    by_email: { en: "by email", uk: "на пошту", ru: "на почту" }
+    ask: { en: "Write", uk: "Написати", ru: "Написать" }
+    eggs: { en: "eggs", uk: "пасхалок", ru: "пасхалок" }
+    eggs_hint:
+      en: "Find them all — and get {percent}% off one request."
+      uk: "Знайдіть усі — й отримайте {percent}% знижки на одну заявку."
+      ru: "Найдите все — и получите {percent}% скидки на одну заявку."
+    eggs_ready:
+      en: "All found: {percent}% off goes to your next request."
+      uk: "Усі знайдено: знижка {percent}% ляже на наступну заявку."
+      ru: "Все найдены: скидка {percent}% ляжет на следующую заявку."
+    eggs_used:
+      en: "The discount for the eggs has gone to a request."
+      uk: "Знижку за пасхалки вже використано в заявці."
+      ru: "Скидка за пасхалки уже использована в заявке."
+    project: { en: "Discuss a new project", uk: "Обговорити новий проєкт", ru: "Обсудить новый проект" }
+    project_discount: { en: "The −{percent}% discount applies by itself", uk: "Знижка −{percent}% застосується сама", ru: "Скидка −{percent}% применится сама" }
+    project_plain: { en: "The request appears here", uk: "Заявка з'явиться тут", ru: "Заявка появится здесь" }
   loyalty:
-    title: { en: "Discount and level", uk: "Знижка й рівень", ru: "Скидка и уровень" }
-    next: { en: "On the next request", uk: "На наступну заявку", ru: "На следующую заявку" }
+    next: { en: "Discount on the next request", uk: "Знижка на наступну заявку", ru: "Скидка на следующую заявку" }
     none: { en: "no discount", uk: "без знижки", ru: "без скидки" }
+    no_stack: { en: "Discounts do not add up", uk: "Знижки не сумуються", ru: "Скидки не складываются" }
     level: { en: "Level", uk: "Рівень", ru: "Уровень" }
-    newcomer: { en: "not yet", uk: "ще немає", ru: "пока нет" }
+    base: { en: "Newcomer", uk: "Новачок", ru: "Новичок" }            # ещё без уровня
+    here: { en: "You are here", uk: "Ви тут", ru: "Вы здесь" }
     orders: { en: "Completed orders", uk: "Виконано замовлень", ru: "Выполнено заказов" }
     spent: { en: "Total of orders", uk: "Сума замовлень", ru: "Сумма заказов" }
     to_next: { en: "To «{tier}»", uk: "До рівня «{tier}»", ru: "До уровня «{tier}»" }
     more_orders: { en: "{count} more", uk: "ще {count}", ru: "ещё {count}" }
     more_spent: { en: "or {amount} more", uk: "або ще {amount}", ru: "или ещё {amount}" }
-    top: { en: "The highest level. Thank you for your trust!", uk: "Найвищий рівень. Дякую за довіру!", ru: "Высший уровень. Спасибо за доверие!" }
+    top: { en: "The highest level", uk: "Найвищий рівень", ru: "Высший уровень" }
+    thanks: { en: "The highest level. Thank you for your trust!", uk: "Найвищий рівень. Дякую за довіру!", ru: "Высший уровень. Спасибо за доверие!" }
     personal: { en: "Personal discount {percent}%", uk: "Персональна знижка {percent}%", ru: "Персональная скидка {percent}%" }
     personal_once: { en: "on one request", uk: "на одну заявку", ru: "на одну заявку" }
     personal_until: { en: "until {date}", uk: "до {date}", ru: "до {date}" }
     levels: { en: "Levels", uk: "Рівні", ru: "Уровни" }
     level_rule: { en: "{orders} or {spent}", uk: "{orders} або {spent}", ru: "{orders} или {spent}" }
+    welcome: { en: "First request", uk: "Перша заявка", ru: "Первая заявка" }
+    eggs: { en: "All easter eggs", uk: "Усі пасхалки", ru: "Все пасхалки" }
+    once: { en: "once", uk: "один раз", ru: "один раз" }
+    eggs_found: { en: "once · {found} of {total} found", uk: "один раз · знайдено {found} з {total}", ru: "один раз · найдено {found} из {total}" }
+    used: { en: "discount used", uk: "знижку використано", ru: "скидка использована" }
+    yours: { en: "your level", uk: "ваш рівень", ru: "ваш уровень" }
     rules:
       en: "The first request is {welcome}% off. Every easter egg found on the site gives {eggs}% off one request. Levels come with completed orders or their total, whichever comes first. Discounts do not add up: the largest applies and is fixed on the request."
       uk: "Перша заявка — зі знижкою {welcome}%. Усі знайдені на сайті пасхалки — {eggs}% на одну заявку. Рівні — за кількістю виконаних замовлень або їхньою сумою, що настане раніше. Знижки не сумуються: діє найбільша, і вона фіксується в заявці."
@@ -552,7 +636,7 @@ account:
       ru: "Здесь пока пусто. Отправьте заявку формой на главной — она появится здесь со своим статусом."
     request: { en: "Request", uk: "Заявка", ru: "Заявка" }
     inquiry: { en: "Inquiry", uk: "Звернення", ru: "Обращение" }
-    unread: { en: "new", uk: "нове", ru: "новое" }
+    unread: { en: "new answer", uk: "нова відповідь", ru: "новый ответ" }
     about: { en: "about {id}", uk: "щодо {id}", ru: "по {id}" }
     back: { en: "All requests", uk: "Усі заявки", ru: "Все заявки" }
     direction: { en: "Area", uk: "Напрям", ru: "Направление" }
@@ -564,17 +648,26 @@ account:
     conversation: { en: "Conversation", uk: "Листування", ru: "Переписка" }
     you: { en: "You", uk: "Ви", ru: "Вы" }
     answer: { en: "Answer", uk: "Відповідь", ru: "Ответ" }
-    status: { en: "Status: {status}", uk: "Статус: {status}", ru: "Статус: {status}" }
-    files: { en: "files: {names}", uk: "файли: {names}", ru: "файлы: {names}" }
-    write: { en: "Your message", uk: "Ваше повідомлення", ru: "Ваше сообщение" }
+    status: { en: "Status", uk: "Статус", ru: "Статус" }
+    call: { en: "A phone call", uk: "Дзвінок", ru: "Звонок" }
+    files: { en: "Files: {names}", uk: "Файли: {names}", ru: "Файлы: {names}" }
+    write: { en: "Your answer", uk: "Ваша відповідь", ru: "Ваш ответ" }
     send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Sent", uk: "Надіслано", ru: "Отправлено" }
     closed:
       en: "The request is closed. To go on, write an inquiry about it."
       uk: "Заявку закрито. Щоб продовжити, напишіть звернення щодо неї."
       ru: "Заявка закрыта. Чтобы продолжить, напишите обращение по ней."
-    ask: { en: "Ask about this request", uk: "Запитати про цю заявку", ru: "Спросить об этой заявке" }
+    ask: { en: "A question about this request", uk: "Питання щодо цієї заявки", ru: "Вопрос по этой заявке" }
     missing: { en: "There is no such request in your account.", uk: "Такої заявки у вашому кабінеті немає.", ru: "Такой заявки в вашем кабинете нет." }
+    choose: { en: "Choose a request in the list", uk: "Оберіть заявку в списку", ru: "Выберите заявку в списке" }
+  # Смена статуса в переписке — одной фразой.
+  events:
+    new: { en: "The request is received", uk: "Заявку отримано", ru: "Заявка получена" }
+    in_progress: { en: "The request is in progress", uk: "Заявку взято в роботу", ru: "Заявка взята в работу" }
+    waiting_client: { en: "Waiting for your answer", uk: "Чекаємо на вашу відповідь", ru: "Ждём вашего ответа" }
+    done: { en: "The request is done", uk: "Заявку виконано", ru: "Заявка выполнена" }
+    rejected: { en: "The request is declined", uk: "Заявку відхилено", ru: "Заявка отклонена" }
   statuses:                             # как статусы заявки видит клиент (в админке — свои названия)
     new: { en: "Under review", uk: "На розгляді", ru: "На рассмотрении" }
     in_progress: { en: "In progress", uk: "У роботі", ru: "В работе" }
@@ -589,26 +682,33 @@ account:
     phone: { en: "phone", uk: "телефон", ru: "телефон" }
   inquiry:
     title: { en: "New inquiry", uk: "Нове звернення", ru: "Новое обращение" }
-    lead:
-      en: "A question about a request, documents, payment — anything. The answer comes here, and I will let you know by email or in Telegram."
-      uk: "Питання щодо заявки, документів, оплати — будь-що. Відповідь з'явиться тут, а я повідомлю поштою чи в Telegram."
-      ru: "Вопрос по заявке, документам, оплате — что угодно. Ответ появится здесь, а я сообщу почтой или в Telegram."
-    subject: { en: "Subject", uk: "Тема", ru: "Тема" }
-    text: { en: "Message", uk: "Повідомлення", ru: "Сообщение" }
     parent: { en: "About a request", uk: "Щодо заявки", ru: "По заявке" }
-    none: { en: "— none —", uk: "— без заявки —", ru: "— без заявки —" }
-    send: { en: "Send the inquiry", uk: "Надіслати звернення", ru: "Отправить обращение" }
+    none: { en: "Not about a request", uk: "Без прив'язки", ru: "Без привязки" }
+    subject: { en: "Subject", uk: "Тема", ru: "Тема" }
+    subject_placeholder: { en: "In short, what it is about", uk: "Коротко, про що питання", ru: "Коротко, о чём вопрос" }
+    text: { en: "Message", uk: "Повідомлення", ru: "Сообщение" }
+    text_placeholder: { en: "Describe the question or the idea", uk: "Опишіть питання чи ідею", ru: "Опишите вопрос или идею" }
+    send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Inquiry {id} sent", uk: "Звернення {id} надіслано", ru: "Обращение {id} отправлено" }
+    how: { en: "How it works", uk: "Як це працює", ru: "Как это работает" }
+    step_number:
+      en: "The inquiry gets a number and appears among your requests."
+      uk: "Звернення отримає номер і з'явиться у списку заявок."
+      ru: "Обращение получит номер и появится в списке заявок."
+    step_answer:
+      en: "The answer comes here, and I let you know by email or in Telegram — as chosen in the profile."
+      uk: "Відповідь прийде сюди, а я повідомлю поштою чи в Telegram — як обрано в профілі."
+      ru: "Ответ придёт сюда, а я сообщу почтой или в Telegram — как выбрано в профиле."
+    step_parent:
+      en: "If it is about a request, choose it above: the answer comes with the context."
+      uk: "Якщо питання щодо заявки, оберіть її вгорі: відповідь буде з контекстом."
+      ru: "Если вопрос по заявке, выберите её сверху: ответ будет с контекстом."
   contacts:
-    title: { en: "Contacts and social networks", uk: "Контакти й соцмережі", ru: "Контакты и соцсети" }
-    lead:
-      en: "Where else I can reach you: I see these when I write to you."
-      uk: "Де ще я можу вас знайти: я бачу їх, коли пишу вам."
-      ru: "Где ещё я могу с вами связаться: я вижу их, когда пишу вам."
+    title: { en: "Contacts", uk: "Контакти", ru: "Контакты" }
     kind: { en: "Where", uk: "Де", ru: "Где" }
     value: { en: "Address, name or number", uk: "Адреса, ім'я або номер", ru: "Адрес, имя или номер" }
     add: { en: "Add", uk: "Додати", ru: "Добавить" }
-    remove: { en: "Remove", uk: "Прибрати", ru: "Убрать" }
+    remove: { en: "Remove {value}", uk: "Прибрати {value}", ru: "Убрать {value}" }
     empty: { en: "No contacts yet.", uk: "Контактів поки немає.", ru: "Контактов пока нет." }
     kinds:
       phone: { en: "Phone", uk: "Телефон", ru: "Телефон" }
@@ -626,24 +726,24 @@ account:
       website: { en: "Website", uk: "Сайт", ru: "Сайт" }
   profile:
     title: { en: "Profile", uk: "Профіль", ru: "Профиль" }
+    heading: { en: "Profile and sign-in", uk: "Профіль і вхід", ru: "Профиль и вход" }
     name: { en: "Name", uk: "Ім'я", ru: "Имя" }
     company: { en: "Company", uk: "Компанія", ru: "Компания" }
     lang: { en: "Language of letters", uk: "Мова листів", ru: "Язык писем" }
-    preferred: { en: "Answer me by", uk: "Відповідати мені", ru: "Отвечать мне" }
-    preferred_email: { en: "email", uk: "поштою", ru: "почтой" }
-    preferred_telegram: { en: "Telegram", uk: "у Telegram", ru: "в Telegram" }
+    preferred: { en: "Where to answer", uk: "Куди відповідати", ru: "Куда отвечать" }
+    preferred_email: { en: "Email", uk: "Пошта", ru: "Почта" }
+    preferred_telegram: "Telegram"
     save: { en: "Save", uk: "Зберегти", ru: "Сохранить" }
     saved: { en: "Saved", uk: "Збережено", ru: "Сохранено" }
   access:
-    title: { en: "Sign-in", uk: "Вхід", ru: "Вход" }
+    title: { en: "Ways to sign in", uk: "Способи входу", ru: "Способы входа" }
     email: { en: "Email", uk: "Пошта", ru: "Почта" }
     telegram: "Telegram"
     missing: { en: "not linked", uk: "не прив'язано", ru: "не привязан" }
     change_email: { en: "Change", uk: "Змінити", ru: "Сменить" }
-    add_email: { en: "Add an email", uk: "Додати пошту", ru: "Добавить почту" }
-    link_telegram: { en: "Link Telegram", uk: "Прив'язати Telegram", ru: "Привязать Telegram" }
+    add_email: { en: "Add", uk: "Додати", ru: "Добавить" }
+    link_telegram: { en: "Link", uk: "Прив'язати", ru: "Привязать" }
     unlink: { en: "Unlink", uk: "Відв'язати", ru: "Отвязать" }
-    linked: { en: "Linked", uk: "Прив'язано", ru: "Привязано" }
     cancel: { en: "Cancel", uk: "Скасувати", ru: "Отмена" }
     # Один человек — один кабинет: способ входа, который уже открывает другой кабинет, объединяет их.
     join_hint:
@@ -656,22 +756,27 @@ account:
       ru: "Готово: ваш второй кабинет объединён с этим — его заявки и достижения теперь здесь."
   sessions:
     title: { en: "Devices", uk: "Пристрої", ru: "Устройства" }
-    current: { en: "this device", uk: "цей пристрій", ru: "это устройство" }
-    seen: { en: "last seen {date}", uk: "востаннє {date}", ru: "последний раз {date}" }
+    current: { en: "This device", uk: "Цей пристрій", ru: "Это устройство" }
+    now: { en: "now", uk: "зараз", ru: "сейчас" }
     end: { en: "Sign out", uk: "Вийти", ru: "Выйти" }
-    end_all: { en: "Sign out on all other devices", uk: "Вийти на всіх інших пристроях", ru: "Выйти на всех других устройствах" }
+    end_all: { en: "Sign out on the others", uk: "Вийти на інших", ru: "Выйти на других" }
+  # Пасхалки сайта на экране ачивок: найденная — ◆ и название, ненайденная — ◇ и «???».
   eggs:
-    title: { en: "Achievements", uk: "Досягнення", ru: "Достижения" }
-    open: { en: "Show all", uk: "Показати всі", ru: "Показать все" }
-    heading: { en: "Easter eggs", uk: "Пасхалки", ru: "Пасхалки" }
+    heading: { en: "Easter eggs of the site", uk: "Пасхалки сайту", ru: "Пасхалки сайта" }
+    reward: { en: "All {total} = {percent}% off", uk: "Усі {total} = знижка {percent}%", ru: "Все {total} = скидка {percent}%" }
+    reward_used: { en: "The discount is used", uk: "Знижку використано", ru: "Скидка использована" }
+    hidden: "???"
   # Ачивки за заказы (api/internal/clients/orders.go): первый выполненный заказ, второй, заказ от
-  # loyalty.big_order — в любом порядке — и золотая за все три. Скидок не дают. Новую клиент видит
-  # баннером, как в Steam, когда открывает кабинет. {amount} — сумма, {percent} — «12 %».
+  # loyalty.big_order — в любом порядке — и за все три. Скидок не дают. Новую клиент видит баннером,
+  # как в Steam, когда открывает кабинет. {amount} — сумма, {percent} — «12 %».
   orders:
-    title: { en: "For orders", uk: "За замовлення", ru: "За заказы" }
+    title: { en: "Orders", uk: "Замовлення", ru: "Заказы" }
     found: { en: "Achievement unlocked", uk: "Досягнення отримано", ru: "Достижение получено" }
     rarity: { en: "{percent} of clients have it", uk: "Є в {percent} клієнтів", ru: "Есть у {percent} клиентов" }
-    locked: { en: "Not yet", uk: "Ще ні", ru: "Пока нет" }
+    share: { en: "{percent} of clients", uk: "{percent} клієнтів", ru: "{percent} клиентов" }
+    rare: { en: "Rare · {percent}", uk: "Рідкісна · {percent}", ru: "Редкая · {percent}" }
+    epic: { en: "Epic · {percent}", uk: "Епічна · {percent}", ru: "Эпическая · {percent}" }
+    locked: { en: "Not unlocked yet", uk: "Ще не відкрито", ru: "Ещё не открыто" }
     earned: { en: "Earned {date}", uk: "Отримано {date}", ru: "Получено {date}" }
     first_order:
       name: { en: "First order", uk: "Перше замовлення", ru: "Первый заказ" }
@@ -691,8 +796,8 @@ account:
       en: "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period — see the privacy policy; to have them deleted earlier, write to me."
       uk: "Кабінет, його контакти й пристрої видаляються одразу. Ваші заявки залишаються в мене на строк зберігання — див. політику конфіденційності; щоб видалити їх раніше, напишіть мені."
       ru: "Кабинет, его контакты и устройства удаляются сразу. Ваши заявки остаются у меня на срок хранения — см. политику конфиденциальности; чтобы удалить их раньше, напишите мне."
-    confirm: { en: "Yes, delete my account", uk: "Так, видалити мій кабінет", ru: "Да, удалить мой кабинет" }
-    button: { en: "Delete the account", uk: "Видалити кабінет", ru: "Удалить кабинет" }
+    confirm: { en: "I understand: this cannot be undone", uk: "Розумію: це не можна скасувати", ru: "Понимаю: это нельзя отменить" }
+    button: { en: "Delete", uk: "Видалити", ru: "Удалить" }
 
 # То, что видят поисковики и соцсети: <title>, описание в выдаче, карточка при отправке ссылки.
 # В site.json (данные для дизайна) не попадает.

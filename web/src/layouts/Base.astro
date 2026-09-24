@@ -1,7 +1,8 @@
 ---
 // Base layout: <head> with full SEO (brief B7), the page frame of the design (design/pages/*.dc.html)
-// and its three variants: the home page (fixed header, left rail, bottom bar on phones), a service
-// page (404, privacy, thanks) and the inverted /play.
+// and its four variants: the home page (fixed header, left rail, bottom bar on phones), a service
+// page (404, privacy, thanks), the inverted /play, and an application with a frame of its own (the
+// personal account, design v3): no header or footer of the site.
 // data-slot / data-track / data-section attributes follow docs/contract.md.
 import { Font } from 'astro:assets';
 import '../../../design/tokens.css';
@@ -14,7 +15,7 @@ import { OG_LOCALE, LOCALES, localePath } from '../i18n/locales.ts';
 import type { SitePageData } from '../lib/page-data.ts';
 import { absoluteUrl, alternateLinks, serializeJsonLd } from '../lib/seo.ts';
 
-export type Variant = 'home' | 'page' | 'play';
+export type Variant = 'home' | 'page' | 'play' | 'app';
 
 interface Props {
   data: SitePageData;
@@ -107,13 +108,13 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
     <a class="skip-link" href="#main">
       {site.ui.skip_to_content}
     </a>
-    <Header data={data} page={page} variant={variant} />
+    {variant !== 'app' && <Header data={data} page={page} variant={variant} />}
     {variant === 'home' && <Rail data={data} />}
     {variant === 'home' && <MobileBar data={data} />}
     <main id="main" class={`main-${variant}`}>
       <slot />
     </main>
-    <Footer data={data} page={page} variant={variant} />
+    {variant !== 'app' && <Footer data={data} page={page} variant={variant} />}
   </body>
 </html>
 

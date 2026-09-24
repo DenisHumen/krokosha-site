@@ -30,8 +30,9 @@ type ClientSummary struct {
 	Excerpt   string        `json:"excerpt"`
 	Discount  loyalty.Offer `json:"-"`
 	Amount    *float64      `json:"amount,omitempty"`
-	Parent    string        `json:"parent,omitempty"` // an inquiry about this request
-	Unread    bool          `json:"unread"`           // an answer or a new status the client has not opened yet
+	Parent    string        `json:"parent,omitempty"`   // an inquiry about this request
+	Unread    bool          `json:"unread"`             // an answer or a new status the client has not opened yet
+	Answered  *time.Time    `json:"answered,omitempty"` // the last answer the client can read (a call is not one)
 }
 
 // ClientEntry is a line of the conversation as the client sees it.
@@ -63,12 +64,16 @@ const unreadCondition = `(
 	OR EXISTS (SELECT 1 FROM lead_events e WHERE e.lead_id = l.id AND e.to_status IS NOT NULL AND e.actor <> 'client'
 	           AND e.action <> 'created' AND e.created_at > COALESCE(l.client_seen_at, l.created_at)))`
 
+// answeredColumn: when the last answer came — a message the client can read, not the record of a call.
+const answeredColumn = `(SELECT MAX(m.created_at) FROM lead_messages m WHERE m.lead_id = l.id AND m.direction = 'out' AND m.channel <> 'phone')`
+
 // ClientLeads lists the requests and inquiries of an account, newest first. Spam is never shown:
 // it is not the client's, whatever address it carries.
 func (s *Store) ClientLeads(ctx context.Context, clientID int64) ([]ClientSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT l.id, l.kind, l.status, l.created_at, l.updated_at, l.direction, COALESCE(l.subject, ''), LEFT(l.description, 160),
-		       l.discount_percent, COALESCE(l.discount_reason, ''), COALESCE(l.discount_detail, ''), l.amount, l.parent_id, `+unreadCondition+`
+		       l.discount_percent, COALESCE(l.discount_reason, ''), COALESCE(l.discount_detail, ''), l.amount, l.parent_id, `+unreadCondition+`,
+		       `+answeredColumn+`
 		FROM leads l WHERE l.client_id = ? AND l.status <> 'spam' AND l.anonymized_at IS NULL
 		ORDER BY l.created_at DESC, l.id DESC LIMIT 200`, clientID)
 	if err != nil {
@@ -92,11 +97,15 @@ func scanClientSummary(row scanner) (ClientSummary, error) {
 	var item ClientSummary
 	var amount sql.NullFloat64
 	var parent sql.NullInt64
+	var answered sql.NullTime
 	if err := row.Scan(&item.ID, &item.Kind, &item.Status, &item.Created, &item.Updated, &item.Direction, &item.Subject, &item.Excerpt,
-		&item.Discount.Percent, &item.Discount.Reason, &item.Discount.Detail, &amount, &parent, &item.Unread); err != nil {
+		&item.Discount.Percent, &item.Discount.Reason, &item.Discount.Detail, &amount, &parent, &item.Unread, &answered); err != nil {
 		return item, err
 	}
 	item.Number = Number(item.ID)
+	if answered.Valid {
+		item.Answered = &answered.Time
+	}
 	if amount.Valid {
 		item.Amount = &amount.Float64
 	}
@@ -113,14 +122,15 @@ func (s *Store) ClientView(ctx context.Context, clientID, id int64) (*ClientView
 	var budget, timeline sql.NullString
 	var amount sql.NullFloat64
 	var parent sql.NullInt64
+	var answered sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
 		SELECT l.id, l.kind, l.status, l.created_at, l.updated_at, l.direction, COALESCE(l.subject, ''), LEFT(l.description, 160),
 		       l.discount_percent, COALESCE(l.discount_reason, ''), COALESCE(l.discount_detail, ''), l.amount, l.parent_id, `+unreadCondition+`,
-		       l.description, l.budget, l.timeline, l.contact_value, l.contact_method
+		       `+answeredColumn+`, l.description, l.budget, l.timeline, l.contact_value, l.contact_method
 		FROM leads l WHERE l.id = ? AND l.client_id = ? AND l.status <> 'spam' AND l.anonymized_at IS NULL`, id, clientID).
 		Scan(&view.ID, &view.Kind, &view.Status, &view.Created, &view.Updated, &view.Direction, &view.Subject, &view.Excerpt,
 			&view.Discount.Percent, &view.Discount.Reason, &view.Discount.Detail, &amount, &parent, &view.Unread,
-			&view.Description, &budget, &timeline, &view.Contact, &view.Method)
+			&answered, &view.Description, &budget, &timeline, &view.Contact, &view.Method)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -134,6 +144,9 @@ func (s *Store) ClientView(ctx context.Context, clientID, id int64) (*ClientView
 	}
 	if parent.Valid {
 		view.Parent = Number(parent.Int64)
+	}
+	if answered.Valid {
+		view.Answered = &answered.Time
 	}
 	view.CanWrite = true
 
