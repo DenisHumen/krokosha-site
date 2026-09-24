@@ -536,3 +536,43 @@ func TestLongPolling(t *testing.T) {
 	f.api.Push(Update{UpdateID: 503, Message: &Message{MessageID: 3, From: &denis, Chat: Chat{ID: denis.ID, Type: "private"}, Text: "/help"}})
 	waitFor(t, "the answer after the hiccup", func() bool { return len(f.api.Sent(denis.ID)) == 3 })
 }
+
+// TestAStoppingServiceLosesNoUpdate: what was taken is handled before the service stops — Telegram
+// counts it as delivered —, and what comes after is refused, for the next process to get.
+func TestAStoppingServiceLosesNoUpdate(t *testing.T) {
+	f := newFixture(t)
+	f.join(denis, RoleOwner)
+	runner := NewRunner(f.bot, RunnerOptions{Mode: ModeWebhook, SiteURL: "https://krokosha.xyz/", Secret: secret, Log: quiet})
+	mux := http.NewServeMux()
+	runner.Register(mux)
+
+	f.api.Forget()
+	f.update++
+	if !runner.accept(Update{UpdateID: f.update, Message: &Message{MessageID: 1, From: &denis, Chat: Chat{ID: denis.ID, Type: "private"}, Text: "/help", Date: f.now.Unix()}}) {
+		t.Fatal("the update was not taken")
+	}
+	runner.drain()
+	if len(f.api.Sent(denis.ID)) == 0 {
+		t.Error("an update taken before the stop was not handled")
+	}
+
+	pathSecret, headerSecret := Secrets(secret)
+	request := httptest.NewRequest(http.MethodPost, WebhookPrefix+pathSecret, strings.NewReader(`{"update_id": 99}`))
+	request.Header.Set("X-Telegram-Bot-Api-Secret-Token", headerSecret)
+	answer := httptest.NewRecorder()
+	mux.ServeHTTP(answer, request)
+	if answer.Code != http.StatusServiceUnavailable {
+		t.Errorf("an update after the stop: %d, want 503 for Telegram to try the next process", answer.Code)
+	}
+
+	// Polling: Telegram is told what was handled, or the next start would get it again.
+	polling := NewRunner(f.bot, RunnerOptions{Mode: ModePolling, SiteURL: "https://krokosha.xyz/", Secret: secret, Log: quiet})
+	polling.offset = 43
+	close(polling.polled)
+	f.api.Forget()
+	polling.drain()
+	calls := f.api.Calls("getUpdates")
+	if len(calls) != 1 || calls[0].Params["offset"] != float64(43) {
+		t.Errorf("the confirmation: %+v", calls)
+	}
+}

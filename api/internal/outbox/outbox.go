@@ -94,7 +94,8 @@ func IsNotReady(err error) bool {
 	return errors.As(err, &notReady)
 }
 
-// Pauses between attempts. After the last one the task is given up on: eight tries in two days.
+// Pauses between attempts. The attempt after the last pause is the last one: nine tries, and the
+// task is given up on about two days after it came (1 d 20 h 42 min).
 var backoff = []time.Duration{
 	30 * time.Second, 2 * time.Minute, 10 * time.Minute, 30 * time.Minute,
 	2 * time.Hour, 6 * time.Hour, 12 * time.Hour, 24 * time.Hour,
@@ -293,7 +294,7 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 	}
 	attempts := task.Attempts + 1
 	message := truncate(err.Error(), 500)
-	if IsPermanent(err) || attempts >= len(backoff) {
+	if IsPermanent(err) || attempts > len(backoff) {
 		w.log.Error("outbox: giving up on a task", "task", task.ID, "channel", task.Channel, "kind", task.Kind, "attempts", attempts, "error", message)
 		_, _ = w.db.ExecContext(saveCtx, `UPDATE outbox SET status = 'failed', attempts = ?, last_error = ?, locked_until = NULL WHERE id = ?`, attempts, message, task.ID)
 		if hook != nil {

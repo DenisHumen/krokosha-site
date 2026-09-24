@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
 
 func testForm() config.Form {
@@ -124,6 +126,15 @@ func TestWorkingOnARequest(t *testing.T) {
 	if strings.Contains(card.body, "I'll look into it today") {
 		t.Error("templates of another language are offered")
 	}
+	if strings.Contains(card.body, "Ссылка в бот для клиента") {
+		t.Error("a link into a bot that is not there")
+	}
+	// With the bot: the «continue in Telegram» link of the request, for a client who never opened it.
+	s.bot = telegram.Status{Mode: telegram.ModeWebhook, Username: "krokosha_bot", ConnectedAt: time.Now()}
+	card = s.do(http.MethodGet, prefix+path, nil, nil)
+	if link := "https://t.me/krokosha_bot?start=" + telegram.ClientPrefix + lead.PublicToken; !strings.Contains(card.body, link) || !strings.Contains(card.body, "ещё не открывал") {
+		t.Errorf("the card lacks the client's link into the bot %s", link)
+	}
 
 	// Take it. A second «take» — the colleague was a moment late — is told who has it.
 	if got := s.post(path+"/status", url.Values{"status": {leads.StatusInProgress}}); got.status != http.StatusSeeOther {
@@ -211,6 +222,22 @@ func TestWorkingOnARequest(t *testing.T) {
 	}
 	if got := s.do(http.MethodGet, prefix+"/leads/abc", nil, nil); got.status != http.StatusNotFound {
 		t.Errorf("a request with a made-up number: %d", got.status)
+	}
+}
+
+// TestTheClientCameToTheBot: once the client opened the link, the card says so — and that answers
+// now go to Telegram, until the client writes a letter.
+func TestTheClientCameToTheBot(t *testing.T) {
+	s := newSite(t)
+	lead := s.addLead(nil)
+	s.signIn()
+	s.bot = telegram.Status{Mode: telegram.ModeWebhook, Username: "krokosha_bot", ConnectedAt: time.Now()}
+	if err := s.leads.ClientLinked(context.Background(), lead.ID); err != nil {
+		t.Fatal(err)
+	}
+	card := s.do(http.MethodGet, prefix+fmt.Sprintf("/leads/%d", lead.ID), nil, nil)
+	if !strings.Contains(card.body, "Клиент её уже открыл") || !strings.Contains(card.body, "Ответ уйдёт клиенту в Telegram через бота") {
+		t.Error("the card does not say the client came to the bot")
 	}
 }
 

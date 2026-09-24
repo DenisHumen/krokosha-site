@@ -24,6 +24,7 @@
             <div><dt>Имя</dt><dd>{{$lead.Name}}</dd></div>
             <div><dt>Личный кабинет</dt><dd>{{if $lead.ClientID}}<a href="{{path "/clients/" (print $lead.ClientID)}}">клиент #{{$lead.ClientID}}</a>{{else}}—{{end}}</dd></div>
             <div><dt>Контакт ({{methodName $lead.ContactMethod}})</dt><dd>{{if $lead.ContactValue}}<a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a>{{else}}—{{end}}</dd></div>
+            {{if $d.ClientBotLink}}<div><dt>Ссылка в бот для клиента</dt><dd><code class="copyable">{{$d.ClientBotLink}}</code><br>{{if $d.Card.BotLinked}}Клиент её уже открыл: ответы идут в Telegram, пока он не напишет письмо.{{else}}Клиент её ещё не открывал. Перешлите ему — тогда ответы пойдут в Telegram.{{end}}</dd></div>{{end}}
             <div><dt>Направление</dt><dd>{{$d.Direction}}</dd></div>
             <div><dt>Бюджет</dt><dd>{{if $lead.Budget}}{{$lead.Budget}}{{else}}—{{end}}</dd></div>
             <div><dt>Сроки</dt><dd>{{if $lead.Timeline}}{{$lead.Timeline}}{{else}}—{{end}}</dd></div>

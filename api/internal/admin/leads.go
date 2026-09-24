@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
 
 // Requests in the admin area (brief B10.6): the list, the board, the card with the conversation,
@@ -160,14 +161,17 @@ type leadData struct {
 	Card      *leads.Card
 	Direction string
 	Contact   string // a link: mailto:, https://t.me/…, tel:
-	Next      []string
-	Replies   []leads.Template // in the client's language
-	Rejects   []leads.Template
-	Draft     string // the answer being written: a chosen template, or what was typed before an error
-	Refusal   string // the same for the letter that goes with a refusal
-	VisitID   string
-	CanReply  bool
-	ByPhone   bool
+	// ClientBotLink is the «continue in Telegram» link of this request, for the owner to send to a
+	// client who left a contact and never opened the bot: answers wait for that (telegram.ClientPrefix).
+	ClientBotLink string
+	Next          []string
+	Replies       []leads.Template // in the client's language
+	Rejects       []leads.Template
+	Draft         string // the answer being written: a chosen template, or what was typed before an error
+	Refusal       string // the same for the letter that goes with a refusal
+	VisitID       string
+	CanReply      bool
+	ByPhone       bool
 }
 
 func leadID(r *http.Request) (int64, bool) {
@@ -207,6 +211,11 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	}
 	if lead.Session.Known {
 		data.VisitID = lead.Session.SessionHex()
+	}
+	if h.opts.BotStatus != nil && data.CanReply && lead.PublicToken != "" {
+		if state, _ := h.opts.BotStatus(); state.Username != "" {
+			data.ClientBotLink = "https://t.me/" + state.Username + "?start=" + telegram.ClientPrefix + lead.PublicToken
+		}
 	}
 
 	templates, err := h.opts.Leads.Templates(r.Context(), "")
