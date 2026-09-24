@@ -102,11 +102,71 @@ const VIEW = {
       channel: 'email',
       body: 'Hello! Could you send the plan of the office?',
       files: [
-        { id: 7, name: 'rack.png', kind: 'png', size: 16700 },
         { id: 8, name: 'offer.pdf', kind: 'pdf', size: 120000 },
+        { id: 7, name: 'rack.png', kind: 'png', size: 16700 },
       ],
     },
+    // A second answer by the same channel right after the first: one group with it.
+    {
+      at: '2026-09-23T15:01:00Z',
+      kind: 'message',
+      direction: 'out',
+      channel: 'email',
+      body: 'And the number of seats on each floor.',
+    },
   ],
+};
+
+// A request that is over: the field to write gives way to an inquiry about it.
+const CLOSED = {
+  number: 'K-0031',
+  kind: 'request',
+  status: 'done',
+  created: '2026-09-02T09:00:00Z',
+  updated: '2026-09-10T12:00:00Z',
+  direction: 'servers',
+  excerpt: 'A backup server for the office.',
+  unread: false,
+  answered: '2026-09-10T12:00:00Z',
+  discount: { percent: 0 },
+};
+
+const CLOSED_VIEW = {
+  ...CLOSED,
+  description: CLOSED.excerpt,
+  contact: 'olga@company.com',
+  method: 'email',
+  can_write: false,
+  feed: [
+    { at: CLOSED.created, kind: 'status', status: 'new' },
+    { at: CLOSED.created, kind: 'message', direction: 'in', channel: 'form', body: CLOSED.excerpt },
+    {
+      at: '2026-09-10T12:00:00Z',
+      kind: 'message',
+      direction: 'out',
+      channel: 'email',
+      body: 'The server is in the rack.',
+    },
+    { at: '2026-09-10T12:00:00Z', kind: 'status', status: 'done' },
+  ],
+};
+
+// A long conversation, longer than any screen: it scrolls inside, the page does not.
+const LONG_VIEW = {
+  ...SUMMARY,
+  number: 'K-0060',
+  unread: false,
+  description: 'A long one.',
+  contact: 'olga@company.com',
+  method: 'email',
+  can_write: true,
+  feed: Array.from({ length: 40 }, (_, i) => ({
+    at: `2026-09-20T10:${String(i).padStart(2, '0')}:00Z`,
+    kind: 'message',
+    direction: i % 3 === 0 ? 'out' : 'in',
+    channel: 'email',
+    body: `Message number ${i + 1} of a long conversation.`,
+  })),
 };
 
 // What an inquiry sent from the account looks like once it is there.
@@ -134,7 +194,7 @@ interface Api {
 /** The API of the account, answering like the real one; nobody is signed in unless `signedIn`. */
 async function mockApi(page: Page, signedIn = false): Promise<Api> {
   let session = signedIn;
-  const leads: Record<string, unknown>[] = [SUMMARY];
+  const leads: Record<string, unknown>[] = [SUMMARY, CLOSED];
   const calls: string[] = [];
   const bodies = new Map<string, unknown>();
   const record = (request: Request) => {
@@ -174,6 +234,10 @@ async function mockApi(page: Page, signedIn = false): Promise<Api> {
         return route.fulfill({ json: { ok: true, lead: VIEW } });
       case '/api/account/leads/K-0042/files/7':
         return route.fulfill({ body: PHOTO, contentType: 'image/png' });
+      case '/api/account/leads/K-0031':
+        return route.fulfill({ json: { ok: true, lead: CLOSED_VIEW } });
+      case '/api/account/leads/K-0060':
+        return route.fulfill({ json: { ok: true, lead: LONG_VIEW } });
       case '/api/account/inquiries':
         leads.unshift(INQUIRY);
         return route.fulfill({ json: { ok: true, number: INQUIRY.number } });
@@ -315,24 +379,101 @@ test.describe('personal account', () => {
     expect(api.calls.filter((call) => call === 'POST /api/account/login/link')).toHaveLength(1);
   });
 
-  test('opens a request from its address and answers in it', async ({ page }) => {
-    const api = await mockApi(page, true);
+  test('lists the requests a line each and finds them', async ({ page }, info) => {
+    await mockApi(page, true);
+    // A wide screen opens a request next to the list: the closed one, so the other stays unread.
+    await page.goto(info.project.name === 'phone' ? '/account/#requests' : '/account/#K-0031');
+    const list = page.locator('[data-requests-list]');
+    await expect(list).toBeVisible();
+    await expect(page.locator('#requests-title')).toHaveText('Requests and inquiries · 2');
+    const rows = list.getByRole('link');
+    await expect(rows).toHaveCount(2);
+    // The number, the subject, the status in short — the client's move is «your turn» — and the
+    // time, with a mark while an answer waits to be read.
+    const request = rows.nth(0);
+    await expect(request.locator('[data-number]')).toHaveText('K-0042');
+    await expect(request.locator('[data-title]')).toHaveText('Networks & hardware');
+    await expect(request.locator('[data-status]')).toHaveText('your turn');
+    await expect(request).toHaveAttribute('data-new', '');
+    await expect(request.locator('[data-unread]')).toBeVisible();
+    await expect(request.locator('[data-time]')).toHaveAttribute('datetime', SUMMARY.updated);
+    expect((await request.boundingBox())?.height).toBe(38);
+    await expect(rows.nth(1).locator('[data-status]')).toHaveText('done');
+    await expect(rows.nth(1).locator('[data-unread]')).toBeHidden();
+    await expect(page.locator('[data-requests-foot]')).toHaveText('2 requests');
+
+    // The search: by the number, the words of the request, the status.
+    const search = page.getByRole('searchbox', { name: 'Find a request' });
+    const shown = rows.filter({ visible: true });
+    await search.fill('backup');
+    await expect(shown).toHaveCount(1);
+    await expect(shown).toContainText('K-0031');
+    await expect(page.locator('[data-requests-foot]')).toHaveText('1 of 2');
+    await search.fill('#k-0042');
+    await expect(shown).toHaveCount(1);
+    await expect(shown).toContainText('K-0042');
+    await search.fill('Your turn');
+    await expect(shown).toContainText('K-0042');
+    await search.fill('nothing like this');
+    await expect(shown).toHaveCount(0);
+    await expect(page.locator('[data-requests-nothing]')).toBeVisible();
+    await search.fill('');
+    await expect(shown).toHaveCount(2);
+    await expect(page.locator('[data-requests-nothing]')).toBeHidden();
+  });
+
+  test('opens a request from its address as a conversation', async ({ page }) => {
+    await mockApi(page, true);
     await page.goto('/account/#K-0042');
     const thread = page.locator('[data-thread]');
     await expect(thread).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Requests');
-    await expect(thread.locator('[data-thread-status]')).toHaveText('Waiting for your answer');
-    // The form's message is the description itself: it is not repeated in the conversation.
-    const feed = thread.locator('[data-thread-feed] > li');
-    await expect(feed).toHaveCount(3);
-    await expect(feed.nth(0)).toContainText('The request is received');
-    await expect(feed.nth(1)).toContainText('Waiting for your answer');
-    await expect(feed.nth(2)).toContainText('Answer · email');
-    await expect(feed.nth(2)).toContainText('Could you send the plan of the office?');
-    // The photo of the answer is in the conversation; the document is a download.
-    const files = feed.nth(2).getByRole('list', { name: 'Files' });
+    // The line over the conversation: the number, the subject, the status; the rest in «Details».
+    await expect(thread.locator('[data-thread-number]')).toHaveText('#K-0042');
+    await expect(thread.getByRole('heading', { level: 2 })).toHaveText('Networks & hardware');
+    await expect(thread.locator('[data-thread-status] .status-full')).toHaveText(
+      'Waiting for your answer',
+    );
+    await expect(thread.locator('[data-thread-status] .status-short')).toHaveText('your turn');
+    const facts = thread.locator('[data-thread-facts]');
+    await expect(facts).toBeHidden();
+    await thread.locator('[data-thread-details] summary').click();
+    await expect(facts).toBeVisible();
+    await expect(facts).toContainText('Discount');
+    await expect(facts).toContainText('−10% · first request');
+    await expect(facts).toContainText('olga@company.com');
+
+    // The request itself is the client's first message; then the answers, days and statuses.
+    const feed = thread.locator('[data-thread-feed]');
+    const messages = feed.locator('.msg');
+    await expect(messages).toHaveCount(3);
+    await expect(feed.locator('.msg-day')).toHaveCount(2);
+    await expect(feed.locator('.msg-event')).toHaveText([
+      /The request is received/,
+      /Waiting for your answer/,
+    ]);
+    await expect(messages.nth(0)).toHaveAttribute('data-side', 'mine');
+    await expect(messages.nth(0)).toContainText('You · form on the site');
+    await expect(messages.nth(0)).toContainText('Office network for forty seats');
+    await expect(messages.nth(1)).toHaveAttribute('data-side', 'theirs');
+    await expect(messages.nth(1)).toContainText('Krokosha · email');
+    await expect(messages.nth(1)).toContainText('Could you send the plan of the office?');
+
+    // Two answers in a row by email make a group: the caption over the first only, and closer; the
+    // second keeps its caption for screen readers.
+    await expect(messages.nth(1)).toHaveAttribute('data-first', '');
+    await expect(messages.nth(2)).not.toHaveAttribute('data-first');
+    expect(await messages.nth(1).evaluate((node) => getComputedStyle(node).marginTop)).toBe('10px');
+    expect(await messages.nth(2).evaluate((node) => getComputedStyle(node).marginTop)).toBe('2px');
+    await expect(messages.nth(2).locator('.msg-head')).toHaveText('Krokosha · email');
+
+    // The photo of the answer is in its bubble, first, though the API lists it second; the document
+    // is a download.
+    const files = messages.nth(1).getByRole('list', { name: 'Files' });
     const photo = files.getByRole('img', { name: 'rack.png' });
     await expect(photo).toBeVisible();
+    await expect(files.locator('li').first().getByRole('img')).toHaveCount(1);
+    expect(await photo.boundingBox()).toMatchObject({ width: 240, height: 140 });
     await expect
       .poll(() => photo.evaluate((image: HTMLImageElement) => image.naturalWidth))
       .toBe(1);
@@ -344,18 +485,41 @@ test.describe('personal account', () => {
     await expect(document).toHaveAttribute('download', 'offer.pdf');
     await expect(document).toHaveAttribute('href', '/api/account/leads/K-0042/files/8');
     await expect(document).toContainText('117 kB');
-    // Read now: the rail loses its «new».
+    // Read now: the list and the rail lose their «new».
     await expect(page.locator('[data-unread-dot]')).toBeHidden();
+    await expect(page.locator('[data-requests-list] a').first()).not.toHaveAttribute('data-new');
+  });
 
-    await thread.getByLabel('Your answer').fill('Sure, here it is.');
-    await thread.getByRole('button', { name: /^Send/ }).click();
+  test('sends with Enter, starts a line with Shift+Enter, asks about the request', async ({
+    page,
+  }) => {
+    const api = await mockApi(page, true);
+    await page.goto('/account/#K-0042');
+    const thread = page.locator('[data-thread]');
+    const field = thread.getByLabel('Your answer');
+    await field.fill('Here is the plan.');
+    await field.press('Shift+Enter');
+    await field.pressSequentially('Twelve seats upstairs.');
+    await expect(field).toHaveValue('Here is the plan.\nTwelve seats upstairs.');
+    expect(api.bodies.has('/api/account/leads/K-0042/messages')).toBe(false);
+    await field.press('Enter');
     await expect(thread.locator('[data-done]')).toHaveText('Sent');
     expect(api.bodies.get('/api/account/leads/K-0042/messages')).toEqual({
-      text: 'Sure, here it is.',
+      text: 'Here is the plan.\nTwelve seats upstairs.',
     });
+    await expect(field).toHaveValue('');
+    await expect(field).toBeFocused();
+    // Nothing to send is not sent.
+    await field.press('Enter');
+    await expect(thread.locator('[data-error]')).toHaveText('Write a few words');
 
-    // An inquiry about it: the form opens with the request chosen, and the new one opens itself.
-    await thread.getByRole('button', { name: 'A question about this request' }).first().click();
+    // An inquiry about it, from the details: the form opens with the request chosen, and the new
+    // inquiry opens itself, its text the first message.
+    await thread.locator('[data-thread-details] summary').click();
+    await thread
+      .locator('[data-thread-details]')
+      .getByRole('button', { name: 'A question about this request' })
+      .click();
     await expect(page).toHaveURL(/#new$/);
     await expect(page.locator('#inquiry-parent')).toHaveValue('K-0042');
     await expect(page.locator('#inquiry-text')).toBeFocused();
@@ -371,6 +535,67 @@ test.describe('personal account', () => {
     });
     await expect(thread.locator('[data-thread-title]')).toHaveText('The invoice');
     await expect(thread.locator('[data-done]')).toHaveText('Inquiry #K-0050 sent');
+    const first = thread.locator('.msg').first();
+    await expect(first).toContainText('You · personal account');
+    await expect(first).toContainText('Could you send the invoice once more?');
+    await expect(
+      thread.locator('[data-thread-facts]').getByRole('link', { name: '#K-0042' }),
+    ).toHaveAttribute('href', '#K-0042');
+  });
+
+  test('a closed request offers an inquiry instead of the field to write', async ({ page }) => {
+    await mockApi(page, true);
+    await page.goto('/account/#K-0031');
+    const thread = page.locator('[data-thread]');
+    await expect(thread.locator('[data-thread-title]')).toHaveText('Servers, storage, clusters');
+    await expect(thread.locator('[data-thread-reply]')).toBeHidden();
+    const closed = thread.locator('[data-thread-closed]');
+    await expect(closed).toBeVisible();
+    await expect(closed).toContainText('The request is closed');
+    await closed.getByRole('button', { name: 'A question about this request' }).click();
+    await expect(page).toHaveURL(/#new$/);
+    await expect(page.locator('#inquiry-parent')).toHaveValue('K-0031');
+    await expect(page.locator('#inquiry-text')).toBeFocused();
+  });
+
+  test('the screen fits the window: the conversation scrolls, the page does not', async ({
+    page,
+  }, info) => {
+    await mockApi(page, true);
+    await page.goto('/account/#K-0060');
+    const thread = page.locator('[data-thread]');
+    // Forty messages and the request itself, which opens the conversation.
+    await expect(thread.locator('.msg')).toHaveCount(41);
+    await expect(thread.locator('.msg').first()).toContainText('A long one.');
+    const scroller = thread.locator('[data-thread-scroll]');
+    const left = () =>
+      scroller.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight);
+    // It opens at its end, and it is much taller than its box.
+    await expect.poll(left).toBeLessThan(2);
+    expect(await scroller.evaluate((node) => node.scrollHeight > 2 * node.clientHeight)).toBe(true);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight),
+    ).toBeLessThanOrEqual(0);
+    // The field to write is on the screen, over the bar of the rail on a phone.
+    const field = thread.getByLabel('Your answer');
+    const box = await field.boundingBox();
+    const rail = await page.locator('.rail').boundingBox();
+    const bottom = info.project.name === 'phone' ? (rail?.y ?? 0) : page.viewportSize()!.height;
+    expect(box && box.y + box.height).toBeLessThanOrEqual(bottom);
+
+    // One line that grows with the text up to 160 px, then scrolls.
+    const height = () => field.evaluate((node: HTMLTextAreaElement) => node.offsetHeight);
+    await field.fill(Array.from({ length: 14 }, (_, i) => `Line ${i + 1}`).join('\n'));
+    await expect.poll(height).toBe(160);
+    await field.fill('One more.');
+    await expect.poll(height).toBe(34);
+
+    // Scrolled up to read, it stays there; a message sent brings it back to the end.
+    await scroller.evaluate((node) => node.scrollTo({ top: 0 }));
+    await expect.poll(left).toBeGreaterThan(100);
+    await field.press('Enter');
+    await expect(thread.locator('[data-done]')).toHaveText('Sent');
+    await expect.poll(left).toBeLessThan(2);
   });
 
   test('a phone shows the list, then one request with the way back', async ({ page }, info) => {
@@ -384,9 +609,16 @@ test.describe('personal account', () => {
     await list.locator('a').first().click();
     await expect(thread).toBeVisible();
     await expect(list).toBeHidden();
+    // The keyboard follows to the conversation; its line keeps the short status and the arrow.
+    await expect(thread.locator('[data-thread-title]')).toBeFocused();
+    await expect(thread.locator('[data-thread-status] .status-short')).toBeVisible();
+    await expect(thread.locator('[data-thread-status] .status-full')).toBeHidden();
+    await expect(thread.locator('[data-thread-details] summary')).toBeVisible();
     await page.getByRole('link', { name: 'All requests' }).click();
     await expect(list).toBeVisible();
     await expect(thread).toBeHidden();
+    // Back on the list, the keyboard is on the request it came from.
+    await expect(list.locator('a').first()).toBeFocused();
     // The rail is a bar at the bottom of the screen.
     const rail = await page.locator('.rail').boundingBox();
     expect(rail && rail.y + rail.height).toBeGreaterThan(700);
@@ -405,7 +637,7 @@ test.describe('personal account', () => {
     expect(new URL(page.url()).hash).toBe('');
   });
 
-  const screens = ['', '#K-0042', '#new', '#loyalty', '#achievements', '#profile'];
+  const screens = ['', '#K-0042', '#K-0031', '#new', '#loyalty', '#achievements', '#profile'];
   for (const screen of ['login', ...screens]) {
     test(`no accessibility violations: ${screen || 'home'}`, async ({ page }) => {
       await mockApi(page, screen !== 'login');
@@ -413,7 +645,12 @@ test.describe('personal account', () => {
       await expect(
         page.locator(screen === 'login' ? '[data-view="login"]' : '[data-view="app"]'),
       ).toBeVisible();
-      if (screen === '#K-0042') await expect(page.locator('[data-thread]')).toBeVisible();
+      if (screen.startsWith('#K-')) {
+        // The conversation with its details open: the facts are checked too.
+        await expect(page.locator('[data-thread]')).toBeVisible();
+        await page.locator('[data-thread-details] summary').click();
+        await expect(page.locator('[data-thread-facts]')).toBeVisible();
+      }
       await page.waitForFunction(() =>
         document
           .getAnimations()

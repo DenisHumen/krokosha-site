@@ -31,6 +31,7 @@ interface Tier {
 interface PageTexts {
   lang: string;
   account: Texts;
+  nickname: string;
   plurals: { orders: string[]; requests: string[]; open: string[] };
   examples: Record<string, string>;
   directions: Record<string, string>;
@@ -104,15 +105,18 @@ interface View extends Summary {
   contact: string;
   method: string;
   can_write: boolean;
-  feed: {
-    at: string;
-    kind: 'message' | 'status' | 'call';
-    direction?: 'in' | 'out';
-    channel?: string;
-    body?: string;
-    status?: string;
-    files?: FileOf[];
-  }[];
+  feed: Entry[];
+}
+
+/** A line of the conversation: a message, a change of status, a call. */
+interface Entry {
+  at: string;
+  kind: 'message' | 'status' | 'call';
+  direction?: 'in' | 'out';
+  channel?: string;
+  body?: string;
+  status?: string;
+  files?: FileOf[];
 }
 
 /** A file of the conversation: the account hands it out (/api/account/leads/<K-0042>/files/<id>). */
@@ -193,7 +197,6 @@ export function initAccount(): void {
     new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'long', year: 'numeric' })
       .format(new Date(value))
       .replace(/\s?[гр]\.$/u, '');
-  const moment = (value: string) => `${shortDate(value)} ${time(new Date(value))}`;
   const dayNumber = (value: Date) =>
     Math.floor((value.getTime() - value.getTimezoneOffset() * 60_000) / 86_400_000);
   /** «today 09:12», «yesterday 21:40», «22 Sep». */
@@ -320,7 +323,12 @@ export function initAccount(): void {
   function show(name: ViewName) {
     view = name;
     for (const node of all(root!, '[data-view]')) node.hidden = node.dataset['view'] !== name;
+    fit();
   }
+
+  /** The requests screen takes the window exactly: the page stays still, the list and the
+   *  conversation scroll inside it (account.css → [data-fit]). */
+  const fit = () => root.toggleAttribute('data-fit', view === 'app' && screen === 'requests');
 
   // --- signing in --------------------------------------------------------------------------------
 
@@ -658,6 +666,7 @@ export function initAccount(): void {
   function showScreen(next: Screen, focus: boolean) {
     const changed = next !== screen;
     screen = next;
+    fit();
     for (const section of all(app, '[data-screen]'))
       section.hidden = section.dataset['screen'] !== next;
     for (const link of all(app, '[data-nav]')) {
@@ -692,16 +701,25 @@ export function initAccount(): void {
     showScreen(next, focus);
     if (next !== 'requests') return;
     if (number) {
-      if (number !== open) void openThread(number);
+      if (number !== open) void openThread(number, focus);
     } else if (wide.matches && list[0]) {
       // A wide screen has room for both: the newest request opens next to the list.
       history.replaceState(null, '', `#${list[0].number}`);
       if (list[0].number !== open) void openThread(list[0].number);
-    } else closeThread();
+    } else {
+      const was = open;
+      closeThread();
+      // Back to the list on a narrow screen: the keyboard lands on the request it came from.
+      if (focus && was) rowOf(was)?.focus();
+    }
   }
 
   window.addEventListener('hashchange', () => {
     if (view === 'app') route();
+  });
+  // A window widened past the phone layout has room for a conversation again.
+  wide.addEventListener('change', () => {
+    if (view === 'app' && screen === 'requests' && !open && wide.matches) route(false);
   });
 
   // The menu of the header: closed by a click elsewhere and by Escape.
@@ -921,14 +939,47 @@ export function initAccount(): void {
 
   const requests = $(app, '[data-screen="requests"]');
   const thread = $(requests, '[data-thread]');
+  const threadNone = $(requests, '[data-thread-none]');
+  const search = $<HTMLInputElement>(requests, '[data-requests-search]');
+  const scroller = $(thread, '[data-thread-scroll]');
+  const feed = $(thread, '[data-thread-feed]');
+  const replyForm = $<HTMLFormElement>(thread, '[data-thread-reply]');
+  const replyField = $<HTMLTextAreaElement>(replyForm, 'textarea');
   const parentSelect = $<HTMLSelectElement>(app, '[data-parent]');
-  const cardTemplate = $<HTMLTemplateElement>(document, '#tpl-card');
+  const requestTemplate = $<HTMLTemplateElement>(document, '#tpl-request');
   const messageTemplate = $<HTMLTemplateElement>(document, '#tpl-msg');
+  const channels = A.channels as Record<string, string>;
+  const events = A.events as Record<string, string>;
+  /** The request asked for, and the one on the screen: they differ while the next one loads. */
   let open = '';
+  let shown = '';
+  /** The rows of the list with their requests: the search hides and shows them. */
+  let rows: { item: Summary; row: HTMLLIElement }[] = [];
+  /** What was typed and not sent, by request: another request does not get it. */
+  const drafts = new Map<string, string>();
 
   function statusPill(node: HTMLElement, status: string) {
     node.textContent = statusName(status);
     node.dataset['value'] = status;
+  }
+
+  const shortStatus = (status: string) =>
+    (A.statuses_short as Record<string, string>)[status] ?? statusName(status);
+
+  const rowOf = (number: string) =>
+    rows.find(({ item }) => item.number === number)?.row.querySelector('a') ?? null;
+
+  /** «20:14» today, «23 Sep» this year, «23.09.25» before: what fits the narrow column. */
+  function listTime(value: string): string {
+    const at = new Date(value);
+    const now = new Date();
+    if (dayNumber(at) === dayNumber(now)) return time(at);
+    if (at.getFullYear() === now.getFullYear()) return shortDate(at);
+    return new Intl.DateTimeFormat(lang, {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+    }).format(at);
   }
 
   async function loadRequests() {
@@ -938,32 +989,38 @@ export function initAccount(): void {
     renderRequests();
   }
 
+  /** The list: one line a request — the number, the subject, the status, the time of the last
+   *  change or a mark of an answer not read yet. */
   function renderRequests() {
+    const focused =
+      document.activeElement?.closest('[data-requests-list] a')?.getAttribute('href') ?? '';
     $(requests, '[data-total]').textContent = String(list.length);
-    $(requests, '[data-requests-list]').replaceChildren(
-      ...list.map((item) => {
-        const row = cardTemplate.content.cloneNode(true) as DocumentFragment;
-        const link = $<HTMLAnchorElement>(row, 'a');
-        link.href = `#${item.number}`;
-        if (item.number === open) link.setAttribute('aria-current', 'true');
-        $(row, '[data-number]').textContent = [
-          `#${item.number}`,
-          kindOf(item),
-          item.parent ? fill(A.requests.about, { id: `#${item.parent}` }) : '',
-        ]
-          .filter(Boolean)
-          .join(' · ');
-        statusPill($(row, '[data-status]'), item.status);
-        $(row, '[data-title]').textContent = titleOf(item);
-        $(row, '[data-excerpt]').textContent = item.excerpt;
-        $(row, '[data-date]').textContent = shortDate(item.created, true);
-        $(row, '[data-unread]').hidden = !item.unread;
-        $(row, '[data-discount]').textContent =
-          item.discount.percent > 0 ? `−${item.discount.percent}%` : '';
-        return row;
-      }),
-    );
+    rows = list.map((item) => {
+      const fragment = requestTemplate.content.cloneNode(true) as DocumentFragment;
+      const row = $<HTMLLIElement>(fragment, 'li');
+      const link = $<HTMLAnchorElement>(row, 'a');
+      const title = titleOf(item);
+      link.href = `#${item.number}`;
+      link.title = title;
+      if (item.number === open) link.setAttribute('aria-current', 'true');
+      $(row, '[data-number]').textContent = item.number;
+      $(row, '[data-title]').textContent = title;
+      $(row, '[data-excerpt]').textContent = item.excerpt;
+      const status = $(row, '[data-status]');
+      status.textContent = shortStatus(item.status);
+      status.dataset['value'] = item.status;
+      const when = $<HTMLTimeElement>(row, '[data-time]');
+      when.dateTime = item.updated;
+      when.textContent = listTime(item.updated);
+      markUnread(row, item.unread);
+      return { item, row };
+    });
+    $(requests, '[data-requests-list]').replaceChildren(...rows.map(({ row }) => row));
+    // The list is drawn anew when the requests come again: the keyboard stays where it was.
+    if (focused) rowOf(focused.slice(1))?.focus();
+    requests.toggleAttribute('data-empty', list.length === 0);
     $(requests, '[data-requests-empty]').hidden = list.length > 0;
+    filterRequests();
 
     const chosen = parentSelect.value;
     const none = parentSelect.options[0];
@@ -981,7 +1038,39 @@ export function initAccount(): void {
     renderFrame();
   }
 
-  async function openThread(number: string) {
+  /** The search of the list: by the number, the subject, the text, the status. */
+  function filterRequests() {
+    const query = search.value.trim().replace(/^#/, '').toLocaleLowerCase(lang);
+    let found = 0;
+    for (const { item, row } of rows) {
+      const text = [
+        item.number,
+        titleOf(item),
+        item.excerpt,
+        kindOf(item),
+        statusName(item.status),
+        shortStatus(item.status),
+      ]
+        .join(' ')
+        .toLocaleLowerCase(lang);
+      row.hidden = query !== '' && !text.includes(query);
+      if (!row.hidden) found += 1;
+    }
+    $(requests, '[data-requests-nothing]').hidden = found > 0 || list.length === 0;
+    $(requests, '[data-requests-foot]').textContent = query
+      ? fill(A.requests.found, { shown: found, total: list.length })
+      : count(T.plurals.requests, list.length);
+  }
+
+  search.addEventListener('input', filterRequests);
+
+  /** A row with an answer the client has not read: the time gets a mark, the subject weight. */
+  function markUnread(row: HTMLElement, unread: boolean) {
+    $(row, 'a').toggleAttribute('data-new', unread);
+    $(row, '[data-unread]').hidden = !unread;
+  }
+
+  async function openThread(number: string, focus = false) {
     open = number;
     const { status, data } = await api<Answer & { lead?: View }>(
       'GET',
@@ -990,124 +1079,220 @@ export function initAccount(): void {
     if (open !== number) return; // another one was chosen meanwhile
     if (status === 404 || !data.lead) {
       closeThread();
-      const none = $(requests, '[data-thread-none]');
-      none.textContent = status === 404 ? A.requests.missing : error(data.error);
-      none.hidden = false;
+      threadNone.textContent = status === 404 ? A.requests.missing : error(data.error);
+      threadNone.hidden = false;
       return;
     }
-    $(requests, '[data-thread-none]').hidden = true;
     const lead = data.lead;
+    threadNone.hidden = true;
     thread.hidden = false;
     requests.classList.add('is-open');
-    for (const card of all(requests, '.card')) {
-      if (card.getAttribute('href') === `#${lead.number}`)
-        card.setAttribute('aria-current', 'true');
-      else card.removeAttribute('aria-current');
+    for (const { item, row } of rows) {
+      const link = $(row, 'a');
+      if (item.number === lead.number) link.setAttribute('aria-current', 'true');
+      else link.removeAttribute('aria-current');
     }
-    $(thread, '[data-thread-meta]').textContent = [
-      `#${lead.number}`,
-      kindOf(lead),
-      lead.parent ? fill(A.requests.about, { id: `#${lead.parent}` }) : '',
-      longDate(lead.created),
-    ]
+    replyForm.hidden = !lead.can_write;
+    $(thread, '[data-thread-closed]').hidden = lead.can_write;
+    if (shown !== lead.number) {
+      // Another request: its own draft, and nothing said about the last one.
+      shown = lead.number;
+      replyField.value = drafts.get(lead.number) ?? '';
+      fitField();
+      $(replyForm, '[data-done]').textContent = '';
+      $(replyForm, '[data-error]').textContent = '';
+    }
+    renderHead(lead);
+    renderFeed(lead);
+
+    // Opened, so read: the list, the home screen and the rail lose their «new».
+    const summary = list.find((item) => item.number === lead.number);
+    if (summary?.unread) {
+      summary.unread = false;
+      const row = rows.find(({ item }) => item === summary)?.row;
+      if (row) markUnread(row, false);
+      renderHome();
+      renderFrame();
+    }
+    // On a phone the list gives way to the conversation: the keyboard follows it there.
+    if (focus && !wide.matches) $(thread, '[data-thread-title]').focus({ preventScroll: true });
+  }
+
+  /** The line over the conversation, and the facts of the request under «Details». */
+  function renderHead(lead: View) {
+    $(thread, '[data-thread-number]').textContent = `#${lead.number}`;
+    $(thread, '[data-thread-title]').textContent = titleOf(lead);
+    // The full status where there is room, the short one of the list on a phone.
+    const status = $(thread, '[data-thread-status]');
+    const full = document.createElement('span');
+    const short = document.createElement('span');
+    full.className = 'status-full';
+    short.className = 'status-short';
+    full.textContent = statusName(lead.status);
+    short.textContent = shortStatus(lead.status);
+    status.replaceChildren(full, short);
+    status.dataset['value'] = lead.status;
+    const discount = lead.discount.percent > 0 ? `−${lead.discount.percent}%` : '';
+    $(thread, '[data-thread-summary]').textContent = [lead.budget, lead.timeline, discount]
       .filter(Boolean)
       .join(' · ');
-    $(thread, '[data-thread-title]').textContent = titleOf(lead);
-    statusPill($(thread, '[data-thread-status]'), lead.status);
 
-    const facts: [string, string][] = [
-      [A.requests.direction, T.directions[lead.direction] ?? lead.direction],
-      [A.requests.budget, lead.budget ?? ''],
-      [A.requests.timeline, lead.timeline ?? ''],
+    // An inquiry about a request links to it.
+    const kind: (string | Node)[] = [kindOf(lead)];
+    if (lead.parent) {
+      const [before = '', after = ''] = A.requests.about.split('{id}');
+      const link = document.createElement('a');
+      link.href = `#${lead.parent}`;
+      link.textContent = `#${lead.parent}`;
+      kind.push(` · ${before}`, link, after);
+    }
+    const facts: [string, (string | Node)[]][] = [
+      [A.requests.kind, kind],
+      [A.requests.date, [longDate(lead.created)]],
+      [A.requests.direction, [T.directions[lead.direction] ?? lead.direction]],
+      [A.requests.budget, [lead.budget ?? '']],
+      [A.requests.timeline, [lead.timeline ?? '']],
       [
         A.requests.discount,
-        lead.discount.percent > 0
-          ? `−${lead.discount.percent}% · ${reasonText(lead.discount)}`
-          : '',
+        [
+          lead.discount.percent > 0
+            ? `−${lead.discount.percent}% · ${reasonText(lead.discount)}`
+            : '',
+        ],
       ],
-      [A.requests.amount, lead.amount !== undefined ? money(lead.amount) : ''],
-      [A.requests.contact, lead.contact],
+      [A.requests.amount, [lead.amount !== undefined ? money(lead.amount) : '']],
+      [A.requests.contact, [lead.contact]],
     ];
     $(thread, '[data-thread-facts]').replaceChildren(
       ...facts
-        .filter(([, value]) => value)
+        .filter(([, value]) => value.some(Boolean))
         .map(([name, value]) => {
           const line = document.createElement('div');
           const term = document.createElement('dt');
           const detail = document.createElement('dd');
           line.className = 'fact';
           term.textContent = name;
-          detail.textContent = value;
+          detail.append(...value);
           line.append(term, detail);
           return line;
         }),
     );
-    // The description opens the conversation too (the form's message): shown once, as the request.
-    $(thread, '[data-thread-description]').textContent = lead.description;
+  }
 
-    const channels = A.channels as Record<string, string>;
-    const events = A.events as Record<string, string>;
-    $(thread, '[data-thread-feed]').replaceChildren(
-      ...lead.feed
-        .filter(
-          (entry, index) =>
-            !(
-              index <= 1 &&
-              entry.kind === 'message' &&
-              entry.direction === 'in' &&
-              entry.channel === 'form' &&
-              entry.body?.trim() === lead.description.trim()
-            ),
-        )
-        .map((entry) => {
-          const row = messageTemplate.content.cloneNode(true) as DocumentFragment;
-          const item = $(row, 'li');
-          const meta = $(row, '[data-meta]');
-          const body = $(row, '[data-body]');
-          if (entry.kind === 'status' || entry.kind === 'call') {
-            item.classList.add('msg-event');
-            meta.textContent = `${entry.kind === 'call' ? channels['phone'] : A.requests.status} · ${moment(entry.at)}`;
-            body.textContent =
-              entry.kind === 'call'
-                ? A.requests.call
-                : (events[entry.status ?? ''] ?? statusName(entry.status ?? ''));
-          } else {
-            const mine = entry.direction === 'in';
-            item.classList.add(mine ? 'msg-in' : 'msg-out');
-            const channel = entry.channel ? channels[entry.channel] : '';
-            meta.textContent = [
-              mine ? A.requests.you : A.requests.answer,
-              channel,
-              moment(entry.at),
-            ]
-              .filter(Boolean)
-              .join(' · ');
-            body.textContent = entry.body ?? '';
-            body.hidden = !entry.body; // an answer of files alone
-            if (entry.files?.length) {
-              const files = $(row, '[data-files]');
-              files.replaceChildren(
-                ...entry.files.map((file) => fileItem(lead.number, file, !mine)),
-              );
-              files.hidden = false;
-            }
-          }
-          return row;
-        }),
+  /** «24 September»: the day over its messages, with the year when it is not this one. */
+  const dayLabel = (at: Date) =>
+    new Intl.DateTimeFormat(lang, {
+      day: 'numeric',
+      month: 'long',
+      ...(at.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' as const }),
+    })
+      .format(at)
+      .replace(/\s?[гр]\.$/u, '');
+
+  /**
+   * The conversation: days, changes of status as one line, messages as bubbles — the client's on
+   * the right, the answers on the left. Messages in a row from one side and one channel make a
+   * group: the caption over the first only, and closer together.
+   */
+  function renderFeed(lead: View) {
+    const entries = [...lead.feed];
+    // The request itself is the client's first message. The conversation has it as the message of
+    // the form (or of the account); one that lacks it gets it back at its time.
+    const description = lead.description.trim();
+    const told = entries.some(
+      (entry) =>
+        entry.kind === 'message' && entry.direction === 'in' && entry.body?.trim() === description,
     );
-    const reply = $<HTMLFormElement>(thread, '[data-thread-reply]');
-    reply.hidden = !lead.can_write;
-    $(thread, '[data-thread-closed]').hidden = lead.can_write;
-    $(reply, '[data-done]').textContent = '';
-    $(reply, '[data-error]').textContent = '';
-
-    // Opened, so read: the list, the home screen and the rail lose their «new».
-    const summary = list.find((item) => item.number === lead.number);
-    if (summary?.unread) {
-      summary.unread = false;
-      renderRequests();
+    if (description && !told) {
+      const at = Date.parse(lead.created);
+      const index = entries.findIndex((entry) => Date.parse(entry.at) > at);
+      entries.splice(index < 0 ? entries.length : index, 0, {
+        at: lead.created,
+        kind: 'message',
+        direction: 'in',
+        channel: lead.kind === 'inquiry' ? 'site' : 'form',
+        body: lead.description,
+      });
     }
-    if (!wide.matches) window.scrollTo({ top: 0 });
+    const items: HTMLLIElement[] = [];
+    let day = Number.NaN;
+    let group = '';
+    for (const entry of entries) {
+      const at = new Date(entry.at);
+      if (dayNumber(at) !== day) {
+        day = dayNumber(at);
+        group = '';
+        items.push(dayItem(entry.at, at));
+      }
+      if (entry.kind !== 'message') {
+        group = '';
+        items.push(eventItem(entry, at));
+        continue;
+      }
+      const side = `${entry.direction ?? ''}|${entry.channel ?? ''}`;
+      items.push(messageItem(lead.number, entry, at, side !== group));
+      group = side;
+    }
+    feed.replaceChildren(...items);
+    stick = true;
+    toEnd();
+  }
+
+  function dayItem(value: string, at: Date): HTMLLIElement {
+    const item = document.createElement('li');
+    const label = document.createElement('time');
+    item.className = 'msg-day';
+    label.dateTime = value.slice(0, 10);
+    label.textContent = dayLabel(at);
+    item.append(label);
+    return item;
+  }
+
+  function eventItem(entry: Entry, at: Date): HTMLLIElement {
+    const item = document.createElement('li');
+    const when = document.createElement('time');
+    const text = document.createElement('span');
+    item.className = 'msg-event';
+    when.dateTime = entry.at;
+    when.textContent = time(at);
+    text.textContent =
+      entry.kind === 'call'
+        ? A.requests.call
+        : (events[entry.status ?? ''] ?? statusName(entry.status ?? ''));
+    item.append(when, ' ', text);
+    return item;
+  }
+
+  function messageItem(number: string, entry: Entry, at: Date, first: boolean): HTMLLIElement {
+    const fragment = messageTemplate.content.cloneNode(true) as DocumentFragment;
+    const item = $<HTMLLIElement>(fragment, 'li');
+    const mine = entry.direction === 'in';
+    item.dataset['side'] = mine ? 'mine' : 'theirs';
+    // The caption of a message inside a group stays for screen readers: who and where, each time.
+    item.toggleAttribute('data-first', first);
+    const channel = entry.channel ? (channels[entry.channel] ?? '') : '';
+    $(item, '[data-head]').textContent = [mine ? A.requests.you : T.nickname, channel]
+      .filter(Boolean)
+      .join(' · ');
+    const body = $(item, '[data-body]');
+    body.textContent = entry.body ?? '';
+    body.hidden = !entry.body; // an answer of files alone
+    const when = $<HTMLTimeElement>(item, '[data-time]');
+    when.dateTime = entry.at;
+    when.textContent = time(at);
+    if (entry.files?.length) {
+      // Pictures first, as in a messenger; then the files to download.
+      const media = (file: FileOf) => !mine && ['jpg', 'png', 'mp4'].includes(file.kind);
+      const files = $(item, '[data-files]');
+      files.replaceChildren(
+        ...[...entry.files]
+          .sort((a, b) => Number(media(b)) - Number(media(a)))
+          .map((file) => fileItem(number, file, !mine)),
+      );
+      files.hidden = false;
+      item.toggleAttribute('data-attached', true);
+    }
+    return item;
   }
 
   /**
@@ -1126,6 +1311,8 @@ export function initAccount(): void {
       photo.className = 'msg-photo';
       photo.src = address;
       photo.alt = file.name;
+      photo.width = 240;
+      photo.height = 140;
       photo.loading = 'lazy';
       photo.decoding = 'async';
       link.append(photo);
@@ -1160,10 +1347,34 @@ export function initAccount(): void {
   function closeThread() {
     open = '';
     thread.hidden = true;
-    $(requests, '[data-thread-none]').hidden = true;
+    threadNone.hidden = true;
     requests.classList.remove('is-open');
-    for (const card of all(requests, '.card')) card.removeAttribute('aria-current');
+    for (const { row } of rows) $(row, 'a').removeAttribute('aria-current');
   }
+
+  // The conversation keeps to its end — when it opens, after sending, while it grows and when the
+  // window, the details or the field change its height — unless the client scrolled up to read.
+  let stick = true;
+  const toEnd = () => {
+    scroller.scrollTop = scroller.scrollHeight;
+  };
+  scroller.addEventListener(
+    'scroll',
+    () => (stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24),
+    { passive: true },
+  );
+  const keepEnd = new ResizeObserver(() => {
+    if (stick) toEnd();
+  });
+  keepEnd.observe(scroller);
+  keepEnd.observe(feed);
+
+  // The button of the details sits over the end of the line above the conversation (its panel opens
+  // under the line, in the flow); the line keeps exactly its width free, whatever the language.
+  const more = $(thread, '.chat-more');
+  new ResizeObserver(() => {
+    if (more.offsetWidth > 0) thread.style.setProperty('--more', `${more.offsetWidth}px`);
+  }).observe(more);
 
   for (const ask of all(thread, '[data-thread-ask]')) {
     ask.addEventListener('click', () => {
@@ -1173,18 +1384,42 @@ export function initAccount(): void {
     });
   }
 
-  const replyForm = $<HTMLFormElement>(thread, '[data-thread-reply]');
+  /** The field is one line and grows with the text up to 160 px; then it scrolls. */
+  function fitField() {
+    replyField.style.height = '';
+    if (!replyField.offsetParent) return; // not on the screen: nothing to measure, one line
+    const height = replyField.scrollHeight + 2; // and the border
+    replyField.style.height = `${Math.min(height, 160)}px`;
+    replyField.toggleAttribute('data-full', height > 160);
+  }
+
+  replyField.addEventListener('input', () => {
+    fitField();
+    drafts.set(shown, replyField.value);
+    $(replyForm, '[data-done]').textContent = '';
+  });
+
+  // Enter sends, Shift+Enter starts a new line; a word still being composed (IME) is not sent.
+  replyField.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    replyForm.requestSubmit();
+  });
+
+  let replying = false;
   replyForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const field = $<HTMLTextAreaElement>(replyForm, 'textarea');
-    const text = field.value.trim();
+    if (replying) return;
+    const text = replyField.value.trim();
     const problem = $(replyForm, '[data-error]');
     if (!text) {
       problem.textContent = A.errors.empty;
-      field.focus();
+      replyField.focus();
       return;
     }
-    const number = open;
+    const number = shown;
+    replying = true;
+    replyField.readOnly = true; // keeps the focus, unlike disabled
     void busy(replyForm, async () => {
       const { data } = await api(
         'POST',
@@ -1196,10 +1431,17 @@ export function initAccount(): void {
         return;
       }
       problem.textContent = '';
-      field.value = '';
+      drafts.delete(number);
+      if (shown === number) {
+        replyField.value = '';
+        fitField();
+      }
       // An answer can move the status (waiting for the client → in progress): the list follows.
-      await Promise.all([openThread(number), loadRequests()]);
-      $(replyForm, '[data-done]').textContent = A.requests.sent;
+      await Promise.all([open === number ? openThread(number) : null, loadRequests()]);
+      if (shown === number) $(replyForm, '[data-done]').textContent = A.requests.sent;
+    }).finally(() => {
+      replying = false;
+      replyField.readOnly = false;
     });
   });
 
@@ -1232,6 +1474,7 @@ export function initAccount(): void {
       text.value = '';
       subject.value = '';
       parentSelect.value = '';
+      search.value = ''; // the new one must not hide behind an old search
       await loadRequests();
       // The inquiry opens with its number: the conversation goes on there.
       history.pushState(null, '', `#${data.number}`);

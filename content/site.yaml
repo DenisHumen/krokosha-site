@@ -639,17 +639,26 @@ account:
       tier: { en: "level «{tier}»", uk: "рівень «{tier}»", ru: "уровень «{tier}»" }
       personal: { en: "personal", uk: "персональна", ru: "персональная" }
       manual: { en: "set by me", uk: "встановив я", ru: "назначил я" }
+  # Экран заявок — как мессенджер: список в одну строку и переписка открытой заявки.
   requests:
     title: { en: "Requests and inquiries", uk: "Заявки й звернення", ru: "Заявки и обращения" }
     empty:
       en: "Nothing here yet. Send a request with the form on the main page — it will appear here with its status."
       uk: "Тут поки порожньо. Надішліть заявку формою на головній — вона з'явиться тут зі своїм статусом."
       ru: "Здесь пока пусто. Отправьте заявку формой на главной — она появится здесь со своим статусом."
+    search: { en: "Find a request", uk: "Знайти заявку", ru: "Найти заявку" }
+    nothing: { en: "Nothing found.", uk: "Нічого не знайшлося.", ru: "Ничего не нашлось." }
+    found: { en: "{shown} of {total}", uk: "{shown} з {total}", ru: "{shown} из {total}" }   # под списком, пока идёт поиск
+    number: { en: "#", uk: "№", ru: "№" }                                 # шапка колонок списка
+    time: { en: "Time", uk: "Час", ru: "Время" }
     request: { en: "Request", uk: "Заявка", ru: "Заявка" }
     inquiry: { en: "Inquiry", uk: "Звернення", ru: "Обращение" }
     unread: { en: "new answer", uk: "нова відповідь", ru: "новый ответ" }
     about: { en: "about {id}", uk: "щодо {id}", ru: "по {id}" }
     back: { en: "All requests", uk: "Усі заявки", ru: "Все заявки" }
+    details: { en: "Details", uk: "Деталі", ru: "Детали" }               # кнопка в шапке переписки
+    kind: { en: "Type", uk: "Тип", ru: "Тип" }
+    date: { en: "Date", uk: "Дата", ru: "Дата" }
     direction: { en: "Area", uk: "Напрям", ru: "Направление" }
     budget: { en: "Budget", uk: "Бюджет", ru: "Бюджет" }
     timeline: { en: "Timeline", uk: "Терміни", ru: "Сроки" }
@@ -658,11 +667,15 @@ account:
     amount: { en: "Amount", uk: "Сума", ru: "Сумма" }
     conversation: { en: "Conversation", uk: "Листування", ru: "Переписка" }
     you: { en: "You", uk: "Ви", ru: "Вы" }
-    answer: { en: "Answer", uk: "Відповідь", ru: "Ответ" }
     status: { en: "Status", uk: "Статус", ru: "Статус" }
     call: { en: "A phone call", uk: "Дзвінок", ru: "Звонок" }
     files: { en: "Files", uk: "Файли", ru: "Файлы" }
     write: { en: "Your answer", uk: "Ваша відповідь", ru: "Ваш ответ" }
+    message: { en: "Write a message…", uk: "Написати повідомлення…", ru: "Написать сообщение…" }
+    keys:                               # подсказка на кнопке отправки
+      en: "Enter sends, Shift+Enter starts a new line"
+      uk: "Enter — надіслати, Shift+Enter — новий рядок"
+      ru: "Enter — отправить, Shift+Enter — новая строка"
     send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Sent", uk: "Надіслано", ru: "Отправлено" }
     closed:
@@ -685,6 +698,12 @@ account:
     waiting_client: { en: "Waiting for your answer", uk: "Чекає на вашу відповідь", ru: "Ждёт вашего ответа" }
     done: { en: "Done", uk: "Виконано", ru: "Выполнено" }
     rejected: { en: "Declined", uk: "Відхилено", ru: "Отклонено" }
+  statuses_short:                       # те же статусы в строке списка заявок: коротко, до 9 знаков
+    new: { en: "new", uk: "нова", ru: "новая" }
+    in_progress: { en: "ongoing", uk: "у роботі", ru: "в работе" }
+    waiting_client: { en: "your turn", uk: "ваш хід", ru: "ваш ход" }
+    done: { en: "done", uk: "готово", ru: "готово" }
+    rejected: { en: "declined", uk: "відмова", ru: "отказ" }
   channels:
     form: { en: "form on the site", uk: "форма на сайті", ru: "форма на сайте" }
     site: { en: "personal account", uk: "особистий кабінет", ru: "личный кабинет" }
