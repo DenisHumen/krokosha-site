@@ -398,9 +398,10 @@ check "a second run with nothing new" netmap_sync
 check "…writes nothing" test "$(sql "SELECT CONCAT(ok, ' ', added, ' ', gone, ' ', changed) FROM netmap_sync ORDER BY id DESC LIMIT 1") $(sql "SELECT COUNT(*) FROM netmap_change")" = "1 0 0 0 0"
 
 echo "Requests in the admin area"
-check "the list shows the requests sent above" grep -q '#K-0001' <(admin_get "$ADMIN/leads")
-check "spam is kept apart" bash -c "! grep -q '#K-0003' <<<\"\$1\"" _ "$(admin_get "$ADMIN/leads")"
-check "…but can be looked at" grep -q '#K-0003' <(admin_get "$ADMIN/leads?status=spam")
+check "the list shows the requests sent above" grep -q '>K-0001<' <(admin_get "$ADMIN/leads")
+check "spam is kept apart" bash -c "! grep -q '>K-0003<' <<<\"\$1\"" _ "$(admin_get "$ADMIN/leads")"
+check "…but can be looked at" grep -q '>K-0003<' <(admin_get "$ADMIN/leads?tab=spam")
+check "what nobody has read is counted" grep -q 'class="c-unread"' <(admin_get "$ADMIN/leads")
 check "the board" grep -q 'data-board' <(admin_get "$ADMIN/leads?view=board")
 check "the card shows what the visitor wrote" grep -q 'MikroTik и два VLAN' <(admin_get "$ADMIN/leads/1")
 check "ready-made answers are offered in the client's language" grep -q 'Нужны детали' <(admin_get "$ADMIN/leads/1")
