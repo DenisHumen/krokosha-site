@@ -43,13 +43,16 @@ from_stdin=no
 # --- the file of mailboxes -----------------------------------------------------------------------
 
 is_address() { [[ $1 =~ ^[a-z0-9][a-z0-9._-]*@${domain//./\\.}$ && $1 != *..* && ${#1} -le 200 ]]; }
-exists() { grep -q "^$1|" "$accounts"; }
+# The line of an address is found by its whole first field: an address is no pattern (as one, the
+# dot of «l.ads@…» matches any character, and the line of «leads@…» would be taken for it).
+exists() { awk -F'|' -v address="$1" '$1 == address { found = 1 } END { exit !found }' "$accounts"; }
+without() { awk -F'|' -v address="$1" '$1 != address' "$accounts"; } # the file without that line
 
 # write_hash ADDRESS SCHEME_AND_HASH — replaces or adds the line of the address.
 write_hash() {
   local tmp
   tmp=$(mktemp "$accounts.XXXXXX")
-  grep -v "^$1|" "$accounts" >"$tmp" || true
+  without "$1" >"$tmp"
   printf '%s|%s\n' "$1" "$2" >>"$tmp"
   chmod 0600 "$tmp"
   mv -f "$tmp" "$accounts"
@@ -58,7 +61,7 @@ write_hash() {
 remove_line() {
   local tmp
   tmp=$(mktemp "$accounts.XXXXXX")
-  grep -v "^$1|" "$accounts" >"$tmp" || true
+  without "$1" >"$tmp"
   chmod 0600 "$tmp"
   mv -f "$tmp" "$accounts"
 }
@@ -114,14 +117,20 @@ hash_password() { printf '{SHA512-CRYPT}%s' "$(printf '%s' "$password" | openssl
 readonly hash_pattern='^\{SHA512-CRYPT\}\$6\$(rounds=[0-9]{4,9}\$)?[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}$'
 
 apply_one() { # FILE — never trusts it: the web service faces the internet
-  local file=$1 name action='' target='' hash=''
+  local file=$1 name taken action='' target='' hash=''
   name=$(basename "$file" .req)
-  if [[ -L $file || ! -f $file || ! $name =~ ^[0-9]{19}-[0-9a-f]{8}$ ]]; then
-    rm -f -- "$file"
+  # First out of the service's directory, by a rename (which never follows a link) into root's: the
+  # file checked is the file read, and the service cannot swap it for a link to /etc/shadow between
+  # the two.
+  taken=$(mktemp -u "$status/.request.XXXXXXXX")
+  mv -f -T -- "$file" "$taken" 2>/dev/null || return 0
+  if [[ -L $taken || ! -f $taken || $(stat -c %U -- "$taken") != "$site_user" || ! $name =~ ^[0-9]{19}-[0-9a-f]{8}$ ]]; then
+    rm -rf -- "$taken"
     return
   fi
-  { IFS= read -r action; IFS= read -r target; IFS= read -r hash; } < <(head -c 1024 -- "$file") || true
-  rm -f -- "$file"
+  { IFS= read -r action; IFS= read -r target; IFS= read -r hash; } < <(head -c 1024 -- "$taken") || true
+  rm -f -- "$taken"
+  [[ $action =~ ^(add|passwd|del)$ ]] || action=-
   target=${target,,}
   if ! is_address "$target"; then
     note "$name" "$action" "-" error "не адрес домена $domain"
