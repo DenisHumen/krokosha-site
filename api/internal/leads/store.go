@@ -81,6 +81,7 @@ type Store struct {
 	db    *sql.DB
 	now   func() time.Time
 	files *Files // where attachments live; nil — this installation keeps none
+	media *Files // where the files of templates live (quick answers); nil — templates carry none
 	// rules of discounts (content/site.yaml → loyalty); location is the owner's time zone, the one
 	// the last day of a personal discount is counted in.
 	rules    func() config.Loyalty
@@ -104,6 +105,12 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 
 // UseFiles tells the store where attachments are kept, so that deleting a request deletes them too.
 func (s *Store) UseFiles(files *Files) { s.files = files }
+
+// UseMedia tells the store where the files of templates are kept.
+func (s *Store) UseMedia(files *Files) { s.media = files }
+
+// Files is the directory of attachments, where the files of answers are kept too; nil — none.
+func (s *Store) Files() *Files { return s.files }
 
 // UseLoyalty gives the store the rules of discounts; without them no request gets one.
 func (s *Store) UseLoyalty(rules func() config.Loyalty, location *time.Location) {

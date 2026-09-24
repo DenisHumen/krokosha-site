@@ -253,3 +253,11 @@ func shortDuration(d time.Duration) string {
 
 // spanOf is lasting for a duration: «23 дн» of an uptime.
 func spanOf(d time.Duration) string { return lasting(time.Now().Add(-d)) }
+
+// siteURL is the public address of the site, for the links of templates; "" — not known.
+func (h *Handler) siteURL() string {
+	if h.opts.SiteHost == "" {
+		return ""
+	}
+	return "https://" + h.opts.SiteHost
+}

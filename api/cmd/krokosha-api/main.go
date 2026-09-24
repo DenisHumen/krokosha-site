@@ -138,7 +138,11 @@ func run() error {
 	leadStore.UseLoyalty(form.Loyalty, location)
 	// Files that come with requests live in the data root, outside anything nginx serves.
 	attachments := leads.NewFiles(filepath.Join(env.DataDir, "attachments"))
+	// The files of templates (quick answers) live next to them: the same sandbox, the same backup,
+	// and an answer gets its copy as a hard link.
+	templateMedia := leads.NewFiles(filepath.Join(env.DataDir, "attachments", "templates"))
 	leadStore.UseFiles(attachments)
+	leadStore.UseMedia(templateMedia)
 	deliveries := outbox.NewWorker(pool, log)
 	// «Continue in Telegram» on the «thank you» page and in the confirmation letter: the link of
 	// the request's own token (brief B10.5). There is one only while the bot is connected.
@@ -375,7 +379,7 @@ func run() error {
 	go func() {
 		defer workers.Done()
 		leads.Retention{
-			Store: leadStore, Files: attachments, Log: log,
+			Store: leadStore, Files: attachments, Media: templateMedia, Log: log,
 			KeepMonths: env.Retention.KeepMonths, Delete: env.Retention.Delete, SpamDays: env.Retention.SpamDays,
 		}.Run(ctx)
 	}()

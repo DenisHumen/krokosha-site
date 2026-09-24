@@ -128,17 +128,67 @@
         </ol>
 
         {{if $d.CanReply}}
-          <div class="composer">
-            {{if $d.Replies}}
-              <nav class="chips" aria-label="Шаблоны ответа на языке клиента ({{language $lead.Lang}})">
-                {{range $d.Replies}}<a class="chip" href="{{path "/leads/" $id}}?template={{.ID}}#reply"{{if eq .ID $d.Template}} aria-current="true"{{end}}>{{.Title}}</a>{{end}}
-                <a class="chip" href="{{path "/templates"}}">Все шаблоны →</a>
-              </nav>
+          <div class="composer" data-composer>
+            {{/* Quick answers: the three that fit this conversation best, and why; then all of them.
+                 A chip is a link that puts its text into the form without any script; with one, the
+                 texts add up, and the files of a template come along. */}}
+            {{if $d.Top}}
+              <div class="suggest">
+                <span class="label-s">Подходят по контексту</span>
+                <ul class="suggest-list">
+                  {{range $d.Top}}
+                    <li><a class="suggest-item" href="{{path "/leads/" $id}}?template={{.Template.ID}}#reply" data-template="{{.Template.ID}}"{{if eq .Template.ID $d.Template}} aria-current="true"{{end}}>
+                      <span class="suggest-title">{{.Template.Title}}{{if .Template.Media}} <span class="suggest-files">{{mediaCount .Template.Media}}</span>{{end}}</span>
+                      <span class="suggest-why">{{reasons .Reasons}}</span>
+                    </a></li>
+                  {{end}}
+                </ul>
+              </div>
             {{end}}
-            <form class="form" method="post" action="{{path "/leads/" $id "/reply"}}">
+            {{if $d.Groups}}
+              <details class="more all-templates" data-templates>
+                <summary>Все шаблоны · {{len $d.Suggestions}}</summary>
+                <div class="all-templates-body">
+                  <label class="visually-hidden" for="template-filter">Найти шаблон</label>
+                  <input class="input input-s" id="template-filter" type="search" placeholder="Найти шаблон: слово из названия или текста" autocomplete="off" data-template-filter hidden />
+                  {{range $d.Groups}}
+                    <div class="chips-group" data-group>
+                      <span class="label-s">{{.Name}}</span>
+                      <nav class="chips" aria-label="{{.Name}}">
+                        {{range .Items}}<a class="chip{{if sent .Reasons}} chip-sent{{end}}" href="{{path "/leads/" $id}}?template={{.Template.ID}}#reply" data-template="{{.Template.ID}}"{{if eq .Template.ID $d.Template}} aria-current="true"{{end}}{{if sent .Reasons}} title="Уже отправлен в этой заявке"{{end}}>{{.Template.Title}}{{if .Template.Media}} <span class="count">{{mediaCount .Template.Media}}</span>{{end}}{{if sent .Reasons}}<span class="visually-hidden"> — уже отправлен</span>{{end}}</a>{{end}}
+                      </nav>
+                    </div>
+                  {{end}}
+                  <a class="chip chip-ghost" href="{{path "/templates"}}?lang={{$lead.Lang}}">Редактор шаблонов →</a>
+                </div>
+              </details>
+            {{end}}
+            <script type="application/json" id="templates-data">{{$d.Filled}}</script>
+            <form class="form" method="post" action="{{path "/upload/leads/" $id "/reply"}}" enctype="multipart/form-data" data-reply>
               <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <span data-chosen>{{range $d.Chosen}}<input type="hidden" name="template" value="{{.}}" />{{end}}</span>
               <label class="visually-hidden" for="reply-text">{{if $d.ByPhone}}Итог звонка{{else}}Текст ответа{{end}}</label>
-              <textarea class="input" id="reply-text" name="text" rows="6" required placeholder="{{if $d.ByPhone}}Позвонил — итог разговора{{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram{{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете{{else}}Ответ уйдёт письмом{{end}}">{{$d.Draft}}</textarea>
+              <textarea class="input" id="reply-text" name="text" rows="6" placeholder="{{if $d.ByPhone}}Позвонил — итог разговора{{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram{{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете{{else}}Ответ уйдёт письмом{{end}}">{{$d.Draft}}</textarea>
+              {{if $d.Files}}
+                <div class="attach">
+                  <ul class="attach-list" data-attach-list aria-label="Файлы ответа">
+                    {{range $d.Attached}}
+                      <li class="attach-item">
+                        <label class="attach-check">
+                          <input type="checkbox" name="media" value="{{.ID}}" checked />
+                          {{if isPhoto .Kind}}<img class="attach-thumb" src="{{path "/templates/media/" (print .ID)}}" alt="" loading="lazy" />{{else}}<span class="attach-icon" aria-hidden="true">{{if isVideo .Kind}}▶{{else}}≡{{end}}</span>{{end}}
+                          <span class="attach-name">{{.Filename}}</span>
+                          <span class="attach-size">{{bytes .Size}}</span>
+                        </label>
+                      </li>
+                    {{end}}
+                  </ul>
+                  <label class="attach-add">
+                    <span class="label-s">Свои файлы</span>
+                    <input class="file-input" type="file" name="files" multiple accept="image/jpeg,image/png,video/mp4,application/pdf,.docx,text/plain" data-upload="0" />
+                  </label>
+                </div>
+              {{end}}
               <div class="actions-between actions">
                 <span class="label-s">Канал: {{if $d.ByPhone}}звонок{{else if eq $d.Card.ReplyVia "telegram"}}Telegram{{else if eq $d.Card.ReplyVia "site"}}личный кабинет{{else}}почта{{end}}</span>
                 <button class="btn btn-accent btn-m" type="submit">{{if $d.ByPhone}}Записать{{else}}Отправить →{{end}}</button>
@@ -148,6 +198,7 @@
                 {{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете клиента, а клиенту придёт уведомление на почту или в Telegram аккаунта.
                 {{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram через бота{{if ne $lead.ContactMethod "telegram"}}: последнее сообщение клиент написал там{{end}}. Если клиент бота ещё не открывал, ответ подождёт, пока он перейдёт по ссылке «Продолжить в Telegram».
                 {{else}}Ответ уйдёт письмом на {{$lead.ContactValue}}, заявка перейдёт в «Ждём клиента».{{end}}
+                {{if $d.Files}}{{if $d.ByMail}}Файлы уйдут вложениями письма — вместе до 20 МБ; что не поместится, клиент увидит в личном кабинете.{{else}}Фото и видео уйдут альбомом, документы — файлами: фото до 10 МБ, видео до 50 МБ, до 10 файлов в ответе.{{end}}{{end}}
               </p>
             </form>
           </div>

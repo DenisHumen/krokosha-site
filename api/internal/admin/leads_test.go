@@ -5,9 +5,15 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,7 +154,7 @@ func TestWorkingOnARequest(t *testing.T) {
 	}
 
 	// A ready-made answer is put into the form without any script, then sent.
-	picked := regexp.MustCompile(`href="` + prefix + `/leads/\d+\?template=(\d+)#reply">Нужны детали</a>`).FindStringSubmatch(card.body)
+	picked := regexp.MustCompile(`href="` + prefix + `/leads/\d+\?template=(\d+)#reply"[^>]*>(?:\s*<span class="suggest-title">)?Нужны детали`).FindStringSubmatch(card.body)
 	if picked == nil {
 		t.Fatal("no template to pick")
 	}
@@ -287,27 +293,182 @@ func TestTemplatesEditor(t *testing.T) {
 	s.signIn()
 
 	page := s.do(http.MethodGet, prefix+"/templates", nil, nil)
-	for _, want := range []string{"Ответы", "Отказы", "Русский", "Українська", "English", "Нужны детали", "Not my field", "{name}"} {
+	for _, want := range []string{"Ответы", "Отказы", "Русский", "Українська", "English", "Нужны детали", "Приветствие", "Стоимость", "{name}", "{account}", "первый ответ"} {
 		if !strings.Contains(page.body, want) {
 			t.Errorf("the editor lacks %q", want)
 		}
 	}
-	if got := s.post("/templates", url.Values{"kind": {"reply"}, "lang": {"ru"}, "title": {"Счёт выставлен"}, "body": {"Здравствуйте, {name}! Счёт по заявке {id} во вложении."}}); got.status != http.StatusSeeOther {
-		t.Fatalf("new template: %d", got.status)
+	if strings.Contains(page.body, "Pricing") {
+		t.Error("the list of Russian answers shows English ones")
 	}
-	page = s.do(http.MethodGet, prefix+"/templates", nil, nil)
-	id := regexp.MustCompile(`name="id" value="(\d+)" />\s*<input type="hidden" name="kind" value="reply" />\s*<input type="hidden" name="lang" value="ru" />\s*<label[^>]*>Название</label>\s*<input[^>]*value="Счёт выставлен"`).FindStringSubmatch(page.body)
-	if id == nil {
-		t.Fatal("the new template is not in the editor")
+	if page = s.do(http.MethodGet, prefix+"/templates?kind=reject&lang=en", nil, nil); !strings.Contains(page.body, "Not my field") {
+		t.Error("the English refusals are not there")
+	}
+	if page = s.do(http.MethodGet, prefix+"/templates?q=NDA", nil, nil); !strings.Contains(page.body, "Конфиденциальность") || strings.Contains(page.body, "Приветствие") {
+		t.Error("the search of templates")
+	}
+
+	got := s.post("/templates", url.Values{
+		"kind": {"reply"}, "lang": {"ru"}, "title": {"Счёт выставлен"}, "body": {"Здравствуйте, {name}! Счёт по заявке {id} во вложении."},
+		"category": {"payment"}, "moment": {"talk"}, "keywords": {"счёт, Оплата\nреквизиты"}, "direction": {"networks", "devops"},
+	})
+	id := regexp.MustCompile(`/templates/(\d+)\?ok=template-saved$`).FindStringSubmatch(got.location)
+	if got.status != http.StatusSeeOther || id == nil {
+		t.Fatalf("new template: %d → %q", got.status, got.location)
+	}
+	page = s.do(http.MethodGet, prefix+"/templates/"+id[1], nil, nil)
+	for _, want := range []string{`value="Счёт выставлен"`, "счет, оплата, реквизиты", `<option value="payment" selected>`, `<option value="talk" selected>`,
+		`name="direction" value="networks" checked`, `name="direction" value="devops" checked`, `action="` + prefix + `/upload/templates/` + id[1] + `/media"`} {
+		if !strings.Contains(page.body, want) {
+			t.Errorf("the template's page lacks %q", want)
+		}
 	}
 	if got := s.post("/templates", url.Values{"id": {id[1]}, "kind": {"reply"}, "lang": {"ru"}, "title": {""}, "body": {"x"}}); got.status != http.StatusBadRequest {
 		t.Errorf("a template without a title: %d", got.status)
+	}
+	if got := s.post("/templates", url.Values{"id": {id[1]}, "kind": {"reply"}, "lang": {"ru"}, "title": {"a"}, "body": {"b"}, "moment": {"someday"}}); got.status != http.StatusBadRequest {
+		t.Errorf("a template of an unknown moment: %d", got.status)
 	}
 	if got := s.post("/templates", url.Values{"id": {id[1]}, "delete": {"1"}}); got.status != http.StatusSeeOther {
 		t.Fatalf("delete: %d", got.status)
 	}
 	if page = s.do(http.MethodGet, prefix+"/templates", nil, nil); strings.Contains(page.body, "Счёт выставлен") {
 		t.Error("the deleted template is still there")
+	}
+	if got := s.do(http.MethodGet, prefix+"/templates/"+id[1], nil, nil); got.status != http.StatusNotFound {
+		t.Errorf("the page of a deleted template: %d", got.status)
+	}
+}
+
+// upload sends a form with files, the way a browser does.
+func (s *site) upload(path string, fields url.Values, files map[string][]byte) reply {
+	s.t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("csrf", s.csrf())
+	for key, values := range fields {
+		for _, value := range values {
+			_ = writer.WriteField(key, value)
+		}
+	}
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		part, _ := writer.CreateFormFile("files", name)
+		_, _ = part.Write(files[name])
+	}
+	_ = writer.Close()
+	request := httptest.NewRequest(http.MethodPost, prefix+path, &body)
+	request.Host = "krokosha.xyz"
+	request.RemoteAddr = "127.0.0.1:40000"
+	request.Header.Set("X-Real-IP", "203.0.113.7")
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Origin", "https://krokosha.xyz")
+	request.AddCookie(&http.Cookie{Name: cookieName, Value: s.cookie})
+	recorder := httptest.NewRecorder()
+	s.handler.ServeHTTP(recorder, request)
+	result := recorder.Result()
+	defer result.Body.Close()
+	raw, _ := io.ReadAll(result.Body)
+	return reply{status: result.StatusCode, header: result.Header, body: string(raw), location: result.Header.Get("Location")}
+}
+
+var (
+	jpegBytes = append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, 'J', 'F', 'I', 'F', 0}, bytes.Repeat([]byte{7}, 300)...)
+	mp4Bytes  = append([]byte{0, 0, 0, 0x20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 2, 0}, bytes.Repeat([]byte{1}, 300)...)
+	pdfBytes  = []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")
+)
+
+// A template carries photos and videos; the card suggests what fits and sends them with the text.
+func TestQuickAnswersWithFiles(t *testing.T) {
+	s := newSite(t)
+	files := leads.NewFiles(filepath.Join(t.TempDir(), "attachments"))
+	s.leads.UseFiles(files)
+	s.leads.UseMedia(leads.NewFiles(filepath.Join(t.TempDir(), "templates")))
+	lead := s.addLead(func(sub *leads.Submission) {
+		sub.Description = "Здравствуйте! Сколько будет стоить перестроить сеть офиса и когда сможете начать?"
+	})
+	s.signIn()
+
+	// The pool: the price, the time and a greeting come first for this client, and say why.
+	path := fmt.Sprintf("/leads/%d", lead.ID)
+	card := s.do(http.MethodGet, prefix+path, nil, nil)
+	top := regexp.MustCompile(`(?s)<ul class="suggest-list">(.*?)</ul>`).FindStringSubmatch(card.body)
+	if top == nil {
+		t.Fatal("no suggestions on the card")
+	}
+	for _, want := range []string{"Стоимость", "Сроки", "«сколько будет»", "«когда»", "первый ответ"} {
+		if !strings.Contains(top[1], want) {
+			t.Errorf("the first three lack %q: %s", want, top[1])
+		}
+	}
+	if !strings.Contains(card.body, `id="templates-data"`) || !strings.Contains(card.body, `enctype="multipart/form-data"`) {
+		t.Error("the composer has no data for its script or cannot send files")
+	}
+
+	// A template with a photo and a video.
+	var portfolio int64
+	all, _ := s.leads.Templates(context.Background(), "reply")
+	for _, item := range all {
+		if item.Lang == "ru" && item.Category == "portfolio" {
+			portfolio = item.ID
+		}
+	}
+	templatePath := fmt.Sprintf("/templates/%d", portfolio)
+	got := s.upload("/upload"+templatePath+"/media", nil, map[string][]byte{"стойка.jpg": jpegBytes, "обзор.mp4": mp4Bytes})
+	if got.status != http.StatusSeeOther || !strings.Contains(got.location, "ok=media-added") {
+		t.Fatalf("files for a template: %d %s", got.status, got.location)
+	}
+	if got = s.upload("/upload"+templatePath+"/media", nil, map[string][]byte{"setup.exe.jpg": []byte("MZ\x90\x00 not a photo at all")}); got.status != http.StatusBadRequest ||
+		!strings.Contains(got.body, "«setup.exe.jpg»: не фото") {
+		t.Errorf("a program for a template: %d", got.status)
+	}
+	template, err := s.leads.Template(context.Background(), portfolio)
+	if err != nil || len(template.Media) != 2 {
+		t.Fatalf("the files of the template: %+v %v", template, err)
+	}
+	photo := template.Media[1] // the form sends them in the order of their names: «обзор», then «стойка»
+	if photo.Kind != leads.KindJPG {
+		photo = template.Media[0]
+	}
+	preview := s.do(http.MethodGet, fmt.Sprintf("%s/templates/media/%d", prefix, photo.ID), nil, nil)
+	if preview.status != http.StatusOK || preview.header.Get("Content-Type") != "image/jpeg" || !strings.HasPrefix(preview.header.Get("Content-Disposition"), "inline") ||
+		preview.header.Get("X-Content-Type-Options") != "nosniff" || preview.body != string(jpegBytes) {
+		t.Errorf("the preview of a photo: %d %v", preview.status, preview.header)
+	}
+	if page := s.do(http.MethodGet, prefix+templatePath, nil, nil); !strings.Contains(page.body, fmt.Sprintf(`src="%s/templates/media/%d"`, prefix, photo.ID)) || !strings.Contains(page.body, "<video") {
+		t.Error("the template's page does not show its files")
+	}
+
+	// Chosen on the card without a script: its text in the form, its files checked.
+	draft := s.do(http.MethodGet, fmt.Sprintf("%s%s?template=%d", prefix, path, portfolio), nil, nil)
+	if !strings.Contains(draft.body, fmt.Sprintf(`name="template" value="%d"`, portfolio)) || !strings.Contains(draft.body, fmt.Sprintf(`name="media" value="%d" checked`, photo.ID)) ||
+		!strings.Contains(draft.body, "https://krokosha.xyz/ru/#projects") {
+		t.Error("the chosen template is not in the form with its files and links")
+	}
+
+	// Sent with the template's photo (the video unchecked) and a document of one's own.
+	got = s.upload("/upload"+path+"/reply", url.Values{
+		"text": {"Вот примеры."}, "template": {strconv.FormatInt(portfolio, 10)}, "media": {strconv.FormatInt(photo.ID, 10)},
+	}, map[string][]byte{"смета.pdf": pdfBytes})
+	if got.status != http.StatusSeeOther || !strings.Contains(got.location, "ok=lead-reply") {
+		t.Fatalf("an answer with files: %d %s", got.status, got.body)
+	}
+	card = s.do(http.MethodGet, prefix+path, nil, nil)
+	for _, want := range []string{"Вот примеры.", "стойка.jpg", "смета.pdf", "уже отправлен"} {
+		if !strings.Contains(card.body, want) {
+			t.Errorf("after the answer the card lacks %q", want)
+		}
+	}
+	if strings.Contains(card.body, "обзор.mp4</a>") {
+		t.Error("the unchecked video went too")
+	}
+	if got = s.upload("/upload"+path+"/reply", url.Values{"text": {"x"}}, map[string][]byte{"a.exe": []byte("MZ")}); got.status != http.StatusBadRequest ||
+		!strings.Contains(got.body, "Ответ не отправлен") || !strings.Contains(got.body, ">x</textarea>") {
+		t.Errorf("an answer with a program: %d", got.status)
 	}
 }
 
