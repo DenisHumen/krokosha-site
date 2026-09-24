@@ -78,7 +78,11 @@ func TestWorkingWithAClient(t *testing.T) {
 	if client.Personal.Percent != 25 || !client.Personal.Once || client.Personal.Note != "партнёрская" {
 		t.Errorf("personal discount: %+v", client.Personal)
 	}
-	lead := s.addLead(func(sub *leads.Submission) { sub.ContactValue = "petr@company.com" })
+	// Sent signed in: a personal discount goes to the client's own requests, not to whoever types
+	// the address (leads.Store.price).
+	lead := s.addLead(func(sub *leads.Submission) {
+		sub.ContactValue, sub.ClientID, sub.Trusted = "petr@company.com", id, true
+	})
 	if lead.Discount.Percent != 25 || lead.Discount.Reason != "personal" {
 		t.Errorf("the next request: %+v", lead.Discount)
 	}

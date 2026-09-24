@@ -319,3 +319,24 @@ func TestOverviewOfAPeriodOlderThanTheRawData(t *testing.T) {
 		t.Error("a recent week is shown as sums")
 	}
 }
+
+func TestSpreadsheetSafe(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                            "",
+		"mikrotik":                    "mikrotik",
+		"price - 100, as agreed":      "price - 100, as agreed",
+		"=SUM(A1)":                    "'=SUM(A1)",
+		"-5":                          "'-5",
+		"@cmd":                        "'@cmd",
+		`x;=HYPERLINK("http://evil")`: `x;'=HYPERLINK("http://evil")`,
+		"Ivan; -cmd|' /C calc'!A1":    "Ivan; '-cmd|' /C calc'!A1",
+		`a;"=1+1"`:                    `a;"'=1+1"`,
+		"first line\n=cmd\n- a point": "first line\n'=cmd\n'- a point",
+		"a\t+1":                       "a\t'+1",
+		"a;\r=1":                      "a;'\r'=1",
+	} {
+		if got := spreadsheetSafe(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+}
