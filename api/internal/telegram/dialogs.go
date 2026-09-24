@@ -314,27 +314,32 @@ func (b *Bot) sendHistory(ctx context.Context, chatID int64, card *leads.Card) {
 
 // --- answering ------------------------------------------------------------------------------------
 
-// channelName says how the next answer reaches the client (leads.Card.ReplyVia): the way the
-// client wrote last, and the contact of the form before they wrote anything.
-func (b *Bot) channelName(ctx context.Context, card *leads.Card) string {
-	switch card.ReplyVia {
-	case leads.MethodEmail:
-		return "письмом на " + card.Lead.ContactValue
-	case leads.MethodTelegram:
-		if leadID, _ := b.clientLeadExists(ctx, card.Lead.ID); leadID {
-			return "клиенту в Telegram, через бота"
+// channelName says where the next answer goes (leads.Card.Reach): everywhere the client can be
+// reached — the addresses of the form and of the client's letters, the bot, the personal account.
+func (b *Bot) channelName(_ context.Context, card *leads.Card) string {
+	var addresses []string
+	telegram := ""
+	for _, target := range card.Reach.Targets {
+		switch {
+		case target.Channel == leads.ChannelEmail:
+			addresses = append(addresses, target.To)
+		case target.To != "":
+			telegram = "в Telegram через бота"
+		case telegram == "":
+			telegram = "в Telegram, когда клиент откроет бота по ссылке «Продолжить в Telegram»"
 		}
-		return "через бота, когда клиент откроет его по ссылке «Продолжить в Telegram»"
-	default:
-		return ""
 	}
-}
-
-// clientLeadExists reports whether the client of a request has opened the bot.
-func (b *Bot) clientLeadExists(ctx context.Context, leadID int64) (bool, error) {
-	var found int
-	err := b.opts.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_clients WHERE lead_id = ?`, leadID).Scan(&found)
-	return found > 0, err
+	var ways []string
+	if len(addresses) > 0 {
+		ways = append(ways, "письмом на "+strings.Join(addresses, ", "))
+	}
+	if telegram != "" {
+		ways = append(ways, telegram)
+	}
+	if card.Reach.Account {
+		ways = append(ways, "в личный кабинет")
+	}
+	return strings.Join(ways, "; ")
 }
 
 func (b *Bot) offerReply(ctx context.Context, member *Member, chatID int64, card *leads.Card) {

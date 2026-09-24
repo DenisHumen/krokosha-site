@@ -64,7 +64,7 @@ type navItem struct {
 func (h *Handler) nav(v view) []navItem {
 	items := []navItem{
 		{Key: "overview", Label: "Обзор", Path: "/"},
-		{Key: "leads", Label: "Заявки", Path: "/leads", Dot: v.NewLeads > 0},
+		{Key: "leads", Label: "Заявки", Path: "/leads", Dot: v.NewLeads > 0 || v.Unread > 0},
 	}
 	if v.HasClients {
 		items = append(items, navItem{Key: "clients", Label: "Клиенты", Path: "/clients"})
@@ -129,10 +129,14 @@ func (h *Handler) ticker(ctx context.Context, v view) [][]tick {
 	site := []tick{
 		{Key: "Сейчас", Value: fmt.Sprintf("%d онлайн", h.opts.Active(ctx, activeWindow)), Path: "/"},
 		{Key: "Визиты 7д", Value: formatCount(int64(cached.visits)), Path: "/visits"},
-		{Key: "Заявки", Value: "нет новых", Path: "/leads?status=new"},
+		{Key: "Заявки", Value: "нет новых", Path: "/leads?tab=unanswered"},
 	}
 	if v.NewLeads > 0 {
 		site[2].Value = plural(v.NewLeads, "новая", "новые", "новых")
+	}
+	// What clients wrote and nobody has read — through any channel: on every page, until read.
+	if v.Unread > 0 {
+		site = append(site, tick{Key: "Сообщения", Value: plural(v.Unread, "новое", "новых", "новых"), Path: "/leads", Warn: true})
 	}
 	if v.HasInbox {
 		letters := "пусто"

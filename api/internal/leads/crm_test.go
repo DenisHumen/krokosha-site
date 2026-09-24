@@ -484,8 +484,12 @@ func TestTheClientWritesAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The client continues in Telegram: the request is ours again, and everybody is told.
+	// The client continues in Telegram, by the request's link into the bot: the request is ours
+	// again, and everybody is told.
 	f.now = f.now.Add(time.Hour)
+	if _, err := f.db.Exec(`INSERT INTO bot_clients (lead_id, telegram_id, linked_at) VALUES (?, 777, ?)`, lead, f.now); err != nil {
+		t.Fatal(err)
+	}
 	messageID, err := store.ClientMessage(ctx, lead, ChannelTelegram, "  Два, оба старые.\x00  ")
 	if err != nil {
 		t.Fatal(err)
@@ -494,8 +498,8 @@ func TestTheClientWritesAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if card.Lead.Status != StatusInProgress || card.ReplyVia != ChannelTelegram {
-		t.Errorf("after the client's message: %s, answers go by %s", card.Lead.Status, card.ReplyVia)
+	if card.Lead.Status != StatusInProgress || strings.Join(card.Reach.Channels(), " ") != "email telegram" {
+		t.Errorf("after the client's message: %s, answers go by %v", card.Lead.Status, card.Reach.Channels())
 	}
 	if body, channel, err := store.IncomingMessage(ctx, lead, messageID); err != nil || body != "Два, оба старые." || channel != ChannelTelegram {
 		t.Errorf("the stored message: %q %q %v", body, channel, err)
@@ -510,12 +514,15 @@ func TestTheClientWritesAgain(t *testing.T) {
 		t.Errorf("listeners were not told: %v", changed)
 	}
 
-	// The next answer follows the client into Telegram.
+	// The next answer reaches the client in Telegram — and by mail still.
 	if _, err := store.Reply(ctx, lead, "denis", "Тогда меняем оба."); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM outbox WHERE lead_id = %d AND kind = 'lead.reply' AND channel = 'telegram'`, lead)); n != 1 {
 		t.Errorf("answers queued for Telegram: %d", n)
+	}
+	if n := f.count(fmt.Sprintf(`SELECT COUNT(*) FROM outbox WHERE lead_id = %d AND kind = 'lead.reply' AND channel = 'email'`, lead)); n != 2 {
+		t.Errorf("answers queued by mail: %d, want both", n)
 	}
 	all, _, _ := store.List(ctx, Filter{})
 	if len(all) != 1 || all[0].LastFromUser {
@@ -595,44 +602,148 @@ func TestOpenMineAndUnclaimed(t *testing.T) {
 // TestAnswersFollowTheClientIntoTelegram: a client who left an address and then opened the bot by
 // the link of the «thank you» page was told the answer would come to that chat — so it goes there,
 // until the client writes a letter again.
-func TestAnswersFollowTheClientIntoTelegram(t *testing.T) {
+// An answer reaches the client everywhere the client can be reached: the address of the form, the
+// addresses they wrote from, the Telegram that opened the request's link, and every way into their
+// personal account — each a delivery of its own, with a status of its own.
+func TestAnswersReachTheClientEverywhere(t *testing.T) {
 	f := newFixture(t)
 	store := NewStore(f.db, func() time.Time { return f.now })
-	id := f.seed(nil)
+	id := f.seed(nil) // the form: Ivan.Petrov@company.com
 	ctx := context.Background()
-	queued := func(messageID int64) string {
+	deliveries := func(messageID int64) string {
 		t.Helper()
-		var channel string
-		if err := f.db.QueryRow(`SELECT channel FROM outbox WHERE kind = 'lead.reply' AND JSON_EXTRACT(payload, '$.message_id') = ?`, messageID).Scan(&channel); err != nil {
-			t.Fatal(err)
-		}
-		return channel
-	}
-	answer := func(text string) string {
-		t.Helper()
-		f.now = f.now.Add(time.Minute)
-		messageID, err := store.Reply(ctx, id, "denis", text)
+		rows, err := f.db.Query(`SELECT d.channel, d.target, o.channel FROM lead_deliveries d
+			JOIN outbox o ON o.kind = 'lead.reply' AND JSON_EXTRACT(o.payload, '$.delivery_id') = d.id
+			WHERE d.message_id = ? ORDER BY d.id`, messageID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return queued(messageID)
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var channel, target, queue string
+			if err := rows.Scan(&channel, &target, &queue); err != nil {
+				t.Fatal(err)
+			}
+			if channel != queue {
+				t.Errorf("a delivery by %s queued for %s", channel, queue)
+			}
+			out = append(out, channel+":"+target)
+		}
+		return strings.Join(out, " ")
+	}
+	answer := func(lead int64, channels ...string) int64 {
+		t.Helper()
+		f.now = f.now.Add(time.Minute)
+		messageID, err := store.ReplyWith(ctx, lead, "denis", Answer{Text: "Ответ " + f.now.Format("15:04"), Channels: channels})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return messageID
 	}
 
-	if channel := answer("Добрый день! Уточните, пожалуйста, сроки."); channel != ChannelEmail {
-		t.Errorf("before the client opened the bot: %s", channel)
+	if got := deliveries(answer(id)); got != "email:Ivan.Petrov@company.com" {
+		t.Errorf("a request of the form: %s", got)
 	}
-	f.now = f.now.Add(time.Minute)
-	if err := store.ClientLinked(ctx, id); err != nil {
+	// The client opens the bot by the request's link: Telegram too, not instead.
+	if _, err := f.db.Exec(`INSERT INTO bot_clients (lead_id, telegram_id, linked_at) VALUES (?, 777, ?)`, id, f.now); err != nil {
 		t.Fatal(err)
 	}
-	if channel := answer("Вижу, вы в Telegram: продолжим здесь."); channel != ChannelTelegram {
-		t.Errorf("after the client opened the bot: %s", channel)
+	if got := deliveries(answer(id)); got != "email:Ivan.Petrov@company.com telegram:777" {
+		t.Errorf("after the bot: %s", got)
 	}
-	f.now = f.now.Add(time.Minute)
-	if _, err := store.ClientMessage(ctx, id, ChannelEmail, "Лучше пишите на почту."); err != nil {
+	// A letter of the client from another mailbox: the answer goes back there as well.
+	if _, err := store.ClientWrote(ctx, id, Incoming{Channel: ChannelEmail, Text: "Пишу с рабочей почты", FromAddress: "Ivan.P@Work.example"}); err != nil {
 		t.Fatal(err)
 	}
-	if channel := answer("Хорошо, пишу на почту."); channel != ChannelEmail {
-		t.Errorf("after a letter of the client: %s", channel)
+	if got := deliveries(answer(id)); got != "email:Ivan.Petrov@company.com email:Ivan.P@work.example telegram:777" {
+		t.Errorf("after a letter from another address: %s", got)
+	}
+	// The staff may leave a channel out.
+	if got := deliveries(answer(id, ChannelTelegram)); got != "telegram:777" {
+		t.Errorf("Telegram alone: %s", got)
+	}
+
+	// A personal account: its address and Telegram come first, the same chat and address once.
+	result, err := f.db.Exec(`INSERT INTO clients (created_at, updated_at, name, lang, email, telegram_id) VALUES (?, ?, 'Иван', 'ru', 'IVAN@company.com', 555)`, f.now, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := result.LastInsertId()
+	if _, err := f.db.Exec(`UPDATE leads SET client_id = ? WHERE id = ?`, client, id); err != nil {
+		t.Fatal(err)
+	}
+	reach, err := store.Reach(ctx, id)
+	if err != nil || !reach.Account || strings.Join(reach.Channels(), " ") != "email telegram" {
+		t.Errorf("the reach of a request in an account: %+v %v", reach, err)
+	}
+	if got := deliveries(answer(id)); got != "email:IVAN@company.com telegram:555 email:Ivan.Petrov@company.com email:Ivan.P@work.example telegram:777" {
+		t.Errorf("with an account: %s", got)
+	}
+
+	// Every delivery has its own status; the answer sums them up. By mail alone: three addresses.
+	messageID := answer(id, ChannelEmail)
+	var targets []int64
+	rows, err := f.db.Query(`SELECT id FROM lead_deliveries WHERE message_id = ? ORDER BY id`, messageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var target int64
+		if err := rows.Scan(&target); err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, target)
+	}
+	if err := rows.Close(); err != nil || len(targets) != 3 {
+		t.Fatalf("deliveries by mail: %v %v", targets, err)
+	}
+	summary := func() string {
+		t.Helper()
+		var delivery string
+		if err := f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, messageID).Scan(&delivery); err != nil {
+			t.Fatal(err)
+		}
+		return delivery
+	}
+	if err := store.MarkTarget(ctx, targets[0], "failed", ""); err != nil || summary() != "queued" {
+		t.Errorf("one failed, the others still queued: %s %v", summary(), err)
+	}
+	if err := store.MarkTarget(ctx, targets[1], "failed", ""); err != nil || summary() != "queued" {
+		t.Errorf("two failed, one still queued: %s %v", summary(), err)
+	}
+	if err := store.MarkTarget(ctx, targets[2], "sent", "reply-1@krokosha.com"); err != nil || summary() != "sent" {
+		t.Errorf("two failed, one sent: %s %v", summary(), err)
+	}
+	if ids, err := store.ThreadIDs(ctx, id); err != nil || !strings.Contains(strings.Join(ids, " "), "reply-1@krokosha.com") {
+		t.Errorf("the Message-ID of the sent letter keeps the thread: %v %v", ids, err)
+	}
+	byMessage, err := store.Deliveries(ctx, id)
+	if err != nil || len(byMessage[messageID]) != 3 || byMessage[messageID][0].Status != "failed" || byMessage[messageID][2].Status != "sent" {
+		t.Errorf("deliveries of the answer: %+v %v", byMessage[messageID], err)
+	}
+
+	// A Telegram name in the form, the bot not opened yet: the answer waits for the link there.
+	named := f.seed(func(v map[string]string) { v["contact_method"], v["contact_value"] = "telegram", "@ivan_p" })
+	if got := deliveries(answer(named)); got != "telegram:" {
+		t.Errorf("a Telegram name before the bot: %q", got)
+	}
+	// A phone without an account: the record of a call, nothing to deliver; with an account, its ways.
+	phone := f.seed(func(v map[string]string) { v["contact_method"], v["contact_value"] = "phone", "+380671234567" })
+	if got := deliveries(answer(phone)); got != "" {
+		t.Errorf("a phone: %q", got)
+	}
+	if _, err := store.ReplyWith(ctx, phone, "denis", Answer{Text: "Все каналы сняты", Channels: []string{ChannelTelegram}}); err != nil {
+		t.Errorf("a phone record with a channel chosen still is a record: %v", err)
+	}
+	if _, err := f.db.Exec(`UPDATE leads SET client_id = ? WHERE id = ?`, client, phone); err != nil {
+		t.Fatal(err)
+	}
+	if got := deliveries(answer(phone)); got != "email:IVAN@company.com telegram:555" {
+		t.Errorf("a phone with an account: %s", got)
+	}
+	// Channels that reach the client nowhere, with no account: refused.
+	if _, err := store.ReplyWith(ctx, named, "denis", Answer{Text: "Никуда", Channels: []string{ChannelEmail}}); !errors.Is(err, ErrNoChannel) {
+		t.Errorf("an answer to nowhere: %v", err)
 	}
 }

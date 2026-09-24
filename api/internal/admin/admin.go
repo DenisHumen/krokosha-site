@@ -176,6 +176,18 @@ func New(opts Options) (*Handler, error) {
 		"meter":      meter,
 		"usage":      usage,
 		"statusName": named(statusNames, "—"),
+		// The messenger of «Заявки» (messenger.go).
+		"statusShort":  named(statusShort, "—"),
+		"channelName":  named(channelNames, "—"),
+		"deliveryName": named(answerStates, "—"),
+		"deliveryMark": named(deliveryMarks, ""),
+		"priorityName": func(level int) string { return priorityNames[min(max(level, 0), len(priorityNames)-1)] },
+		// also adds a parameter to a query this package made: «tab=work» + template 7.
+		"also": func(query, key, value string) string {
+			values, _ := url.ParseQuery(query)
+			values.Set(key, value)
+			return values.Encode()
+		},
 		// Quick answers (quick.go).
 		"categoryName": named(categoryNames, "Другое"),
 		"momentName":   named(momentNames, "в любой момент"),
@@ -238,7 +250,7 @@ func New(opts Options) (*Handler, error) {
 		"short":      named(shortNames, "—"),
 		"since":      func(t time.Time) string { return ago(time.Since(t)) },
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "template", "bot", "account", "error",
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "board", "inbox", "templates", "template", "bot", "account", "error",
 		"clients", "client", "mail", "achievements"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -271,6 +283,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/export/{table}", h.private(h.export))
 	mux.Handle("GET "+p+"/leads", h.private(h.leadsList))
 	mux.Handle("GET "+p+"/leads/export.csv", h.private(h.leadsExport))
+	mux.Handle("GET "+p+"/leads/pulse", h.private(h.leadsPulse))
 	mux.Handle("GET "+p+"/leads/{id}", h.private(h.leadCard))
 	mux.Handle("GET "+p+"/leads/{id}/files/{file}", h.private(h.leadFile))
 	mux.Handle("POST "+p+"/leads/{id}/status", h.private(h.leadStatus))
@@ -399,9 +412,10 @@ func (h *Handler) guarded(limit int64, next http.HandlerFunc) http.Handler {
 			h.toLogin(w, r)
 			return
 		}
-		// The live feed polls by itself: it must not keep an abandoned session alive.
+		// The live feed and the pulse of the messenger poll by themselves: they must not keep an
+		// abandoned session alive.
 		authenticate := h.opts.Auth.Authenticate
-		if strings.HasSuffix(r.URL.Path, "/live") {
+		if strings.HasSuffix(r.URL.Path, "/live") || strings.HasSuffix(r.URL.Path, "/leads/pulse") {
 			authenticate = h.opts.Auth.Check
 		}
 		session, err := authenticate(r.Context(), cookie.Value)
@@ -474,6 +488,10 @@ type view struct {
 	Title    string
 	Nav      string
 	NewLeads int // requests nobody has taken yet: the number next to «Заявки» in the menu
+	// Unread: messages of clients the staff have not read (leads.UnreadTotal) — «Заявки» gets a dot.
+	Unread int
+	// Full: the page takes exactly the window and only its panes scroll (the messenger of «Заявки»).
+	Full bool
 	// HasInbox: the service reads a mailbox; Letters — how many letters wait for a decision.
 	HasInbox bool
 	Letters  int
@@ -508,6 +526,9 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	if v.Session != nil && h.opts.Leads != nil {
 		if counts, err := h.opts.Leads.Counts(r.Context()); err == nil {
 			v.NewLeads = counts[leads.StatusNew]
+		}
+		if unread, err := h.opts.Leads.UnreadTotal(r.Context()); err == nil {
+			v.Unread = unread
 		}
 	}
 	v.HasClients = v.Session != nil && h.opts.Clients != nil

@@ -492,3 +492,156 @@
     }
   });
 })();
+
+// The messenger of «Заявки» (leads.html): Enter sends and Shift+Enter starts a new line, the field
+// grows with the text, «Ответ / Заметка» changes the hint, the picker of channels says where the
+// answer goes, the names of chosen files are shown, and a pulse asks every little while whether a
+// client wrote: the open conversation reloads by itself when nothing is being written in it.
+(function () {
+  'use strict';
+  var root = document.querySelector('[data-messenger]');
+  if (!root) return;
+
+  var form = root.querySelector('[data-reply]');
+  var text = form && form.querySelector('textarea[data-grow]');
+  var files = form && form.querySelector('input[type="file"][name="files"]');
+
+  function grow() {
+    if (!text) return;
+    text.style.height = 'auto';
+    var height = Math.min(text.scrollHeight + 2, 160);
+    text.style.height = Math.max(height, 34) + 'px';
+    text.style.overflowY = text.scrollHeight > 158 ? 'auto' : 'hidden';
+  }
+
+  if (text) {
+    var hint = text.getAttribute('placeholder');
+    text.addEventListener('input', grow);
+    text.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      if (!text.value.trim()) return;
+      if (form.requestSubmit) form.requestSubmit();
+      else form.submit();
+    });
+    var button = form.querySelector('.composer-send');
+    form.addEventListener('submit', function () {
+      // One answer per press: a second Enter while the page is on its way would send it twice.
+      window.setTimeout(function () {
+        if (button) button.disabled = true;
+      }, 0);
+    });
+    // Back to this page from the history: the button works again.
+    window.addEventListener('pageshow', function () {
+      if (button) button.disabled = false;
+    });
+    form.addEventListener('change', function (event) {
+      if (event.target.name !== 'mode') return;
+      var note = event.target.value === 'note';
+      text.setAttribute('placeholder', note ? text.getAttribute('data-note-placeholder') : hint);
+      text.focus();
+    });
+    grow();
+    // Whatever is typed goes to the end of what is there: the field opens at its end.
+    if (text.value) text.setSelectionRange(text.value.length, text.value.length);
+  }
+
+  // The templates put their text in: the field grows, the list of all of them closes.
+  root.addEventListener('click', function (event) {
+    var chip = event.target.closest && event.target.closest('[data-template]');
+    if (!chip) return;
+    window.setTimeout(function () {
+      grow();
+      var all = chip.closest('details');
+      if (all) all.open = false;
+    }, 0);
+  });
+
+  // Where the answer goes: the summary follows the boxes.
+  var via = root.querySelector('[data-via-text]');
+  if (via && form) {
+    var account = / · кабинет$/.test(via.textContent);
+    form.addEventListener('change', function (event) {
+      if (event.target.name !== 'channel') return;
+      var names = [];
+      form.querySelectorAll('input[name="channel"]').forEach(function (box) {
+        if (box.checked) names.push(box.getAttribute('data-via-name'));
+      });
+      if (account) names.push('кабинет');
+      via.textContent = names.length ? names.join(' · ') : 'никуда — отметьте канал';
+    });
+  }
+
+  // The files chosen by hand, by name.
+  var names = form && form.querySelector('[data-file-names]');
+  if (files && names) {
+    files.addEventListener('change', function () {
+      var list = Array.prototype.map.call(files.files, function (file) {
+        return file.name;
+      });
+      names.textContent = list.length ? 'Файлы: ' + list.join(', ') : '';
+      names.hidden = !list.length;
+    });
+  }
+
+  // What just happened fades away (CSS) and then leaves.
+  var toast = document.querySelector('.full .content > .notice-ok');
+  if (toast) {
+    window.setTimeout(function () {
+      toast.remove();
+    }, 5200);
+  }
+
+  // The pulse. It does not keep the session alive (the server checks it without extending it).
+  var pulse = root.getAttribute('data-pulse');
+  var last = Number(root.getAttribute('data-last')) || 0;
+  var lead = Number(root.getAttribute('data-lead')) || 0;
+  var leadLast = Number(root.getAttribute('data-lead-last')) || 0;
+  var news = root.querySelector('[data-news]');
+  var title = document.title;
+  if (!pulse || !window.fetch) return;
+
+  function busy() {
+    if (!form) return false;
+    if (text && (text.value.trim() || document.activeElement === text)) return true;
+    if (files && files.files.length) return true;
+    return root.querySelector('details[open]') !== null;
+  }
+
+  var timer = 0;
+  var failures = 0;
+  function check() {
+    if (document.hidden) return;
+    fetch(pulse + '?lead=' + lead, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json();
+      })
+      .then(function (state) {
+        failures = 0;
+        document.title = state.unread > 0 ? '(' + state.unread + ') ' + title : title;
+        if (lead && state.lead_last > leadLast) {
+          if (!busy()) {
+            // The address of the conversation itself: a page drawn after a form must not be sent again.
+            window.location.replace(root.getAttribute('data-here') || window.location.pathname);
+            return;
+          }
+          if (news) {
+            news.textContent = 'Клиент написал в этот разговор — обновить';
+            news.hidden = false;
+          }
+        } else if (state.last > last && news) {
+          news.hidden = false;
+        }
+      })
+      .catch(function () {
+        // Signed out, or no connection: after a few tries the pulse stops; a reload restarts it.
+        failures += 1;
+        if (failures > 3) window.clearInterval(timer);
+      });
+  }
+  timer = window.setInterval(check, 15000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) check();
+  });
+})();

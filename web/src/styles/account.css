@@ -5,7 +5,8 @@
  * the text is a shade lighter than in the mockup (#939390), so that small text keeps a contrast of
  * 4.5:1 on every tile. Everything lives under .cab: the page has none of the site's header or footer.
  * No style="…" anywhere (the site's Content-Security-Policy): sizes that depend on data — the bars
- * of the ladder and of progress — are set by the script through the CSSOM.
+ * of the ladder and of progress, the height of the field to write — are set by the script through
+ * the CSSOM.
  */
 
 body.frame-app {
@@ -1615,154 +1616,419 @@ a.tile {
   text-transform: uppercase;
 }
 
-/* --- requests ---------------------------------------------------------------------------------- */
+/* --- requests: a list and a conversation, like a messenger ------------------------------------- */
+
+/* The handoff «Заявки — компактный чат» (client mode). The screen takes the window exactly — the
+   script sets [data-fit] while it is shown — so the page stays still and only the list and the
+   conversation scroll; the field to write stays pinned under the conversation. Two greys of the
+   mockup are a shade lighter here, as elsewhere in the account: #77777a becomes the muted grey and
+   the time on the client's own bubbles #e8eaf3, for a contrast of 4.5:1. */
+
+.cab[data-fit] {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.cab[data-fit] .app {
+  height: 100%;
+  min-height: 0;
+}
+
+.cab[data-fit] .panel,
+.cab[data-fit] .content {
+  min-height: 0;
+}
+
+/* The title row gives the conversation its height back, as in the mockup. */
+.cab[data-fit] .head {
+  padding: 0 4px;
+}
 
 .split-requests {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  align-items: start;
+  flex: 1;
+  grid-template-columns: minmax(260px, min(360px, 32%)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 10px;
+  min-height: 0;
 }
 
-.list-card {
-  gap: 4px;
-  padding: 8px;
+/* No requests yet: the list alone, with its word about how they come. */
+.split-requests[data-empty] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.list-title {
-  padding: 8px 8px 10px;
+.split-requests[data-empty] .req-search,
+.split-requests[data-empty] .req-cols {
+  display: none;
 }
 
-.list-card .empty {
-  padding: 4px 8px 10px;
-}
-
-.cards {
+.pane {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--c-tile);
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 12px;
-  border-radius: 2px;
-  background: var(--c-card);
-  transition: background 0.15s;
+.req-scroll,
+.chat-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--c-line-2) transparent;
+  scrollbar-width: thin;
 }
 
-.cab .card:hover,
-.card[aria-current='true'] {
-  background: var(--c-tile-2);
+/* The list: a title, the search, the names of the columns, a request a line. */
+
+.req-list {
+  container: req-list / inline-size;
 }
 
-.card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 10px;
-}
-
-.card-num {
-  color: var(--c-link);
+.req-list-title {
+  flex: none;
+  padding: 14px 16px 4px;
+  font: 400 11px/1.5 var(--font-mono);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.card .status {
+.req-search {
+  display: flex;
+  flex: none;
+  padding: 8px;
+}
+
+.app .req-search input {
+  height: 28px;
+  padding: 0 10px;
+  font: 12px var(--font-sans);
+  appearance: none;
+}
+
+.req-cols,
+.req {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 14px;
+  white-space: nowrap;
+}
+
+.req-cols {
+  flex: none;
+  height: 24px;
+  overflow: hidden;
+  border-top: 1px solid var(--c-line);
+  border-bottom: 1px solid var(--c-line);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.req-num {
+  flex: none;
+  width: 52px;
+}
+
+.req-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.req-status {
+  display: flex;
+  flex: none;
+  width: 76px;
+  overflow: hidden;
+}
+
+/* A fixed width keeps the statuses in one column: a longer time (a date of another year, the mark
+   of an answer) spills to the left, into the free end of the status column. */
+.req-time {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  width: 42px;
+  text-align: right;
+}
+
+.req {
+  position: relative;
+  height: 38px;
+  border-bottom: 1px solid #222226;
+  transition: background 0.15s;
+}
+
+.cab .req:hover {
+  background: #222226;
+}
+
+/* The list scrolls: a ring outside the row would be cut off by its edges. */
+.cab .req:focus-visible {
+  outline-offset: -2px;
+}
+
+.req[aria-current='true'],
+.cab .req[aria-current='true']:hover {
+  background: var(--c-tile-2);
+}
+
+/* The open request: a stripe of the accent along its left edge. */
+.req[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--c-accent);
+}
+
+.req .req-num {
+  font-size: 11px;
+  color: var(--c-link);
+}
+
+.req .req-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.req-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: 400 13px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  color: var(--c-fg);
+}
+
+.req-sub {
+  display: none;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font: 12px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  color: var(--c-muted);
+}
+
+.req .status {
   height: 18px;
   padding: 0 6px;
 }
 
-.card-title {
-  font: 14px/1.35 var(--font-sans);
-  overflow-wrap: anywhere;
-}
-
-.card-text {
-  display: -webkit-box;
-  overflow: hidden;
-  font: 12px/1.5 var(--font-sans);
-  color: var(--c-muted);
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.card-bottom {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+.req-time time {
   font-size: 10px;
-  letter-spacing: 0.06em;
   color: var(--c-muted);
 }
 
-.card-new {
-  margin-right: auto;
-  color: var(--c-link);
-  text-transform: uppercase;
+/* An answer not read yet: the subject in a heavier weight, a mark by the time. */
+.req[data-new] .req-title {
+  font-weight: 500;
 }
 
-.card-disc {
-  color: var(--c-ok);
+.req[data-new] .req-time time {
+  color: var(--c-fg);
 }
 
-.detail {
+.req-empty {
+  padding: 16px;
+  font: 13px/1.55 var(--font-sans);
+  color: var(--c-muted);
+}
+
+.req-foot {
   display: flex;
-  flex-direction: column;
+  flex: none;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  overflow: hidden;
+  border-top: 1px solid var(--c-line);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--c-muted);
+}
+
+/* The text of the request after its subject, where the list has room for it (as in the mockup). */
+@container req-list (min-width: 380px) {
+  .req-sub {
+    display: block;
+  }
+}
+
+@container req-list (max-width: 359px) {
+  .req-cols,
+  .req {
+    gap: 8px;
+  }
+
+  .req-num {
+    width: 44px;
+  }
+}
+
+/* The narrowest list keeps the subject and gives up the number: the conversation shows it. */
+@container req-list (max-width: 299px) {
+  .req-num {
+    display: none;
+  }
+}
+
+/* The conversation: a line of the request over it, the details folded under «Details», the
+   messages, the field to write. The button of the details sits over the end of that line, and its
+   panel opens under it, in the flow; --more is the button's width, kept free at the end of the line
+   (the script measures it; 84 px fits the word in every language). */
+
+.chat {
+  --more: 84px;
+  position: relative;
+  container: chat / inline-size;
+}
+
+.chat-head {
+  display: flex;
+  flex: none;
+  align-items: center;
   gap: 10px;
-  min-width: 0;
+  height: 48px;
+  padding: 0 calc(var(--more) + 20px) 0 16px;
+  border-bottom: 1px solid var(--c-line);
 }
 
-.back {
+.chat-back {
   display: none;
-  align-self: flex-start;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  border-radius: 2px;
+  background: var(--c-tile-2);
+  font-size: 13px;
 }
 
-.detail-card,
-.thread-card {
-  gap: 14px;
+.cab .chat-back {
+  color: var(--c-fg-2);
 }
 
-.detail-top {
+.cab .chat-back:hover {
+  background: var(--c-line-3);
+  color: var(--c-fg);
+}
+
+.chat-num {
+  flex: none;
+  font-size: 11px;
+  color: var(--c-link);
+}
+
+.chat-title {
+  flex: 1 1 auto;
+  min-width: 120px;
+  overflow: hidden;
+  font: 500 15px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-title:focus {
+  outline: none;
+}
+
+.chat-status .status-short {
+  display: none;
+}
+
+.chat-facts {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-fg-2);
+}
+
+.chat-more {
+  position: absolute;
+  top: 11px;
+  right: 10px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-}
-
-.detail-title {
-  font: 300 24px/1.25 var(--font-sans);
-  overflow-wrap: anywhere;
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  margin: 0;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
   border-radius: 2px;
-  background: var(--c-line);
+  background: var(--c-tile-2);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--c-fg-2);
+  list-style: none;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
-.facts:empty {
+.chat-more::-webkit-details-marker {
   display: none;
+}
+
+.chat-more:hover {
+  color: var(--c-fg);
+}
+
+.chat-details[open] > .chat-more {
+  background: var(--c-line-3);
+}
+
+.chat-more-arrow {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.chat-details[open] .chat-more-arrow {
+  transform: rotate(180deg);
+}
+
+/* The facts fill their rows (flex, not a grid): a short last row has no empty cells. */
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 0;
+  border-bottom: 1px solid var(--c-line);
+  background: var(--c-line);
 }
 
 .fact {
   display: flex;
+  flex: 1 1 140px;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: var(--c-tile);
 }
 
@@ -1779,160 +2045,348 @@ a.tile {
   overflow-wrap: anywhere;
 }
 
-.detail-text {
-  font: 14px/1.65 var(--font-sans);
-  color: var(--c-fg-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
+.fact a {
+  color: var(--c-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.detail-none {
-  font: 13px/1.55 var(--font-sans);
-  color: var(--c-muted);
+.cab .fact a:hover {
+  color: var(--c-fg);
+}
+
+/* Under the facts: the way to ask about the request (not in the mockup; the old screen had it). */
+.chat-ask {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-line);
 }
 
 .thread {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  padding: 8px 16px 14px;
+}
+
+.msg-day {
+  align-self: center;
+  margin: 10px 0 4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  background: var(--c-tile-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-fg-2);
+}
+
+/* A change of status: one quiet line in the middle. */
+.msg-event {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: center;
+  justify-content: center;
+  gap: 0 8px;
+  margin: 8px 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--c-muted);
 }
 
 .msg {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  margin-top: 2px;
 }
 
-.msg-in {
+.msg[data-first] {
+  margin-top: 10px;
+}
+
+.msg[data-side='mine'] {
   align-items: flex-end;
 }
 
-.msg-event {
-  align-items: center;
-  text-align: center;
-}
-
-.msg-meta {
+.msg-head {
+  margin: 0 2px 3px;
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--c-muted);
 }
 
-.msg-body {
-  max-width: 78%;
-  padding: 11px 13px;
-  border-radius: 3px;
-  background: var(--c-tile-2);
-  font: 14px/1.55 var(--font-sans);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* Inside a group the caption is for screen readers only: who wrote, and where, every time. */
+.msg:not([data-first]) .msg-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.msg-in .msg-body {
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 72%;
+  padding: 6px 10px 5px;
+  border-radius: 3px;
+  background: var(--c-tile-2);
+}
+
+.msg[data-side='mine'] .bubble {
   background: var(--c-accent);
 }
 
-.msg-event .msg-body {
-  padding: 0;
-  background: transparent;
+/* Pictures and files lie close to the edge of the bubble; the words keep their own margin. */
+.msg[data-attached] .bubble {
+  padding: 4px 4px 5px;
+}
+
+.msg[data-attached] .msg-line {
+  padding: 0 6px;
+}
+
+.msg-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  column-gap: 10px;
+}
+
+.msg-body {
+  font: 13.5px/1.45 var(--font-sans);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--c-fg);
+}
+
+.msg-time {
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 19px;
+  white-space: nowrap;
   color: var(--c-muted);
+}
+
+.msg[data-side='mine'] .msg-time {
+  color: #e8eaf3;
 }
 
 .msg-files {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  max-width: 78%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 4px;
 }
 
-.msg-in .msg-files {
-  justify-content: flex-end;
+.msg-files li:has(.msg-file, .msg-video) {
+  flex-basis: 100%;
 }
 
 .msg-photo {
   display: block;
-  width: 168px;
-  height: 126px;
-  border-radius: 3px;
-  background: var(--c-tile-2);
+  width: 240px;
+  max-width: 100%;
+  height: 140px;
+  border-radius: 2px;
+  background: var(--c-input);
   object-fit: cover;
 }
 
 .msg-video {
   display: block;
-  width: min(360px, 100%);
-  max-height: 320px;
-  border-radius: 3px;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 2px;
   background: #000;
 }
 
-.msg-files li:has(.msg-video) {
-  flex-basis: 100%;
-}
-
 .msg-file {
-  display: inline-flex;
-  gap: 10px;
+  display: flex;
   align-items: baseline;
-  padding: 9px 12px;
-  border-radius: 3px;
-  background: var(--c-tile-2);
-  color: var(--c-fg);
-  font: 13px/1.4 var(--font-sans);
-  text-decoration: none;
-  overflow-wrap: anywhere;
+  gap: 12px;
+  min-width: min(220px, 100%);
+  padding: 7px 10px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.2);
+  font: 12px/1.4 var(--font-sans);
+  transition: background 0.15s;
 }
 
-.msg-file:hover {
-  background: var(--c-line-3);
+.cab .msg-file,
+.cab .msg-file:hover {
+  color: var(--c-fg);
+}
+
+.cab .msg-file:hover {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.msg-file-name {
+  overflow-wrap: anywhere;
 }
 
 .msg-file-size {
   flex: none;
-  font: 11px var(--font-mono);
+  margin-left: auto;
+  font: 10px var(--font-mono);
   color: var(--c-muted);
 }
 
-.reply {
+.msg[data-side='mine'] .msg-file-size {
+  color: #e8eaf3;
+}
+
+/* The field to write: one line that grows with the text up to 160 px; the script sets its
+   height. */
+.composer {
   display: flex;
+  flex: none;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--c-line-2);
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--c-line);
 }
 
-.app .reply textarea {
-  min-height: 88px;
-  border-radius: 3px;
+.composer .done {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.reply-bar {
+.composer-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 6px;
 }
 
-.reply-bar .done {
-  margin-left: auto;
+.app .composer textarea {
+  flex: 1;
+  height: 34px;
+  min-height: 0;
+  max-height: 160px;
+  padding: 7px 12px;
+  overflow-y: hidden;
+  border-radius: 3px;
+  font: 14px/18px var(--font-sans);
+  resize: none;
+}
+
+.app .composer textarea[data-full] {
+  overflow-y: auto;
+}
+
+/* The buttons of the conversation in the mockup's sizes: a button otherwise takes the font around
+   it (.cab button). */
+.chat .btn {
+  font: 10px var(--font-mono);
+}
+
+.chat .composer-send {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 11px;
 }
 
 .closed {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--c-line-2);
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--c-line);
   font: 13px/1.55 var(--font-sans);
   color: var(--c-muted);
+}
+
+.closed .btn {
+  height: 28px;
+  color: var(--c-fg-2);
+}
+
+.chat-none {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font: 13px/1.55 var(--font-sans);
+  text-align: center;
+  color: var(--c-muted);
+}
+
+/* A narrower conversation drops, in turn: the facts of the line (they are under «Details»), the
+   word «Details», the long status. */
+@container chat (max-width: 759px) {
+  .chat-facts {
+    display: none;
+  }
+}
+
+@container chat (max-width: 599px) {
+  .chat-head {
+    --more: 30px;
+  }
+
+  .chat-more {
+    width: 30px;
+    padding: 0;
+  }
+
+  .chat-more-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@container chat (max-width: 479px) {
+  .chat-head {
+    gap: 8px;
+    padding-left: 12px;
+  }
+
+  .chat-title {
+    min-width: 0;
+    font-size: 14px;
+  }
+
+  .chat-status .status-full {
+    display: none;
+  }
+
+  .chat-status .status-short {
+    display: inline;
+  }
+
+  .thread {
+    padding: 6px 10px 12px;
+  }
+
+  .bubble {
+    max-width: 86%;
+  }
+
+  .composer {
+    padding: 8px;
+  }
+
+  .closed {
+    padding: 10px 12px;
+  }
 }
 
 /* --- a new inquiry ----------------------------------------------------------------------------- */
@@ -2394,17 +2848,31 @@ a.tile {
     display: none;
   }
 
-  .split-requests,
   .split-new {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .split-requests.is-open .list-card {
+  /* One pane at a time: the list, or the open request with the way back to the list. */
+  .split-requests {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .split-requests > .pane {
+    flex: 1;
+  }
+
+  .split-requests.is-open .req-list {
     display: none;
   }
 
-  .split-requests .back {
-    display: inline-flex;
+  .split-requests > .chat-none {
+    flex: none;
+    order: -1;
+  }
+
+  .chat-back {
+    display: grid;
   }
 
   .gate-card {
@@ -2591,16 +3059,6 @@ a.tile {
     font-size: 52px;
   }
 
-  .msg-body,
-  .msg-files {
-    max-width: 92%;
-  }
-
-  .msg-photo {
-    width: 140px;
-    height: 105px;
-  }
-
   .menu-panel {
     position: fixed;
     top: 58px;
@@ -2618,6 +3076,13 @@ a.tile {
   .app textarea,
   .g-input {
     font-size: 16px;
+  }
+
+  /* 16 px, or a phone zooms in on the field; the line stays 34 px high. */
+  .app .composer textarea {
+    padding: 6px 12px;
+    font-size: 16px;
+    line-height: 20px;
   }
 }
 

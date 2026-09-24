@@ -28,6 +28,8 @@ func testForm() config.Form {
 	return config.Form{Enabled: true, Directions: []config.Option{
 		{ID: "networks", Label: config.Localized{"en": "Networks & hardware", "ru": "Сети и оборудование"}},
 		{ID: "devops", Label: config.Localized{"": "DevOps"}},
+	}, Budgets: []config.Localized{
+		{"en": "up to $500"}, {"": "$500–1k"}, {"": "$1–3k"}, {"": "$3–10k"}, {"en": "over $10k"}, {"en": "not sure yet"},
 	}}
 }
 
@@ -70,10 +72,13 @@ func TestRequestsListAndBoard(t *testing.T) {
 		t.Fatalf("list: %d", list.status)
 	}
 	for _, want := range []string{
-		"2 заявки", "#K-0001", "#K-0002", "Иван Петров", "Сети и оборудование", "DevOps", "mikrotik-kyiv", "Реклама",
+		"2 заявки · ждут ответа: 2", ">K-0001<", ">K-0002<", "Иван Петров", "Сети и оборудование", "DevOps", "mikrotik-kyiv", "Реклама",
 		`<span class="tick-v">2 новые</span>`, // new requests, in the header
-		`<span class="pill status-new">Новая</span>`,
+		`<span class="st st-new">новая</span>`,
 		`href="` + prefix + `/leads/1"`,
+		`data-prio="2"`, // a budget of $1–3k and no orders: the middle of the scale
+		`<span class="c-unread" title="Непрочитанных сообщений: 1">1</span>`, // nobody has opened them yet
+		"Выберите разговор слева",
 	} {
 		if !strings.Contains(list.body, want) {
 			t.Errorf("the list lacks %q", want)
@@ -87,14 +92,32 @@ func TestRequestsListAndBoard(t *testing.T) {
 		t.Error("inline styles or handlers: the CSP would block them")
 	}
 
-	if got := s.do(http.MethodGet, prefix+"/leads?q=olena", nil, nil); !strings.Contains(got.body, "1 заявка") || strings.Contains(got.body, "Иван Петров") {
+	if got := s.do(http.MethodGet, prefix+"/leads?q=olena", nil, nil); !strings.Contains(got.body, "<span>1 из 2</span>") || strings.Contains(got.body, "Иван Петров") {
 		t.Error("search by contact")
 	}
-	if got := s.do(http.MethodGet, prefix+"/leads?status=done", nil, nil); !strings.Contains(got.body, "Заявок нет.") {
-		t.Error("an empty status tab")
+	if got := s.do(http.MethodGet, prefix+"/leads?tab=closed", nil, nil); !strings.Contains(got.body, "Заявок нет.") {
+		t.Error("an empty tab")
 	}
-	if got := s.do(http.MethodGet, prefix+"/leads?status=%27%22%3E&page=-5", nil, nil); got.status != http.StatusOK {
+	if got := s.do(http.MethodGet, prefix+"/leads?tab=%27%22%3E&sort=x&q=%3Cb%3E", nil, nil); got.status != http.StatusOK || strings.Contains(got.body, "<b>") {
 		t.Errorf("nonsense in the query: %d", got.status)
+	}
+	// Opened, the list keeps its tab and its order in every link; the conversation is read.
+	opened := s.do(http.MethodGet, prefix+"/leads/1?tab=work&sort=recent", nil, nil)
+	for _, want := range []string{
+		`href="` + prefix + `/leads/2?sort=recent&amp;tab=work"`, `name="list" value="sort=recent&amp;tab=work"`,
+		`aria-current="page"`, `<div class="talk-unread" id="unread"><span>новые</span></div>`,
+	} {
+		if !strings.Contains(opened.body, want) {
+			t.Errorf("an open conversation lacks %q", want)
+		}
+	}
+	if again := s.do(http.MethodGet, prefix+"/leads", nil, nil); strings.Count(again.body, `class="c-unread"`) != 1 {
+		t.Error("the conversation that was opened is still unread")
+	}
+	// The pulse of the open page: JSON, for the signed-in only.
+	pulse := s.do(http.MethodGet, prefix+"/leads/pulse?lead=1", nil, map[string]string{"Accept": "application/json"})
+	if pulse.status != http.StatusOK || !strings.Contains(pulse.body, `"unread":1`) || !strings.Contains(pulse.body, `"lead_last":1`) {
+		t.Errorf("the pulse: %d %s", pulse.status, pulse.body)
 	}
 
 	board := s.do(http.MethodGet, prefix+"/leads?view=board", nil, nil)
@@ -105,7 +128,7 @@ func TestRequestsListAndBoard(t *testing.T) {
 	}
 
 	s.cookie = ""
-	for _, path := range []string{"/leads", "/leads/1", "/leads/export.csv", "/templates"} {
+	for _, path := range []string{"/leads", "/leads/1", "/leads/export.csv", "/templates", "/leads/pulse"} {
 		if got := s.do(http.MethodGet, prefix+path, nil, nil); got.status != http.StatusSeeOther {
 			t.Errorf("anonymous %s: %d", path, got.status)
 		}
@@ -149,12 +172,12 @@ func TestWorkingOnARequest(t *testing.T) {
 	if _, err := s.leads.Take(context.Background(), lead.ID, "colleague"); err == nil {
 		t.Error("the request was taken twice")
 	}
-	if card = s.do(http.MethodGet, prefix+path, nil, nil); !strings.Contains(card.body, "denis взял(а) в работу") || !strings.Contains(card.body, `status-in_progress`) {
+	if card = s.do(http.MethodGet, prefix+path, nil, nil); !strings.Contains(card.body, "denis взял(а) в работу") || !strings.Contains(card.body, `st-in_progress`) {
 		t.Error("the card does not show who took the request")
 	}
 
 	// A ready-made answer is put into the form without any script, then sent.
-	picked := regexp.MustCompile(`href="` + prefix + `/leads/\d+\?template=(\d+)#reply"[^>]*>(?:\s*<span class="suggest-title">)?Нужны детали`).FindStringSubmatch(card.body)
+	picked := regexp.MustCompile(`href="` + prefix + `/leads/\d+\?template=(\d+)#reply"[^>]*>Нужны детали`).FindStringSubmatch(card.body)
 	if picked == nil {
 		t.Fatal("no template to pick")
 	}
@@ -174,8 +197,8 @@ func TestWorkingOnARequest(t *testing.T) {
 
 	card = s.do(http.MethodGet, prefix+path, nil, nil)
 	for _, want := range []string{
-		"status-waiting_client", "ответ клиенту, почта", "ждёт отправки", "сколько коммутаторов уже есть",
-		"заметка, клиент её не видит", "&lt;b&gt;важно&lt;/b&gt;", "denis ответил(а) клиенту",
+		"st-waiting_client", "Вы · почта", "ждёт отправки", "сколько коммутаторов уже есть",
+		"Заметка · клиент не видит", "&lt;b&gt;важно&lt;/b&gt;", "В работе → Ждём клиента",
 	} {
 		if !strings.Contains(card.body, want) {
 			t.Errorf("after the answer the card lacks %q", want)
@@ -238,12 +261,42 @@ func TestTheClientCameToTheBot(t *testing.T) {
 	lead := s.addLead(nil)
 	s.signIn()
 	s.bot = telegram.Status{Mode: telegram.ModeWebhook, Username: "krokosha_bot", ConnectedAt: time.Now()}
+	if _, err := s.db.Exec(`INSERT INTO bot_clients (lead_id, telegram_id, linked_at) VALUES (?, 777, NOW())`, lead.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.leads.ClientLinked(context.Background(), lead.ID); err != nil {
 		t.Fatal(err)
 	}
 	card := s.do(http.MethodGet, prefix+fmt.Sprintf("/leads/%d", lead.ID), nil, nil)
-	if !strings.Contains(card.body, "Клиент её уже открыл") || !strings.Contains(card.body, "Ответ уйдёт клиенту в Telegram через бота") {
-		t.Error("the card does not say the client came to the bot")
+	for _, want := range []string{
+		"Клиент её уже открыл", "ответ уйдёт: почта · Telegram", `name="channels" value="1"`,
+		`name="channel" value="email" checked`, `name="channel" value="telegram" checked`, "ivan@company.com",
+	} {
+		if !strings.Contains(card.body, want) {
+			t.Errorf("the card of a client in the bot lacks %q", want)
+		}
+	}
+	// Telegram alone: one delivery, by the bot.
+	path := fmt.Sprintf("/leads/%d", lead.ID)
+	if got := s.post(path+"/reply", url.Values{"text": {"Только в Telegram"}, "channels": {"1"}, "channel": {"telegram"}}); got.status != http.StatusSeeOther {
+		t.Fatalf("an answer to Telegram alone: %d", got.status)
+	}
+	var channels string
+	if err := s.db.QueryRow(`SELECT GROUP_CONCAT(channel ORDER BY id) FROM lead_deliveries WHERE lead_id = ?`, lead.ID).Scan(&channels); err != nil || channels != "telegram" {
+		t.Errorf("deliveries of an answer to Telegram alone: %q %v", channels, err)
+	}
+	// Nothing checked and no account: the answer would go nowhere.
+	if got := s.post(path+"/reply", url.Values{"text": {"В никуда"}, "channels": {"1"}}); got.status != http.StatusBadRequest ||
+		!strings.Contains(got.body, "Ответ никуда не уйдёт") || !strings.Contains(got.body, ">В никуда</textarea>") {
+		t.Errorf("an answer to nowhere: %d", got.status)
+	}
+	// «Заметка» of the same composer is a note, whatever else the form carries.
+	if got := s.post(path+"/reply", url.Values{"text": {"Внутреннее"}, "mode": {"note"}, "channels": {"1"}}); got.status != http.StatusSeeOther || !strings.Contains(got.location, "ok=lead-note") {
+		t.Errorf("a note from the composer: %d %s", got.status, got.location)
+	}
+	var notes int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM lead_messages WHERE lead_id = ? AND direction = 'note' AND body = 'Внутреннее'`, lead.ID).Scan(&notes); err != nil || notes != 1 {
+		t.Errorf("notes: %d %v", notes, err)
 	}
 }
 
@@ -396,7 +449,7 @@ func TestQuickAnswersWithFiles(t *testing.T) {
 	// The pool: the price, the time and a greeting come first for this client, and say why.
 	path := fmt.Sprintf("/leads/%d", lead.ID)
 	card := s.do(http.MethodGet, prefix+path, nil, nil)
-	top := regexp.MustCompile(`(?s)<ul class="suggest-list">(.*?)</ul>`).FindStringSubmatch(card.body)
+	top := regexp.MustCompile(`(?s)<span class="quick">(.*?)<details class="quick-all"`).FindStringSubmatch(card.body)
 	if top == nil {
 		t.Fatal("no suggestions on the card")
 	}
@@ -494,7 +547,7 @@ func TestFilesOfARequest(t *testing.T) {
 	s.signIn()
 
 	card := s.do(http.MethodGet, fmt.Sprintf("%s/leads/%d", prefix, lead.ID), nil, nil)
-	if !strings.Contains(card.body, `href="`+link+`" download>Схема сети &amp; план.txt</a>`) || !strings.Contains(card.body, fmt.Sprintf("txt · %d Б", len(page))) {
+	if !strings.Contains(card.body, `href="`+link+`" download title="Скачать Схема сети &amp; план.txt">`) || !strings.Contains(card.body, fmt.Sprintf("%d Б · скачать", len(page))) {
 		t.Errorf("the card does not offer the file:\n%s", card.body)
 	}
 
@@ -533,5 +586,68 @@ func TestFilesOfARequest(t *testing.T) {
 	}
 	if got := s.do(http.MethodGet, link, nil, nil); got.status != http.StatusNotFound {
 		t.Errorf("the file of a deleted request: %d", got.status)
+	}
+}
+
+// Every kind of conversation opens: spam, one whose data is gone, a question from an account about
+// a request, a phone with an account — and no page carries inline styles or handlers (the CSP).
+func TestEveryKindOfConversationOpens(t *testing.T) {
+	s := newSite(t)
+	ctx := context.Background()
+	first := s.addLead(nil)
+	spam := s.addLead(func(sub *leads.Submission) { sub.Name = "Spammer" })
+	if err := s.leads.SetStatus(ctx, spam.ID, "denis", leads.StatusSpam, ""); err != nil {
+		t.Fatal(err)
+	}
+	gone := s.addLead(func(sub *leads.Submission) { sub.Name = "Ушедший клиент" })
+	if err := s.leads.Anonymize(ctx, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.db.Exec(`INSERT INTO clients (created_at, updated_at, name, lang, email, telegram_id, orders_carried, spent_carried) VALUES (NOW(), NOW(), 'Олег', 'ru', 'oleg@client.test', 4242, 5, 9000)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := result.LastInsertId()
+	phone := s.addLead(func(sub *leads.Submission) {
+		sub.Name, sub.ContactMethod, sub.ContactValue = "Олег", leads.MethodPhone, "+380671234567"
+	})
+	if _, err := s.db.Exec(`UPDATE leads SET client_id = ? WHERE id = ?`, client, phone.ID); err != nil {
+		t.Fatal(err)
+	}
+	inquiry := s.addLead(func(sub *leads.Submission) {
+		sub.Kind, sub.ClientID, sub.ParentID, sub.Subject, sub.Trusted = leads.KindInquiry, client, first.ID, "Вопрос по счёту", true
+	})
+	s.signIn()
+
+	inline := regexp.MustCompile(`(?i)<[^>]*\s(?:style|on[a-z]+)=`)
+	for _, c := range []struct {
+		lead  *leads.Lead
+		wants []string
+	}{
+		{spam, []string{"st-spam", "Помечено как спам: ответить нельзя", "Не спам"}},
+		{gone, []string{"Заявка обезличена", "Заявка обезличена: писать некому."}},
+		{phone, []string{"ответ уйдёт: почта · Telegram · кабинет", `data-prio="3"`, "5 заказов", "Клиент #"}},
+		{inquiry, []string{"Вопрос по счёту", "обращение", `/leads/` + strconv.FormatInt(first.ID, 10) + `"`, "кабинет"}},
+	} {
+		page := s.do(http.MethodGet, fmt.Sprintf("%s/leads/%d", prefix, c.lead.ID), nil, nil)
+		if page.status != http.StatusOK {
+			t.Errorf("#%d: %d", c.lead.ID, page.status)
+			continue
+		}
+		for _, want := range c.wants {
+			if !strings.Contains(page.body, want) {
+				t.Errorf("#%d lacks %q", c.lead.ID, want)
+			}
+		}
+		if inline.MatchString(page.body) {
+			t.Errorf("#%d: inline styles or handlers — the CSP would block them", c.lead.ID)
+		}
+	}
+	// The spam tab shows up once there is spam; the board still opens.
+	if list := s.do(http.MethodGet, prefix+"/leads?tab=spam", nil, nil); !strings.Contains(list.body, "Spammer") || !strings.Contains(list.body, `aria-current="true">Спам`) {
+		t.Error("the spam tab")
+	}
+	if board := s.do(http.MethodGet, prefix+"/leads?view=board", nil, nil); board.status != http.StatusOK || inline.MatchString(board.body) {
+		t.Errorf("the board: %d", board.status)
 	}
 }

@@ -91,10 +91,12 @@ const examples: Record<string, string> = {
   website: 'https://…',
 };
 
-// What the script needs: the texts, and the words it builds sentences from.
+// What the script needs: the texts, and the words it builds sentences from. The nickname signs the
+// answers in the conversation.
 const scriptTexts = JSON.stringify({
   lang,
   account: A,
+  nickname: data.profile.nickname,
   plurals: { orders, requests: plurals.requests[lang], open: plurals.open[lang] },
   examples,
   directions: Object.fromEntries(form.directions.map((item) => [item.id, item.label])),
@@ -579,76 +581,118 @@ const scriptTexts = JSON.stringify({
             </a>
           </section>
 
-          {/* Requests: the list, and the one that is open with its conversation. */}
+          {/* Requests as a messenger (handoff «Заявки — компактный чат»): the list in one-line
+              rows, and the open request as a conversation with the field to write pinned under it.
+              The screen takes the height of the window: only the list and the conversation scroll. */}
           <section
             class="screen split-requests"
             data-screen="requests"
             hidden
             aria-labelledby="requests-title"
           >
-            <div class="tile list-card">
-              <h2 class="tile-label list-title" id="requests-title">
+            <div class="pane req-list">
+              <h2 class="req-list-title" id="requests-title">
                 {A.requests.title} · <span data-total>0</span>
               </h2>
-              <ul class="cards" data-requests-list></ul>
-              <p class="empty" data-requests-empty hidden>
-                {A.requests.empty}
-              </p>
+              <div class="req-search">
+                <label class="visually-hidden" for="requests-search">
+                  {A.requests.search}
+                </label>
+                <input
+                  id="requests-search"
+                  type="search"
+                  autocomplete="off"
+                  maxlength="100"
+                  placeholder={A.requests.search}
+                  data-requests-search
+                />
+              </div>
+              <div class="req-cols" aria-hidden="true">
+                <span class="req-num">{A.requests.number}</span>
+                <span class="req-main">{A.requests.request}</span>
+                <span class="req-status">{A.requests.status}</span>
+                <span class="req-time">{A.requests.time}</span>
+              </div>
+              <div class="req-scroll">
+                <ul data-requests-list></ul>
+                <p class="req-empty" data-requests-empty hidden>
+                  {A.requests.empty}
+                </p>
+                <p class="req-empty" data-requests-nothing hidden>
+                  {A.requests.nothing}
+                </p>
+              </div>
+              <p class="req-foot" data-requests-foot></p>
             </div>
-            <div class="detail" data-thread hidden>
-              <a class="btn back" href="#requests">
-                <span aria-hidden="true">←</span>
-                {A.requests.back}
-              </a>
-              <article class="tile detail-card" aria-labelledby="thread-title">
-                <div class="detail-top">
-                  <span data-thread-meta></span>
-                  <span class="status" data-thread-status></span>
-                </div>
-                <h2 class="detail-title" id="thread-title" data-thread-title>
+
+            <section class="pane chat" data-thread hidden aria-labelledby="thread-title">
+              <div class="chat-head">
+                <a
+                  class="chat-back"
+                  href="#requests"
+                  aria-label={A.requests.back}
+                  title={A.requests.back}
+                >
+                  <span aria-hidden="true">←</span>
+                </a>
+                <span class="chat-num" data-thread-number></span>
+                <h2 class="chat-title" id="thread-title" tabindex="-1" data-thread-title>
                   {A.requests.request}
                 </h2>
+                <span class="status chat-status" data-thread-status></span>
+                <span class="chat-facts" data-thread-summary></span>
+              </div>
+              {/* The facts of the request fold away under «Details» — a <details>, which opens
+                  and closes by itself — with the way to ask about the request. */}
+              <details class="chat-details" data-thread-details>
+                <summary class="chat-more">
+                  <span class="chat-more-label">{A.requests.details}</span>
+                  <span class="chat-more-arrow" aria-hidden="true">
+                    ▾
+                  </span>
+                </summary>
                 <dl class="facts" data-thread-facts></dl>
-                <p class="detail-text" data-thread-description></p>
-              </article>
-              <section class="tile thread-card" aria-labelledby="conversation-title">
-                <h3 class="tile-label" id="conversation-title">
-                  {A.requests.conversation}
-                </h3>
-                <ol class="thread" data-thread-feed></ol>
-                <form class="reply" data-thread-reply novalidate>
+                <p class="chat-ask">
+                  <button class="btn btn-s" type="button" data-thread-ask>
+                    {A.requests.ask}
+                  </button>
+                </p>
+              </details>
+              <div class="chat-feed" data-thread-scroll>
+                <ol class="thread" data-thread-feed aria-label={A.requests.conversation}></ol>
+              </div>
+              <form class="composer" data-thread-reply novalidate>
+                <p class="done" role="status" data-done></p>
+                <p class="error" role="alert" data-error></p>
+                <div class="composer-row">
                   <label class="visually-hidden" for="reply-text">
                     {A.requests.write}
                   </label>
                   <textarea
                     id="reply-text"
                     name="text"
-                    rows="3"
+                    rows="1"
                     maxlength="4000"
-                    placeholder={A.requests.write}
+                    enterkeyhint="send"
+                    placeholder={A.requests.message}
                   ></textarea>
-                  <p class="error" role="alert" data-error></p>
-                  <div class="reply-bar">
-                    <button class="btn" type="button" data-thread-ask>
-                      {A.requests.ask}
-                    </button>
-                    <span class="done" role="status" data-done></span>
-                    <button class="btn btn-accent" type="submit">
-                      {A.requests.send} <span aria-hidden="true">→</span>
-                    </button>
-                  </div>
-                </form>
-                <div class="closed" data-thread-closed hidden>
-                  <p>{A.requests.closed}</p>
-                  <button class="btn" type="button" data-thread-ask>
-                    {A.requests.ask}
+                  <button
+                    class="btn btn-accent composer-send"
+                    type="submit"
+                    title={A.requests.keys}
+                  >
+                    {A.requests.send} <span aria-hidden="true">→</span>
                   </button>
                 </div>
-              </section>
-            </div>
-            <p class="tile detail-none" data-thread-none hidden>
-              {A.requests.choose}
-            </p>
+              </form>
+              <div class="closed" data-thread-closed hidden>
+                <p>{A.requests.closed}</p>
+                <button class="btn btn-s" type="button" data-thread-ask>
+                  {A.requests.ask}
+                </button>
+              </div>
+            </section>
+            <p class="pane chat-none" data-thread-none hidden></p>
           </section>
 
           {/* A new inquiry. */}
@@ -1074,23 +1118,24 @@ const scriptTexts = JSON.stringify({
     </div>
   </div>
 
-  {/* Rows the script clones: a request of the list, a line of the home screen, a line of the
+  {/* Rows the script clones: a request of the list, a line of the home screen, a message of the
       conversation, a contact, a device. */}
-  <template id="tpl-card">
+  <template id="tpl-request">
     <li>
-      <a class="card" href="#requests">
-        <span class="card-top">
-          <span class="card-num" data-number></span>
+      <a class="req" href="#requests">
+        <span class="req-num" data-number></span>
+        <span class="req-main">
+          <span class="req-title" data-title></span>
+          <span class="req-sub" data-excerpt></span>
+        </span>
+        <span class="req-status">
           <span class="status" data-status></span>
         </span>
-        <span class="card-title" data-title></span>
-        <span class="card-text" data-excerpt></span>
-        <span class="card-bottom">
-          <span data-date></span>
-          <span class="card-new" data-unread hidden>
-            {A.requests.unread}
+        <span class="req-time">
+          <span class="dot" data-unread hidden>
+            <span class="visually-hidden">{A.requests.unread}</span>
           </span>
-          <span class="card-disc" data-discount></span>
+          <time data-time></time>
         </span>
       </a>
     </li>
@@ -1114,9 +1159,14 @@ const scriptTexts = JSON.stringify({
   </template>
   <template id="tpl-msg">
     <li class="msg">
-      <span class="msg-meta" data-meta></span>
-      <p class="msg-body" data-body></p>
-      <ul class="msg-files" data-files aria-label={A.requests.files} hidden></ul>
+      <span class="msg-head" data-head></span>
+      <div class="bubble">
+        <ul class="msg-files" data-files aria-label={A.requests.files} hidden></ul>
+        <p class="msg-line">
+          <span class="msg-body" data-body></span>
+          <time class="msg-time" data-time></time>
+        </p>
+      </div>
     </li>
   </template>
   <template id="tpl-contact">

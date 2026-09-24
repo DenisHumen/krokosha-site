@@ -13,7 +13,7 @@
     {{if and .Session .Script}}<script type="module" src="{{path "/static/" .Script}}"></script>{{end}}
   </head>
   {{if .Session}}
-    <body>
+    <body{{if .Full}} class="full"{{end}}>
       <div class="shell">
         {{/* Decoration only: without scripts the element stays empty. The owner can switch it off in the menu. */}}
         <glyph-field class="backdrop" ink="#2b2b30" accent="#3f4668" cell="13" intensity="0.9" fps="12" data-backdrop></glyph-field>

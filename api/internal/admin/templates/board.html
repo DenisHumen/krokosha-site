@@ -1,0 +1,78 @@
+{{define "head"}}
+  <div class="head head-row">
+    <h1>Доска заявок</h1>
+    <div class="head-tools">
+      <form class="form-row" method="get" action="{{path "/leads"}}" role="search">
+        <input type="hidden" name="view" value="board" />
+        <label class="visually-hidden" for="leads-search">Поиск по заявкам</label>
+        <input class="search" id="leads-search" type="search" name="q" value="{{.Data.Search}}" placeholder="Имя, контакт, #K-0042" />
+      </form>
+      <a class="btn btn-s" href="{{path "/leads"}}">← Разговоры</a>
+      <a class="btn btn-s" href="{{path "/templates"}}">Шаблоны</a>
+      <a class="btn btn-s" href="{{path "/leads/export.csv"}}" download>CSV ↓</a>
+    </div>
+  </div>
+{{end}}
+
+{{define "content"}}
+  {{$d := .Data}}
+  {{$f := $d.Funnel}}
+  <section class="tiles" aria-label="Заявки {{$d.Period}}">
+    <a class="tile tile-accent tile-stat" href="{{path "/leads"}}">
+      <div class="tile-head"><span>Заявок</span><span class="aside">{{$d.Period}}</span></div>
+      <div class="num-row"><span class="num">{{$f.Total}}</span><span class="num-sub">{{if $f.Spam}}из них спам: {{$f.Spam}}{{else}}новых: {{$f.New}}{{end}}</span></div>
+    </a>
+    <a class="tile tile-stat" href="{{href "/leads" "tab=work"}}">
+      <div class="tile-head"><span>В работе</span></div>
+      <div class="num-row"><span class="num">{{$f.InProgress}}</span><span class="num-sub">{{if $f.FirstResponse}}ответ за {{elapsed $f.FirstResponse}}{{else}}новых {{$f.New}}{{end}}</span></div>
+    </a>
+    <a class="tile tile-stat" href="{{href "/leads" "tab=waiting"}}">
+      <div class="tile-head"><span>Ждём клиента</span></div>
+      <div class="num-row"><span class="num">{{$f.Waiting}}</span><span class="num-sub">/ {{$f.Total}}</span></div>
+    </a>
+    <a class="tile tile-beige tile-stat" href="{{href "/leads" "tab=closed"}}">
+      <div class="tile-head"><span>Завершено</span></div>
+      <div class="num-row"><span class="num">{{$f.Done}}</span><span class="num-sub">{{if $f.Amount}}{{money $f.Amount}}{{else}}отклонено {{$f.Rejected}}{{end}}</span></div>
+    </a>
+  </section>
+
+  {{/* Drag a card to another column (static/admin.js); without scripts the conversation has the same buttons. */}}
+  <p class="board-state" id="board-state" role="status" hidden></p>
+  <div class="board" data-board data-csrf="{{.Session.CSRFToken}}" data-action="{{path "/leads/"}}">
+    {{range $d.Board}}
+      <section class="board-col" data-status="{{.Status}}" aria-label="{{.Name}}">
+        <h2 class="board-head"><span><span class="board-swatch status-{{.Status}}"></span>{{.Name}}</span><span class="count" data-count>{{len .Cards}}</span></h2>
+        <div class="board-cards">
+          {{range .Cards}}
+            <article class="board-card" draggable="true" data-lead="{{.ID}}">
+              <div class="board-card-top"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a><span class="muted-2">{{dayMonth .CreatedAt}}</span></div>
+              <span class="board-card-name">{{.Name}}</span>
+              <span class="board-card-sub">{{direction .Direction}}{{if .Budget}} · {{.Budget}}{{end}}{{if .Assignee}} · {{.Assignee}}{{end}}</span>
+              {{if or .LastFromUser (eq .Kind "inquiry") .Discount}}
+                <span class="pills">
+                  {{if .LastFromUser}}<span class="wait-tag">ждёт ответа</span>{{end}}
+                  {{if eq .Kind "inquiry"}}<span class="pill pill-muted">обращение</span>{{end}}
+                  {{if .Discount}}<span class="pill pill-ok">−{{.Discount}}%</span>{{end}}
+                </span>
+              {{end}}
+            </article>
+          {{end}}
+        </div>
+      </section>
+    {{end}}
+  </div>
+
+  <section class="tile">
+    <div class="tile-head"><span>Откуда заявки</span><span class="aside">{{$d.Period}} · без спама</span></div>
+    <div class="lines">
+      {{range $f.Sources}}
+        <div class="line">
+          <span class="line-name">{{if .Source}}{{source .Source}}{{else}}Визит неизвестен{{end}}{{if .Campaign}} <span class="muted-2">· {{.Campaign}}</span>{{end}}</span>
+          <span class="soft">{{plural .Requests "заявка" "заявки" "заявок"}} · завершено {{.Done}}</span>
+        </div>
+      {{else}}
+        <p class="empty">Заявок за период не было.</p>
+      {{end}}
+    </div>
+  </section>
+{{end}}
