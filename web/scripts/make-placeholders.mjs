@@ -1,6 +1,6 @@
 // Temporary brand assets until Claude Design delivers the real ones (design/assets/):
 //   src/assets/avatar-fallback.png   neutral avatar for builds without a synced GitHub avatar
-//   public/favicon.svg, favicon-32.png, apple-touch-icon.png
+//   public/favicon.svg, favicon-96.png, favicon.ico, apple-touch-icon.png
 //   public/img/og-default.png        1200×630 Open Graph card
 //
 // Everything is drawn with circles (dot-matrix look from the references), so the result does not
@@ -91,9 +91,35 @@ async function png(svg, file, size) {
   console.log('wrote', file);
 }
 
+/** A Windows icon file holding one full-colour PNG per size (the format since Windows Vista). */
+async function ico(svg, file, sizes) {
+  const images = await Promise.all(
+    sizes.map((size) => sharp(Buffer.from(svg)).resize(size, size).png().toBuffer()),
+  );
+  const header = Buffer.alloc(6 + 16 * sizes.length);
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(sizes.length, 4);
+  let offset = header.length;
+  sizes.forEach((size, index) => {
+    const entry = 6 + 16 * index;
+    header.writeUInt8(size, entry); // width and height; sizes stay under 256
+    header.writeUInt8(size, entry + 1);
+    header.writeUInt16LE(1, entry + 4); // colour planes
+    header.writeUInt16LE(32, entry + 6); // bits per pixel
+    header.writeUInt32LE(images[index].length, entry + 8);
+    header.writeUInt32LE(offset, entry + 12);
+    offset += images[index].length;
+  });
+  writeFileSync(join(web, file), Buffer.concat([header, ...images]));
+  console.log('wrote', file);
+}
+
 writeFileSync(join(web, 'public/favicon.svg'), `${monogram(64, { rounded: true })}\n`);
 console.log('wrote public/favicon.svg');
 await png(monogram(512), 'src/assets/avatar-fallback.png');
-await png(monogram(512, { rounded: true }), 'public/favicon-32.png', 32);
+// Google Search shows a site icon only when its side is a multiple of 48 px (an SVG it may skip):
+// hence 96 px. /favicon.ico is what browsers and crawlers ask for when a page links no icon.
+await png(monogram(512, { rounded: true }), 'public/favicon-96.png', 96);
+await ico(monogram(512, { rounded: true }), 'public/favicon.ico', [16, 32, 48]);
 await png(monogram(512), 'public/apple-touch-icon.png', 180);
 await png(ogCard(), 'public/img/og-default.png');

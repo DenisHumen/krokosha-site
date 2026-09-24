@@ -84,9 +84,11 @@ const ogImage = absoluteUrl(origin, '/img/og-default.png');
     <meta property="og:image:alt" content={seo.ogImageAlt} />
     <meta name="twitter:card" content="summary_large_image" />
 
+    {/* Google Search takes the 96 px one (a side that is a multiple of 48), browsers the SVG. */}
+    <link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#eeeeeb" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0e0e10" media="(prefers-color-scheme: dark)" />
