@@ -200,7 +200,9 @@ type Card struct {
 	AnonymizedAt    sql.NullTime // set when the storage period ran out: the person and the conversation are gone
 	// ReplyVia is how the next answer will reach the client: email | telegram | phone.
 	ReplyVia string
-	Feed     []Entry
+	// BotLinked: the client opened the bot by the link of this request (ClientLinked).
+	BotLinked bool
+	Feed      []Entry
 }
 
 // Card reads a request with its conversation and history, oldest first.
@@ -220,6 +222,10 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
 	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod, lead.ClientID); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM lead_events WHERE lead_id = ? AND action = 'client_linked')`, id).
+		Scan(&card.BotLinked); err != nil {
 		return nil, err
 	}
 
@@ -376,11 +382,14 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 
 // replyChannel says how an answer reaches the client: the way the client wrote last. Somebody who
 // left an email address and then continued in Telegram is answered in Telegram; before they write
-// anything, the contact of the form decides. A client with a personal account who left only a phone
-// is answered in the account: the answer is there at once, and the client is told about it.
+// anything, the contact of the form decides. Opening the bot by the link of the «thank you» page
+// counts as coming to Telegram: the bot told the client the answer would come to that chat. A client
+// with a personal account who left only a phone is answered in the account: the answer is there at
+// once, and the client is told about it.
 func replyChannel(ctx context.Context, db querier, id int64, method string, clientID int64) (string, error) {
 	var last string
-	err := db.QueryRowContext(ctx, `SELECT channel FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last)
+	var lastAt time.Time
+	err := db.QueryRowContext(ctx, `SELECT channel, created_at FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last, &lastAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		last = method
@@ -388,6 +397,16 @@ func replyChannel(ctx context.Context, db querier, id int64, method string, clie
 		return "", err
 	case last == ChannelEmail && method != MethodEmail:
 		last = method // a letter from somebody whose address the form does not have: see the mail step
+	}
+	if last != ChannelTelegram {
+		var linkedAt time.Time
+		err := db.QueryRowContext(ctx, `SELECT created_at FROM lead_events WHERE lead_id = ? AND action = 'client_linked' ORDER BY id DESC LIMIT 1`, id).Scan(&linkedAt)
+		switch {
+		case err == nil && linkedAt.After(lastAt): // lastAt is zero when the client wrote nothing yet
+			last = ChannelTelegram
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return "", err
+		}
 	}
 	if last == MethodPhone && clientID > 0 {
 		return ChannelSite, nil

@@ -216,6 +216,9 @@ func (b *Bot) stranger(ctx context.Context, message *Message, command, argument 
 			return
 		}
 	}
+	if command == "" {
+		b.passOn(ctx, message)
+	}
 	// One greeting in ten minutes; whatever else they write meanwhile stays unanswered.
 	if !b.opts.Cache.Allow(ctx, "tg-greeting:"+who, 1, 10*time.Minute) {
 		return

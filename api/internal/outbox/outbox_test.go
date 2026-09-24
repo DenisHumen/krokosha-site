@@ -117,7 +117,7 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	})
 
 	f.enqueue(NewTask{Channel: ChannelEmail, Kind: "lead.notify", LeadID: 7, DedupeKey: "lead:7:notify:email", Payload: struct{}{}})
-	for attempt := 1; attempt < len(backoff); attempt++ {
+	for attempt := 1; attempt <= len(backoff); attempt++ { // every pause is used, the 24 hours too
 		f.deliver(1)
 		status, attempts, lastError, next := f.row("lead:7:notify:email")
 		if status != "pending" || attempts != attempt || !strings.Contains(lastError, "connection refused") || !next.Equal(f.now.Add(backoff[attempt-1])) {
@@ -129,7 +129,7 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	// The mail server comes back before the last attempt: the message still arrives.
 	mail.fail = nil
 	f.deliver(1)
-	if status, attempts, _, _ := f.row("lead:7:notify:email"); status != "sent" || attempts != len(backoff) {
+	if status, attempts, _, _ := f.row("lead:7:notify:email"); status != "sent" || attempts != len(backoff)+1 {
 		t.Errorf("after recovery: %s, %d attempts", status, attempts)
 	}
 	if len(gaveUp) != 0 {
@@ -139,16 +139,20 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	// Another one never gets through.
 	mail.fail = errors.New("still down")
 	f.enqueue(NewTask{Channel: ChannelEmail, Kind: "lead.autoreply", LeadID: 8, DedupeKey: "lead:8:autoreply", Payload: struct{}{}})
-	for range len(backoff) {
+	started := f.now
+	for range len(backoff) + 1 {
 		f.deliver(1)
 		_, _, _, next := f.row("lead:8:autoreply")
 		f.now = next
 	}
-	if status, attempts, _, _ := f.row("lead:8:autoreply"); status != "failed" || attempts != len(backoff) {
+	if status, attempts, _, _ := f.row("lead:8:autoreply"); status != "failed" || attempts != len(backoff)+1 {
 		t.Errorf("after all attempts: %s, %d attempts", status, attempts)
 	}
 	if len(gaveUp) != 1 || gaveUp[0] != "lead.autoreply: still down" {
 		t.Errorf("give-up hook: %v", gaveUp)
+	}
+	if took := f.now.Sub(started); took < 44*time.Hour || took > 45*time.Hour {
+		t.Errorf("given up after %v, want about two days", took)
 	}
 	f.deliver(0)
 

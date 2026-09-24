@@ -574,3 +574,48 @@ func TestOpenMineAndUnclaimed(t *testing.T) {
 		t.Errorf("reminded twice: %v", due)
 	}
 }
+
+// TestAnswersFollowTheClientIntoTelegram: a client who left an address and then opened the bot by
+// the link of the «thank you» page was told the answer would come to that chat — so it goes there,
+// until the client writes a letter again.
+func TestAnswersFollowTheClientIntoTelegram(t *testing.T) {
+	f := newFixture(t)
+	store := NewStore(f.db, func() time.Time { return f.now })
+	id := f.seed(nil)
+	ctx := context.Background()
+	queued := func(messageID int64) string {
+		t.Helper()
+		var channel string
+		if err := f.db.QueryRow(`SELECT channel FROM outbox WHERE kind = 'lead.reply' AND JSON_EXTRACT(payload, '$.message_id') = ?`, messageID).Scan(&channel); err != nil {
+			t.Fatal(err)
+		}
+		return channel
+	}
+	answer := func(text string) string {
+		t.Helper()
+		f.now = f.now.Add(time.Minute)
+		messageID, err := store.Reply(ctx, id, "denis", text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return queued(messageID)
+	}
+
+	if channel := answer("Добрый день! Уточните, пожалуйста, сроки."); channel != ChannelEmail {
+		t.Errorf("before the client opened the bot: %s", channel)
+	}
+	f.now = f.now.Add(time.Minute)
+	if err := store.ClientLinked(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if channel := answer("Вижу, вы в Telegram: продолжим здесь."); channel != ChannelTelegram {
+		t.Errorf("after the client opened the bot: %s", channel)
+	}
+	f.now = f.now.Add(time.Minute)
+	if _, err := store.ClientMessage(ctx, id, ChannelEmail, "Лучше пишите на почту."); err != nil {
+		t.Fatal(err)
+	}
+	if channel := answer("Хорошо, пишу на почту."); channel != ChannelEmail {
+		t.Errorf("after a letter of the client: %s", channel)
+	}
+}
