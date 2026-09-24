@@ -26,10 +26,11 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// accountOfEmail finds the account that proved this address with a code; 0 — none.
+// accountOfEmail finds the account that proved this address with a code; 0 — none. The address is
+// compared in lower case, byte by byte: the table's collation alone would take «ánna@» for «anna@».
 func accountOfEmail(ctx context.Context, q querier, email string) (int64, error) {
 	var id int64
-	err := q.QueryRowContext(ctx, `SELECT id FROM clients WHERE email = ? AND disabled_at IS NULL`, email).Scan(&id)
+	err := q.QueryRowContext(ctx, `SELECT id FROM clients WHERE LOWER(email) COLLATE utf8mb4_bin = LOWER(?) AND disabled_at IS NULL`, email).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -43,10 +44,23 @@ func historyOf(ctx context.Context, q querier, clientID int64, method, value str
 	var history loyalty.History
 	var personal loyalty.Personal
 	var eggs int
+	// The eggs' discount given to a request the owner rejected (or found to be spam) was never
+	// spent: rejecting a stranger's request restores it, like the first request's.
 	aggregate := `SELECT COALESCE(SUM(status NOT IN ('rejected', 'spam')), 0), COALESCE(SUM(status = 'done'), 0),
-	                     COALESCE(SUM(IF(status = 'done', COALESCE(amount, 0), 0)), 0), COALESCE(SUM(discount_reason = 'eggs'), 0)
+	                     COALESCE(SUM(IF(status = 'done', COALESCE(amount, 0), 0)), 0),
+	                     COALESCE(SUM(discount_reason = 'eggs' AND status NOT IN ('rejected', 'spam')), 0)
 	              FROM leads WHERE kind = 'request' AND `
 	var err error
+	if clientID > 0 && lock {
+		// The account's row before its history: a second request of the same account, sent at the
+		// same moment, waits here until the first is committed — and then counts it, since the
+		// transaction reads what is committed (Store.Create). Otherwise both would see no earlier
+		// request and each take the one-time rewards.
+		var id int64
+		if err = q.QueryRowContext(ctx, `SELECT id FROM clients WHERE id = ? FOR UPDATE`, clientID).Scan(&id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return history, personal, err
+		}
+	}
 	if clientID > 0 {
 		err = q.QueryRowContext(ctx, aggregate+`client_id = ?`, clientID).Scan(&history.Earlier, &history.Orders, &history.Spent, &eggs)
 	} else {
@@ -144,6 +158,11 @@ func (s *Store) price(ctx context.Context, tx *sql.Tx, lead *Lead) (loyalty.Offe
 	history, personal, err := historyOf(ctx, tx, lead.ClientID, lead.ContactMethod, lead.ContactValue, true)
 	if err != nil {
 		return loyalty.Offer{}, nil, err
+	}
+	// A personal discount is the owner's gift to the client: the client spends it, signed in — not
+	// whoever types the client's address into the form (the request still joins the account).
+	if !lead.Trusted {
+		personal = loyalty.Personal{}
 	}
 	claim := loyalty.Claim{}
 	var fingerprint []byte

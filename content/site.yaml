@@ -491,6 +491,17 @@ account:
     submit: { en: "Sign in", uk: "Увійти", ru: "Войти" }
     back: { en: "Another way", uk: "Інший спосіб", ru: "Другой способ" }
     link: { en: "Signing you in…", uk: "Входимо…", ru: "Входим…" }
+    # Ссылка из письма или от бота сначала спрашивает: чужая ссылка открыла бы чужой кабинет. {account} — «d***s@gmail.com».
+    link_ask:
+      en: "This link signs in to the account of {account}."
+      uk: "Це посилання веде до кабінету {account}."
+      ru: "Эта ссылка ведёт в кабинет {account}."
+    link_note:
+      en: "Sign in only if you asked for the link yourself: a link from somebody else opens their account, and they would see whatever you send from it."
+      uk: "Входьте, лише якщо ви самі запитували посилання: чуже посилання відкриває чужий кабінет, і його власник побачить усе, що ви звідти надішлете."
+      ru: "Входите, только если вы сами запрашивали ссылку: чужая ссылка открывает чужой кабинет, и его владелец увидит всё, что вы оттуда отправите."
+    link_yes: { en: "Sign in", uk: "Увійти", ru: "Войти" }
+    link_no: { en: "It is not mine", uk: "Це не моє", ru: "Это не моё" }
     note:
       en: "No account yet? It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it."
       uk: "Ще немає кабінету? Він з'явиться з першим входом, а заявки, надіслані раніше з тієї ж пошти чи Telegram, приєднаються до нього."

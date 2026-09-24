@@ -132,6 +132,14 @@ export function initAccount(): void {
     minute: '2-digit',
   });
   const date = (value: string) => day.format(new Date(value));
+  // «YYYY-MM-DD» is a day, not a moment: read as UTC midnight, it must be shown in UTC too, or a
+  // visitor west of Greenwich sees the day before.
+  const dayOnly = new Intl.DateTimeFormat(lang, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
   const when = (value: string) => moment.format(new Date(value));
   let money = new Intl.NumberFormat(lang, {
     style: 'currency',
@@ -221,15 +229,17 @@ export function initAccount(): void {
   const telegramStep = $(login, '[data-login-telegram]');
   const botLink = $<HTMLAnchorElement>(login, '[data-bot-link]');
   const codeForm = $<HTMLFormElement>(login, '[data-login-code]');
+  const linkStep = $(login, '[data-login-link]');
   const loginError = $(login, '[data-login-error]');
   const methods = $(login, '[data-login-methods]');
   let botReady = false;
 
-  function loginStep(step: 'email' | 'telegram' | 'code') {
-    methods.hidden = step === 'code';
+  function loginStep(step: 'email' | 'telegram' | 'code' | 'link') {
+    methods.hidden = step === 'code' || step === 'link';
     emailForm.hidden = step !== 'email';
     telegramStep.hidden = step !== 'telegram';
     codeForm.hidden = step !== 'code';
+    linkStep.hidden = step !== 'link';
     if (step === 'code') $<HTMLInputElement>(codeForm, 'input').focus();
   }
 
@@ -239,6 +249,30 @@ export function initAccount(): void {
     show('login');
     loginStep(method());
     loginError.textContent = message;
+    // The Telegram way needs a fresh link into the bot: the last one is spent or was never made.
+    if (method() === 'telegram') void startTelegram();
+  }
+
+  /** Asks whether to sign in to the account a link opens; true — the visitor agreed. */
+  function askLink(account: string): Promise<boolean> {
+    show('login');
+    loginStep('link');
+    loginError.textContent = '';
+    $(linkStep, '[data-link-account]').textContent = fill(A.login.link_ask, { account });
+    const yes = $<HTMLButtonElement>(linkStep, '[data-link-yes]');
+    const no = $<HTMLButtonElement>(linkStep, '[data-link-no]');
+    yes.focus();
+    return new Promise((resolve) => {
+      const answer = (agreed: boolean) => {
+        yes.removeEventListener('click', onYes);
+        no.removeEventListener('click', onNo);
+        resolve(agreed);
+      };
+      const onYes = () => answer(true);
+      const onNo = () => answer(false);
+      yes.addEventListener('click', onYes);
+      no.addEventListener('click', onNo);
+    });
   }
 
   const method = () =>
@@ -428,7 +462,9 @@ export function initAccount(): void {
       personal.textContent = [
         fill(A.loyalty.personal, { percent: own.percent }),
         own.once ? A.loyalty.personal_once : '',
-        own.until ? fill(A.loyalty.personal_until, { date: date(own.until) }) : '',
+        own.until
+          ? fill(A.loyalty.personal_until, { date: dayOnly.format(new Date(own.until)) })
+          : '',
         own.note,
       ]
         .filter(Boolean)
@@ -1048,14 +1084,28 @@ export function initAccount(): void {
 
   async function start() {
     // A link from a letter or from the bot: «#login=<token>». The token leaves the address at once.
+    // It signs in once the visitor has seen whose account it opens and agreed: a link somebody
+    // else sent would quietly put this browser into their account, and whatever is sent from it
+    // later would be theirs to read.
     const token = /^#login=([A-Za-z0-9._-]{8,200})$/.exec(location.hash)?.[1];
     if (token) {
       history.replaceState(null, '', location.pathname + location.search);
-      $(root!, '[data-loading]').textContent = A.login.link;
-      const { data } = await api('POST', '/api/account/login/link', { token });
-      if (!data.ok) {
-        signedOut(error(data.error));
+      const peek = await api<Answer & { account?: string }>('POST', '/api/account/login/link', {
+        token,
+        peek: true,
+      });
+      if (!peek.data.ok || typeof peek.data.account !== 'string') {
+        signedOut(error(peek.data.error));
         return;
+      }
+      if (await askLink(peek.data.account)) {
+        $(root!, '[data-loading]').textContent = A.login.link;
+        show('loading');
+        const { data } = await api('POST', '/api/account/login/link', { token });
+        if (!data.ok) {
+          signedOut(error(data.error));
+          return;
+        }
       }
     }
     await load();

@@ -78,7 +78,16 @@ func TestWorkingWithAClient(t *testing.T) {
 	if client.Personal.Percent != 25 || !client.Personal.Once || client.Personal.Note != "партнёрская" {
 		t.Errorf("personal discount: %+v", client.Personal)
 	}
-	lead := s.addLead(func(sub *leads.Submission) { sub.ContactValue = "petr@company.com" })
+	// The client's address typed by somebody who is not signed in: the request joins the account, but
+	// the personal discount is not theirs to spend…
+	typed := s.addLead(func(sub *leads.Submission) { sub.ContactValue = "petr@company.com" })
+	if typed.ClientID != id || typed.Discount.Reason == "personal" {
+		t.Errorf("a request with the client's address, signed out: #%d %+v", typed.ClientID, typed.Discount)
+	}
+	// …the client spends it, signed in.
+	lead := s.addLead(func(sub *leads.Submission) {
+		sub.ContactValue, sub.ClientID, sub.Trusted = "petr@company.com", id, true
+	})
 	if lead.Discount.Percent != 25 || lead.Discount.Reason != "personal" {
 		t.Errorf("the next request: %+v", lead.Discount)
 	}
@@ -193,5 +202,47 @@ func TestTheBenchShowsTheSitesBanner(t *testing.T) {
 	}
 	if !bytes.Equal(site, copied) {
 		t.Fatal("api/internal/admin/static/achievement.js differs from design/components/eggs/achievement.js: copy it again")
+	}
+}
+
+// A request is given to a client by the client's number or whole address — a part of an address
+// may be somebody else's — and a request in another client's account stays there until detached.
+func TestAttachingARequest(t *testing.T) {
+	s := newSite(t)
+	ctx := context.Background()
+	anna, err := s.clients.Create(ctx, "Анна", "anna@company.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joanna, err := s.clients.Create(ctx, "Иоанна", "joanna@company.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.signIn()
+	lead := s.addLead(func(sub *leads.Submission) { sub.ContactValue = "boris@company.com" })
+	path := "/leads/" + strconv.FormatInt(lead.ID, 10) + "/client"
+	owner := func() int64 {
+		t.Helper()
+		got, err := s.leads.Get(ctx, lead.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.ClientID
+	}
+	if got := s.post(path, url.Values{"client": {"oanna@company.com"}}); got.status != http.StatusBadRequest || owner() != 0 {
+		t.Errorf("a part of an address: %d, the request is #%d's", got.status, owner())
+	}
+	if got := s.post(path, url.Values{"client": {"Anna@Company.com"}}); got.status != http.StatusSeeOther || owner() != anna {
+		t.Fatalf("the whole address: %d, the request is #%d's", got.status, owner())
+	}
+	moveTo := url.Values{"client": {"#" + strconv.FormatInt(joanna, 10)}}
+	if got := s.post(path, moveTo); got.status != http.StatusConflict || owner() != anna {
+		t.Errorf("into another account at once: %d, the request is #%d's", got.status, owner())
+	}
+	if got := s.post(path, url.Values{"detach": {"1"}}); got.status != http.StatusSeeOther || owner() != 0 {
+		t.Errorf("detach: %d, the request is #%d's", got.status, owner())
+	}
+	if got := s.post(path, moveTo); got.status != http.StatusSeeOther || owner() != joanna {
+		t.Errorf("a detached request given to another client: %d, the request is #%d's", got.status, owner())
 	}
 }

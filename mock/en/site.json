@@ -392,6 +392,10 @@
       "submit": "Sign in",
       "back": "Another way",
       "link": "Signing you in…",
+      "link_ask": "This link signs in to the account of {account}.",
+      "link_note": "Sign in only if you asked for the link yourself: a link from somebody else opens their account, and they would see whatever you send from it.",
+      "link_yes": "Sign in",
+      "link_no": "It is not mine",
       "note": "No account yet? It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it."
     },
     "errors": {

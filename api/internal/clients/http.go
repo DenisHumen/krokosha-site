@@ -132,10 +132,13 @@ func (h *Handler) signedIn(next http.HandlerFunc, signedOut int) http.HandlerFun
 			return
 		}
 		session, err := h.session(r)
+		if err != nil && !errors.Is(err, ErrNoSession) {
+			// The database did not answer: the session may be fine, and stays.
+			h.s.opts.Log.Error("account: cannot check a session", "error", err)
+			fail(w, http.StatusServiceUnavailable, "server_error")
+			return
+		}
 		if err != nil {
-			if !errors.Is(err, ErrNoSession) {
-				h.s.opts.Log.Error("account: cannot check a session", "error", err)
-			}
 			clearCookie(w, SessionCookie)
 			fail(w, signedOut, "signed_out")
 			return
@@ -194,7 +197,7 @@ func (h *Handler) attempt(r *http.Request, lang string) Attempt {
 	a := Attempt{Lang: lang, Network: "unknown", Device: client.Browser + " · " + client.OS}
 	if ip := server.ClientIP(r.Context()); ip != nil {
 		a.Network = analytics.TruncateIP(ip)
-		a.Key = h.s.keyOf(ip.String())
+		a.Key = h.s.keyOf(LimitKey(ip))
 	}
 	return a
 }
@@ -268,9 +271,20 @@ func (h *Handler) verifyCode(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) verifyLink(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
+		// Peek: only say whose account the link opens — the page asks the visitor before it signs in.
+		Peek bool `json:"peek"`
 	}
 	if !read(r, &body) {
 		fail(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if body.Peek {
+		account, err := h.s.PeekLink(r.Context(), body.Token, h.attempt(r, ""))
+		if err != nil {
+			h.answerVerified(w, Result{}, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "account": account})
 		return
 	}
 	result, err := h.s.VerifyLink(r.Context(), body.Token, h.attempt(r, ""))

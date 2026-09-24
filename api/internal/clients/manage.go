@@ -174,11 +174,17 @@ func (s *Service) Create(ctx context.Context, name, email, phone string) (int64,
 	name = cut(leads.Clean(name, false), 100)
 	var address sql.NullString
 	if strings.TrimSpace(email) != "" {
-		normalized := leads.NormalizeEmail(email)
+		normalized := NormalizeEmail(email)
 		if normalized == "" {
 			return 0, ErrBadContact
 		}
 		address = sql.NullString{String: normalized, Valid: true}
+	}
+	// The phone is checked before the account exists: a refusal must not leave half an account.
+	if strings.TrimSpace(phone) != "" {
+		if _, err := NormalizeContact("phone", phone); err != nil {
+			return 0, ErrBadContact
+		}
 	}
 	now := s.now()
 	result, err := s.opts.DB.ExecContext(ctx, `INSERT INTO clients (created_at, updated_at, name, lang, email) VALUES (?, ?, ?, 'ru', ?)`,
@@ -224,12 +230,26 @@ func (s *Service) SetNote(ctx context.Context, id int64, note string) error {
 	return s.exec(ctx, id, `UPDATE clients SET note = ?, updated_at = ? WHERE id = ?`, nullString(cut(leads.Clean(note, true), 4000)))
 }
 
+// ByEmail finds the account that signs in with an address — that very address, not a part of it.
+func (s *Service) ByEmail(ctx context.Context, email string) (int64, error) {
+	address := NormalizeEmail(email)
+	if address == "" {
+		return 0, ErrNotFound
+	}
+	var id int64
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT id FROM clients WHERE `+sameEmail, address).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
 // SetEmail changes the address a client signs in with — when they lost the old one. The owner
 // vouches for the new one; "" removes it (the client keeps Telegram, or has no way in until given one).
 func (s *Service) SetEmail(ctx context.Context, id int64, email string) error {
 	address := sql.NullString{}
 	if strings.TrimSpace(email) != "" {
-		if address.String = leads.NormalizeEmail(email); address.String == "" {
+		if address.String = NormalizeEmail(email); address.String == "" {
 			return ErrBadContact
 		}
 		address.Valid = true

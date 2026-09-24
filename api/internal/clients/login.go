@@ -11,9 +11,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
@@ -21,8 +23,10 @@ import (
 
 // Signing in with a one-time code. A browser asks for a code for an address, or for a link into the
 // site's Telegram bot; the code comes by email or from the bot and works in that browser only — the
-// one holding the cookie it got when it asked. A letter also carries a link that works anywhere:
-// opening the letter proves the address as well as the code does.
+// one holding the cookie it got when it asked. A letter to sign in also carries a link that works
+// anywhere: opening the letter proves the address as well as the code does. Adding an address or a
+// Telegram account to an account is the code's alone: a link would work in the browser of whoever
+// got the letter, and hand their address — with the requests they left — to the account that asked.
 //
 // Neither the code nor the link is stored. A login keeps a random nonce; the code and the link are
 // HMACs of it with APP_SECRET, made again when the letter is written and when the code comes back.
@@ -38,6 +42,9 @@ const (
 	LoginLifetime = 15 * time.Minute
 	linkLifetime  = 24 * time.Hour
 	loginTries    = 5
+	// lettersPerHour is what the whole site may send of letters with codes in an hour, whoever asks:
+	// the mail server's reputation must not depend on how many addresses a stranger can come from.
+	lettersPerHour = 40
 
 	// TelegramPrefix starts «/start l_…»: the bot hands such a login its code.
 	TelegramPrefix = "l_"
@@ -152,6 +159,42 @@ func (s *Service) keyOf(value string) string {
 	return hex.EncodeToString(s.mac("key", []byte(strings.ToLower(value)))[:8])
 }
 
+// NormalizeEmail is an address an account may sign in with: as the contact form keeps it, and in
+// ASCII only. The database compares text by a collation that takes «ánna@» for «anna@»: were such an
+// address accepted, a code sent to the look-alike would open the account of the real one. Lookups of
+// addresses compare them in lower case, byte by byte (sameEmail).
+func NormalizeEmail(value string) string {
+	email := leads.NormalizeEmail(value)
+	if strings.IndexFunc(email, func(r rune) bool { return r >= utf8.RuneSelf }) >= 0 {
+		return ""
+	}
+	return email
+}
+
+// sameEmail is the condition «the account's address is this one»: in any letter case, and nothing
+// the collation merely takes for it.
+const sameEmail = `LOWER(email) COLLATE utf8mb4_bin = LOWER(?)`
+
+// mailboxOf is the mailbox an address ends up in, for the limit of letters to one person: without
+// a «+tag», and without the dots Gmail does not see.
+func mailboxOf(email string) string {
+	local, domain, _ := strings.Cut(email, "@")
+	local, _, _ = strings.Cut(local, "+")
+	if domain == "gmail.com" || domain == "googlemail.com" {
+		local, domain = strings.ReplaceAll(local, ".", ""), "gmail.com"
+	}
+	return local + "@" + domain
+}
+
+// LimitKey is who a rate limit counts: an IPv4 address, or the /64 of an IPv6 one — which a single
+// customer of a provider holds whole, to rotate through.
+func LimitKey(ip net.IP) string {
+	if ip.To4() == nil {
+		return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
+	}
+	return ip.String()
+}
+
 // newLogin writes a login and returns it with the browser's secret.
 func (s *Service) newLogin(ctx context.Context, channel, email string, startHash []byte, clientID int64, lang string, lifetime time.Duration) (*login, string, error) {
 	nonce, err := randomBytes(16)
@@ -186,15 +229,18 @@ func (s *Service) newLogin(ctx context.Context, channel, email string, startHash
 // StartEmail sends a code to an address. clientID > 0: the address is being added to that account.
 // An address of a blocked account gets nothing, and the browser is told the same as everybody.
 func (s *Service) StartEmail(ctx context.Context, address string, a Attempt, clientID int64) (Started, error) {
-	email := leads.NormalizeEmail(address)
+	email := NormalizeEmail(address)
 	if email == "" {
 		return Started{}, ErrBadContact
 	}
-	if !s.allow(ctx, "login", a.Key, 10) || !s.allow(ctx, "login-email", s.keyOf(email), 5) {
+	// Per browser's network, per mailbox, and for the whole site: however many addresses and
+	// networks a stranger has, the mail server sends no more than lettersPerHour of these.
+	if !s.allow(ctx, "login", a.Key, 10) || !s.allow(ctx, "login-email", s.keyOf(mailboxOf(email)), 5) ||
+		!s.allow(ctx, "login-letters", "site", lettersPerHour) {
 		return Started{}, ErrThrottled
 	}
 	var disabled bool
-	err := s.opts.DB.QueryRowContext(ctx, `SELECT disabled_at IS NOT NULL FROM clients WHERE email = ?`, email).Scan(&disabled)
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT disabled_at IS NOT NULL FROM clients WHERE `+sameEmail, email).Scan(&disabled)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Started{}, err
 	}
@@ -292,7 +338,11 @@ func (s *Service) TelegramStart(ctx context.Context, token string, telegramID in
 	if err != nil {
 		return TelegramCode{}, ErrUsed
 	}
-	return TelegramCode{Code: s.code(l), LinkURL: s.LinkURL(l.lang, s.linkToken(l)), Lang: l.lang, Adding: l.clientID > 0}, nil
+	code := TelegramCode{Code: s.code(l), Lang: l.lang, Adding: l.clientID > 0}
+	if !code.Adding { // adding a Telegram account is the code's alone (see the top of the file)
+		code.LinkURL = s.LinkURL(l.lang, s.linkToken(l))
+	}
+	return code, nil
 }
 
 // VerifyCode finishes the login the browser asked for, with the code it was given.
@@ -337,28 +387,55 @@ func (s *Service) VerifyCode(ctx context.Context, browser, code string, a Attemp
 
 // VerifyLink finishes a login by the link of a letter or of the bot.
 func (s *Service) VerifyLink(ctx context.Context, token string, a Attempt) (Result, error) {
-	dot := strings.IndexByte(token, '.')
-	if dot <= 0 || len(token) > 60 {
-		return Result{}, ErrBadCode
-	}
-	id, err := strconv.ParseInt(token[:dot], 36, 64)
-	if err != nil {
-		return Result{}, ErrBadCode
-	}
-	if !s.allow(ctx, "code", a.Key, 30) {
-		return Result{}, ErrThrottled
-	}
-	l, err := scanLogin(s.opts.DB.QueryRowContext(ctx, `SELECT `+loginColumns+` FROM client_logins WHERE id = ? AND used_at IS NULL AND expires_at > ?`, id, s.now()))
-	if errors.Is(err, sql.ErrNoRows) {
-		return Result{}, ErrBadCode
-	}
+	l, err := s.linkLogin(ctx, token, a)
 	if err != nil {
 		return Result{}, err
 	}
-	if !hmac.Equal([]byte(token), []byte(s.linkToken(l))) || (l.channel == MethodTelegram && l.telegramID == 0) {
-		return Result{}, ErrBadCode
-	}
 	return s.complete(ctx, l, a)
+}
+
+// PeekLink tells whose account a link opens, half hidden, and spends nothing: the page asks before
+// it signs in, so that a link somebody else sent cannot quietly put a browser into their account —
+// where the next request of whoever uses that browser would land.
+func (s *Service) PeekLink(ctx context.Context, token string, a Attempt) (string, error) {
+	l, err := s.linkLogin(ctx, token, a)
+	if err != nil {
+		return "", err
+	}
+	if l.channel == MethodTelegram {
+		if l.telegramUser == "" {
+			return "Telegram", nil
+		}
+		return "Telegram @" + maskName(l.telegramUser), nil
+	}
+	return maskEmail(l.email), nil
+}
+
+// linkLogin is the login of a link that still works. A login that adds an address or a Telegram
+// account to an account has no link that works (see the top of the file).
+func (s *Service) linkLogin(ctx context.Context, token string, a Attempt) (*login, error) {
+	dot := strings.IndexByte(token, '.')
+	if dot <= 0 || len(token) > 60 {
+		return nil, ErrBadCode
+	}
+	id, err := strconv.ParseInt(token[:dot], 36, 64)
+	if err != nil {
+		return nil, ErrBadCode
+	}
+	if !s.allow(ctx, "code", a.Key, 30) {
+		return nil, ErrThrottled
+	}
+	l, err := scanLogin(s.opts.DB.QueryRowContext(ctx, `SELECT `+loginColumns+` FROM client_logins WHERE id = ? AND used_at IS NULL AND expires_at > ?`, id, s.now()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrBadCode
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !hmac.Equal([]byte(token), []byte(s.linkToken(l))) || (l.channel == MethodTelegram && l.telegramID == 0) || l.clientID > 0 {
+		return nil, ErrBadCode
+	}
+	return l, nil
 }
 
 // complete spends a login: it signs the client in (making the account when there is none), or adds
@@ -401,12 +478,12 @@ func (s *Service) complete(ctx context.Context, l *login, a Attempt) (Result, er
 
 // findOrCreate returns the account of the proven address or Telegram account, making one if needed.
 func (s *Service) findOrCreate(ctx context.Context, l *login) (*Client, bool, error) {
-	column, value := "email", any(l.email)
+	condition, value := sameEmail, any(l.email)
 	if l.channel == MethodTelegram {
-		column, value = "telegram_id", l.telegramID
+		condition, value = "telegram_id = ?", l.telegramID
 	}
-	lookup := func() (*Client, error) { // the column is one of the two constants above
-		return scanClient(s.opts.DB.QueryRowContext(ctx, `SELECT `+clientColumns+` FROM clients WHERE `+column+` = ?`, value))
+	lookup := func() (*Client, error) { // the condition is one of the two constants above
+		return scanClient(s.opts.DB.QueryRowContext(ctx, `SELECT `+clientColumns+` FROM clients WHERE `+condition, value))
 	}
 	client, err := lookup()
 	if err == nil {
@@ -446,12 +523,12 @@ func (s *Service) findOrCreate(ctx context.Context, l *login) (*Client, bool, er
 
 // addWay puts a proven address or Telegram account on the account that asked for the code.
 func (s *Service) addWay(ctx context.Context, l *login) error {
-	column, value := "email", any(l.email)
+	condition, value := sameEmail, any(l.email)
 	if l.channel == MethodTelegram {
-		column, value = "telegram_id", l.telegramID
+		condition, value = "telegram_id = ?", l.telegramID
 	}
-	var owner int64 // the column is one of the two constants above
-	err := s.opts.DB.QueryRowContext(ctx, `SELECT id FROM clients WHERE `+column+` = ?`, value).Scan(&owner)
+	var owner int64 // the condition is one of the two constants above
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT id FROM clients WHERE `+condition, value).Scan(&owner)
 	switch {
 	case err == nil && owner != l.clientID:
 		return ErrTaken
@@ -476,11 +553,19 @@ func maskEmail(email string) string {
 	if !ok || local == "" {
 		return email
 	}
-	runes := []rune(local)
-	if len(runes) <= 2 {
-		return string(runes[0]) + "***@" + domain
+	return maskName(local) + "@" + domain
+}
+
+// maskName keeps the first and the last letter of a name: «d***s».
+func maskName(name string) string {
+	runes := []rune(name)
+	switch {
+	case len(runes) == 0:
+		return ""
+	case len(runes) <= 2:
+		return string(runes[0]) + "***"
 	}
-	return string(runes[0]) + "***" + string(runes[len(runes)-1]) + "@" + domain
+	return string(runes[0]) + "***" + string(runes[len(runes)-1])
 }
 
 func isDuplicate(err error) bool {

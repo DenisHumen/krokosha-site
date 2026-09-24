@@ -153,6 +153,17 @@ func (s *Store) erasing(ctx context.Context, leadID int64) {
 // in one transaction (brief B10.2): either everything is there, or the visitor is told to try
 // again. Spam is stored too, silently: nobody is notified.
 func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, session analytics.SessionSummary, ipPrefix string) (*Lead, error) {
+	lead, err := s.create(ctx, sub, verdict, session, ipPrefix)
+	// Two requests at the same moment with one receipt of the eggs: the second learns the receipt is
+	// spent only when its row meets the first one's in the unique key. It goes without that discount.
+	if err != nil && sub.EggsReceipt != "" && strings.Contains(err.Error(), "uq_leads_eggs") {
+		sub.EggsReceipt = ""
+		lead, err = s.create(ctx, sub, verdict, session, ipPrefix)
+	}
+	return lead, err
+}
+
+func (s *Store) create(ctx context.Context, sub Submission, verdict Verdict, session analytics.SessionSummary, ipPrefix string) (*Lead, error) {
 	token := make([]byte, 16)
 	if _, err := rand.Read(token); err != nil {
 		return nil, err
@@ -169,7 +180,9 @@ func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, ses
 		lead.Status = StatusSpam
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	// Read committed: the price of a request of an account is decided after its row is locked, on the
+	// requests committed by then (historyOf).
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, err
 	}

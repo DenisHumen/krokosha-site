@@ -77,7 +77,8 @@ function render(
     found.add('all');
     const all = foundAt(stored.all);
     const last = Math.max(...EGGS.map((id) => dates.get(id)?.getTime() ?? 0));
-    dates.set('all', all ?? new Date(last));
+    // No date known yet (the finds are still being fetched): none shown, rather than 1970.
+    if (all || last > 0) dates.set('all', all ?? new Date(last));
   }
   const day = new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'long', year: 'numeric' });
 

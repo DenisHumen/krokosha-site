@@ -13,7 +13,8 @@ import (
 // Signing in to the personal account with Telegram (docs/architecture.md, 2026-09-24). The site
 // gives the browser a link into the bot, «/start l_<token>»; the bot binds the login to whoever
 // opened it and hands them the code, which they type on the site — in the browser that asked. A
-// button with a link signs in wherever it is opened, like the link of a letter.
+// button with a link signs in wherever it is opened, like the link of a letter; linking Telegram to
+// an account has no such button — only the code, typed where it was asked for.
 
 // Logins signs clients in (clients.Service).
 type Logins interface {
@@ -86,5 +87,9 @@ func (b *Bot) signIn(ctx context.Context, message *Message, token string) {
 	}
 	// <code> makes the digits copy with a tap.
 	text := Escape(intro) + "\n\n<code>" + Escape(code.Code) + "</code>\n\n" + Escape(loginText(lang, "where")) + "\n\n" + Escape(loginText(lang, "ignore"))
-	b.say(ctx, Outgoing{ChatID: chatID, Text: text, Buttons: Keyboard{{{Text: loginText(lang, "button"), URL: code.LinkURL}}}})
+	out := Outgoing{ChatID: chatID, Text: text}
+	if code.LinkURL != "" {
+		out.Buttons = Keyboard{{{Text: loginText(lang, "button"), URL: code.LinkURL}}}
+	}
+	b.say(ctx, out)
 }

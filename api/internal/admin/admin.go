@@ -215,7 +215,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/leads/{id}/delete", h.private(h.leadDelete))
 	mux.Handle("POST "+p+"/leads/{id}/discount", h.private(h.leadDiscount))
 	mux.Handle("POST "+p+"/leads/{id}/amount", h.private(h.leadAmount))
-	mux.Handle("POST "+p+"/leads/{id}/client", h.private(h.leadClient))
+	if h.opts.Clients != nil {
+		mux.Handle("POST "+p+"/leads/{id}/client", h.private(h.leadClient))
+	}
 	if h.opts.Achievements != nil || h.opts.Clients != nil {
 		mux.Handle("GET "+p+"/achievements", h.private(h.achievementsPage))
 	}
@@ -395,7 +397,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	v.HasClients = v.Session != nil && h.opts.Clients != nil
 	v.HasMail = v.Session != nil && h.opts.Mailboxes != nil
 	v.HasAchievements = v.Session != nil && (h.opts.Achievements != nil || h.opts.Clients != nil)
-	if data, ok := v.Data.(mailData); ok && data.Waiting && data.Issued == "" {
+	if data, ok := v.Data.(mailData); ok && data.Waiting && !data.Stuck && data.Issued == "" {
 		v.Refresh = true
 	}
 	if v.Session != nil && h.opts.Inbox != nil {

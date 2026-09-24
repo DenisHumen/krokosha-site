@@ -130,8 +130,13 @@ async function mockApi(page: Page, signedIn = false): Promise<Api> {
         return route.fulfill({ json: session ? ME : { ok: false, error: 'signed_out' } });
       case '/api/account/login':
         return route.fulfill({ json: { ok: true, sent_to: 'o***a@company.com' } });
-      case '/api/account/login/code':
       case '/api/account/login/link':
+        // The page asks whose account a link opens before it spends it.
+        if ((request.postDataJSON() as { peek?: boolean }).peek)
+          return route.fulfill({ json: { ok: true, account: 'o***a@company.com' } });
+        session = true;
+        return route.fulfill({ json: { ok: true, lang: 'ru', created: false, linked: 0 } });
+      case '/api/account/login/code':
         session = true;
         return route.fulfill({ json: { ok: true, lang: 'ru', created: false, linked: 0 } });
       case '/api/account/leads':
@@ -204,14 +209,30 @@ test.describe('personal account', () => {
     await expect(page.locator('[data-session-list] li')).toHaveCount(2);
   });
 
-  test('a link from a letter signs in, and the token leaves the address', async ({ page }) => {
+  test('a link from a letter says whose account it opens, then signs in', async ({ page }) => {
     const api = await mockApi(page);
     await page.goto('/account/#login=1a2b.c2VjcmV0LWxpbmstdG9rZW4');
+    const ask = page.locator('[data-login-link]');
+    await expect(ask).toContainText('o***a@company.com');
+    // The token leaves the address at once, and nothing is spent before the visitor agrees.
+    expect(new URL(page.url()).hash).toBe('');
+    expect(api.bodies.get('/api/account/login/link')).toEqual({
+      token: '1a2b.c2VjcmV0LWxpbmstdG9rZW4',
+      peek: true,
+    });
+    await ask.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Hello, Ольга');
     expect(api.bodies.get('/api/account/login/link')).toEqual({
       token: '1a2b.c2VjcmV0LWxpbmstdG9rZW4',
     });
-    expect(new URL(page.url()).hash).toBe('');
+  });
+
+  test('a link somebody else sent is turned down with one click', async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto('/account/#login=1a2b.c2VjcmV0LWxpbmstdG9rZW4');
+    await page.getByRole('button', { name: 'It is not mine' }).click();
+    await expect(page.locator('#login-email')).toBeVisible();
+    expect(api.calls.filter((call) => call === 'POST /api/account/login/link')).toHaveLength(1);
   });
 
   test('opens a request from its address and answers in it', async ({ page }) => {

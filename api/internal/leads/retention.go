@@ -80,8 +80,8 @@ func (s *Store) Anonymize(ctx context.Context, id int64) error {
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE leads SET name = '—', contact_value = '', description = '', public_token = ?, session_id = NULL, referrer_host = NULL,
-		       ip_prefix = '', sections_seen = NULL, spam_reasons = NULL, client_id = NULL, subject = NULL, discount_detail = NULL,
-		       anonymized_at = ?
+		       ip_prefix = '', sections_seen = NULL, spam_reasons = NULL, client_id = NULL, parent_id = NULL, subject = NULL,
+		       discount_detail = NULL, anonymized_at = ?
 		WHERE id = ? AND anonymized_at IS NULL`, token, now, id)
 	if err != nil {
 		return err
@@ -95,6 +95,8 @@ func (s *Store) Anonymize(ctx context.Context, id int64) error {
 		`DELETE FROM outbox WHERE lead_id = ?`,
 		// Reasons of refusals and details of events are the owner's free text: it may name the person.
 		`UPDATE lead_events SET details = NULL WHERE lead_id = ?`,
+		// An inquiry about the order no longer leads to it: its sum and dates are nobody's now.
+		`UPDATE leads SET parent_id = NULL WHERE parent_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, query, id); err != nil {
 			return err

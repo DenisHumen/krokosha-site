@@ -118,6 +118,10 @@ const accountSchema = z.strictObject({
     submit: localized,
     back: localized,
     link: localized,
+    link_ask: localized,
+    link_note: localized,
+    link_yes: localized,
+    link_no: localized,
     note: localized,
   }),
   // One per error code of the API (api/internal/clients/http.go), plus the page's own.

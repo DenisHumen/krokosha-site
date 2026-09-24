@@ -9,6 +9,9 @@
     <p class="notice notice-warn">Почтового сервера здесь нет: сайт установлен с <span class="mono">--no-mail</span>. Установить: <span class="mono">sudo deploy/install.sh --from-env --mailbox denis@{{$d.Domain}}</span></p>
   {{else}}
     <div class="stack">
+      {{if $d.Stuck}}
+        <p class="notice notice-warn">Запрос ждёт дольше минуты: помощник, который применяет запросы, не запускается. Проверьте на сервере: <span class="mono">systemctl status krokosha-mailbox.path krokosha-mailbox.service</span></p>
+      {{end}}
       {{if $d.Issued}}
         <section class="card">
           <h2 class="card-title">Пароль ящика {{$d.IssuedAddress}}</h2>

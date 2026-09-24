@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
 )
@@ -19,6 +20,7 @@ type mailData struct {
 	Mailboxes []mailboxes.Mailbox
 	Log       []mailboxes.Outcome
 	Waiting   bool // requests wait for the helper: the page refreshes itself
+	Stuck     bool // …for more than a minute: the helper does not run, the page stops refreshing
 	// Issued is the password just made, shown once: nothing keeps it after this page.
 	Issued        string
 	IssuedAddress string
@@ -43,6 +45,11 @@ func (h *Handler) showMail(w http.ResponseWriter, r *http.Request, status int, p
 		}
 		for _, mailbox := range data.Mailboxes {
 			data.Waiting = data.Waiting || mailbox.Pending != ""
+		}
+		// The helper answers within seconds. A request older than a minute means it does not run:
+		// the page says so and stops reloading itself (a reload keeps the session awake).
+		if pending, err := m.Pending(); err == nil && len(pending) > 0 && time.Since(pending[0].At) > time.Minute {
+			data.Stuck = true
 		}
 	}
 	h.render(w, r, status, "mail", view{Title: "Почта", Nav: "mail", Error: problem, Data: data})

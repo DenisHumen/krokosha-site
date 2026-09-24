@@ -210,10 +210,11 @@ func (s *Store) ClientPost(ctx context.Context, clientID, id int64, text string)
 	return messageID, err
 }
 
-// LinkByEmail gives an account the requests left with an address it has just proved.
+// LinkByEmail gives an account the requests left with an address it has just proved: that address
+// in any letter case, and nothing the table's collation merely takes for it («ánna@» for «anna@»).
 func (s *Store) LinkByEmail(ctx context.Context, clientID int64, email string) (int, error) {
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE leads SET client_id = ? WHERE client_id IS NULL AND contact_method = 'email' AND contact_value = ?
+		UPDATE leads SET client_id = ? WHERE client_id IS NULL AND contact_method = 'email' AND LOWER(contact_value) COLLATE utf8mb4_bin = LOWER(?)
 		AND contact_value <> '' AND anonymized_at IS NULL AND status <> 'spam'`, clientID, email)
 	if err != nil {
 		return 0, err
@@ -238,6 +239,9 @@ func (s *Store) LinkByTelegram(ctx context.Context, clientID, telegramID int64) 
 // ErrNoClient: there is no such account.
 var ErrNoClient = errors.New("no such client")
 
+// ErrOtherClient: the request is in another client's account; it is detached from there first.
+var ErrOtherClient = errors.New("the request belongs to another client")
+
 // Attach gives a request to an account, or takes it away with clientID 0 — the owner's decision in
 // the admin area (a request by phone, a request left with another address).
 func (s *Store) Attach(ctx context.Context, id, clientID int64, actor string) error {
@@ -254,6 +258,19 @@ func (s *Store) Attach(ctx context.Context, id, clientID int64, actor string) er
 		}
 		if exists == 0 {
 			return ErrNoClient
+		}
+		// A request in another client's account leaves it only by being detached, on purpose: a
+		// mistyped number must not hand somebody's request, and its conversation, to a stranger.
+		var current sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT client_id FROM leads WHERE id = ? AND anonymized_at IS NULL FOR UPDATE`, id).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if current.Valid && current.Int64 != clientID {
+			return ErrOtherClient
 		}
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE leads SET client_id = ?, updated_at = ? WHERE id = ? AND anonymized_at IS NULL`, nullID(clientID), now, id)

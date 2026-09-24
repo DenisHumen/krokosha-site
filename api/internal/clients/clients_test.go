@@ -374,6 +374,122 @@ func TestAddingAnAddress(t *testing.T) {
 	}
 }
 
+// letterOf writes the letter of a login the way the outbox sends it.
+func (f *fixture) letterOf(l *login) mail.Message {
+	f.t.Helper()
+	var sent mail.Message
+	mailer := &Mailer{Service: f.service, SiteHost: "krokosha.com", Deliver: func(_ context.Context, message mail.Message) error {
+		sent = message
+		return nil
+	}}
+	payload, _ := json.Marshal(loginPayload{LoginID: l.id})
+	if err := mailer.Send(context.Background(), outbox.Task{Kind: TaskLogin, Payload: payload}); err != nil {
+		f.t.Fatal(err)
+	}
+	return sent
+}
+
+// Adding an address or a Telegram account is the code's alone: a link would work in the browser of
+// whoever got the letter, and give their address — with their requests — to the account that asked.
+func TestAddingTakesTheCode(t *testing.T) {
+	f := newFixture(t)
+	f.submit(f.browser("198.51.100.20"), "victim@example.com", nil) // a request of the victim's, in nobody's account
+	attacker := f.browser("203.0.113.20")
+	attacker.signInByEmail("attacker@example.com")
+	attacker.send(http.MethodPost, "/api/account/email", map[string]string{"email": "victim@example.com"})
+	l := f.lastLogin()
+	letter := f.letterOf(l)
+	if !strings.Contains(letter.Text, f.service.code(l)) || strings.Contains(letter.Text, "#login=") || strings.Contains(letter.HTML, "#login=") {
+		t.Errorf("the letter that adds an address:\n%s", letter.Text)
+	}
+	victim := f.browser("198.51.100.21")
+	for _, body := range []map[string]any{{"token": f.service.linkToken(l)}, {"token": f.service.linkToken(l), "peek": true}} {
+		if got := victim.send(http.MethodPost, "/api/account/login/link", body); got.status != http.StatusUnprocessableEntity {
+			t.Errorf("the link of a login that adds an address %v: %d %v", body, got.status, got.body)
+		}
+	}
+	if email := attacker.me()["client"].(map[string]any)["email"]; email != "attacker@example.com" {
+		t.Errorf("the attacker's account took %v", email)
+	}
+	if list, _ := attacker.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any); len(list) != 0 {
+		t.Errorf("the victim's requests in the attacker's account: %v", list)
+	}
+
+	// Telegram: the bot hands out the code, and no button that would sign in anywhere.
+	got := attacker.send(http.MethodPost, "/api/account/telegram", map[string]string{})
+	botURL, _ := got.body["bot_url"].(string)
+	code, err := f.service.TelegramStart(context.Background(), strings.TrimPrefix(botURL, "https://t.me/krokosha_bot?start="), 555, "Жертва", "victim")
+	if err != nil || !code.Adding || code.Code == "" || code.LinkURL != "" {
+		t.Errorf("TelegramStart of a login that adds: %+v %v", code, err)
+	}
+}
+
+// Whoever opens a link to sign in is asked first: the page learns whose account it opens, half
+// hidden, without spending the link.
+func TestPeekingAtALink(t *testing.T) {
+	f := newFixture(t)
+	f.browser("203.0.113.21").send(http.MethodPost, "/api/account/login", map[string]string{"method": "email", "email": "olena@example.com", "lang": "uk"})
+	token := f.service.linkToken(f.lastLogin())
+	other := f.browser("198.51.100.22")
+	got := other.send(http.MethodPost, "/api/account/login/link", map[string]any{"token": token, "peek": true})
+	if got.status != http.StatusOK || got.body["account"] != "o***a@example.com" || other.cookies[SessionCookie] != "" {
+		t.Fatalf("peek: %d %v %v", got.status, got.body, other.cookies)
+	}
+	if got := other.send(http.MethodPost, "/api/account/login/link", map[string]any{"token": token}); got.status != http.StatusOK || other.cookies[SessionCookie] == "" {
+		t.Errorf("the link after a peek: %d %v", got.status, got.body)
+	}
+}
+
+// A look-alike of an address is not the address. The database's collation takes «ánna@» for
+// «anna@»: a code sent to the look-alike must not open the real account, nor pull its requests.
+func TestLookAlikeAddresses(t *testing.T) {
+	f := newFixture(t)
+	owner := f.browser("203.0.113.22")
+	owner.signInByEmail("anna@example.com")
+	id := owner.me()["client"].(map[string]any)["id"]
+	stranger := f.browser("198.51.100.23")
+	for _, lookAlike := range []string{"ánna@example.com", "anna@exámple.com", "аnna@example.com"} { // the last «а» is Cyrillic
+		if got := stranger.send(http.MethodPost, "/api/account/login", map[string]string{"method": "email", "email": lookAlike, "lang": "en"}); got.status != http.StatusUnprocessableEntity {
+			t.Errorf("a code for %q: %d %v", lookAlike, got.status, got.body)
+		}
+	}
+	// The same address in capitals is the same account.
+	same := f.browser("198.51.100.24")
+	same.signInByEmail("ANNA@Example.com")
+	if other := same.me()["client"].(map[string]any)["id"]; other != id {
+		t.Errorf("the address in capitals opened account %v, not %v", other, id)
+	}
+	// A request left with a look-alike joins no account.
+	lead, err := f.leads.Get(context.Background(), mustNumber(t, f.submit(f.browser("198.51.100.25"), "ánna@example.com", nil)["id"].(string)))
+	if err != nil || lead.ClientID != 0 {
+		t.Errorf("a request with a look-alike joined account %d (%v)", lead.ClientID, err)
+	}
+}
+
+// However many addresses and networks a stranger has, the site sends no more than lettersPerHour
+// letters with codes an hour; and «+tags» and Gmail's dots are one mailbox.
+func TestLettersPerHour(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for i := range lettersPerHour {
+		if _, err := f.service.StartEmail(ctx, fmt.Sprintf("person%d@example.com", i), Attempt{Lang: "en", Key: fmt.Sprint("net", i)}, 0); err != nil {
+			t.Fatalf("letter %d: %v", i+1, err)
+		}
+	}
+	if _, err := f.service.StartEmail(ctx, "one.more@example.com", Attempt{Lang: "en", Key: "another net"}, 0); !errors.Is(err, ErrThrottled) {
+		t.Errorf("letter %d in an hour: %v", lettersPerHour+1, err)
+	}
+	f.now = f.now.Add(time.Hour + time.Minute)
+	for i, address := range []string{"john.smith@gmail.com", "johnsmith@gmail.com", "john.smith+a@gmail.com", "JohnSmith+b@googlemail.com", "j.ohn.smith@gmail.com"} {
+		if _, err := f.service.StartEmail(ctx, address, Attempt{Lang: "en", Key: fmt.Sprint("gmail", i)}, 0); err != nil {
+			t.Fatalf("%s: %v", address, err)
+		}
+	}
+	if _, err := f.service.StartEmail(ctx, "johnsmith+c@gmail.com", Attempt{Lang: "en", Key: "gmail, again"}, 0); !errors.Is(err, ErrThrottled) {
+		t.Errorf("a sixth letter to one Gmail mailbox: %v", err)
+	}
+}
+
 func TestTheAPIRefusesStrangers(t *testing.T) {
 	f := newFixture(t)
 	b := f.browser("203.0.113.8")

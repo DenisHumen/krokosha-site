@@ -51,8 +51,12 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		lang = "en"
 	}
 	v := loginView{
-		T: loginTexts[lang], Lang: lang, Host: m.SiteHost, Link: s.LinkURL(lang, s.linkToken(l)),
+		T: loginTexts[lang], Lang: lang, Host: m.SiteHost,
 		Minutes: int(l.expiresAt.Sub(l.createdAt).Minutes()), Adding: l.clientID > 0, LinkOnly: payload.LinkOnly,
+	}
+	// Adding an address is the code's alone: a link would work for whoever got the letter (login.go).
+	if !v.Adding {
+		v.Link = s.LinkURL(lang, s.linkToken(l))
 	}
 	if !payload.LinkOnly {
 		v.Code = s.code(l)
@@ -152,10 +156,10 @@ var loginText = texttemplate.Must(texttemplate.New("login.txt").Funcs(loginFuncs
 
     {{.Code}}
 
-{{minutes .T.valid .Minutes}}
+{{minutes .T.valid .Minutes}}{{if .Link}}
 
 {{.T.or}}
-{{.Link}}{{end}}
+{{.Link}}{{end}}{{end}}
 
 {{.T.ignore}}
 --
@@ -172,8 +176,8 @@ var loginHTML = htmltemplate.Must(htmltemplate.New("login.html").Funcs(loginFunc
 <p style="margin:0 0 12px;">{{if .Adding}}{{.T.code_add}}{{else}}{{.T.code}}{{end}}</p>
 <p style="margin:0 0 12px;font-family:'Fira Code',ui-monospace,Consolas,monospace;font-size:30px;letter-spacing:8px;font-weight:600;">{{.Code}}</p>
 <p style="margin:0 0 20px;color:#6b6f7e;font-size:13px;">{{minutes .T.valid .Minutes}}</p>
-<p style="margin:0 0 8px;">{{.T.or}}</p>
-<p style="margin:0;"><a href="{{.Link}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.button}}</a></p>
+{{if .Link}}<p style="margin:0 0 8px;">{{.T.or}}</p>
+<p style="margin:0;"><a href="{{.Link}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.button}}</a></p>{{end}}
 {{end}}
 {{end}}
 {{define "foot"}}{{.T.ignore}}<br><a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a>{{end}}`))

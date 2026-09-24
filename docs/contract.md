@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.9** (2026-09-24). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]** / **[v1.9]**.
+**Версия 1.10** (2026-09-24). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]** / **[v1.9]** / **[v1.10]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -15,6 +15,7 @@
 | 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
 | 1.8 | **Ачивки пасхалок** (§2.4, §4): найденная пасхалка — баннер как в Steam со звуком. `eggs.achievements.<id>.{name, text}`; `eggs.all` и `eggs.croc5` убраны — их тексты теперь в ачивках `all` и `croc5` |
 | 1.9 | **Редкость ачивок, скидки, личный кабинет** (§2.4, §4, §7, §9): находки учитываются сервером и возвращаются подписанными квитанциями, редкость — доля игроков, как в Steam; панель ачивок; скидки заявки (первая, за все пасхалки, уровни, персональная); `/account/` — заявки и обращения, статусы, переписка, достижения за заказы. В `site.json`: `eggs.rarity`, `eggs.panel.*`, `loyalty`, `account`, `contacts.form.messages.discount_*`, `signed_in`, `track` |
+| 1.10 | **Вход по ссылке спрашивает** (§9): страница кабинета, открытая по ссылке письма или бота, сначала узнаёт, чей это кабинет (`POST /api/account/login/link { token, peek: true }` → `{ ok, account }`), и входит только после согласия посетителя. У писем и сообщений бота, которые привязывают почту или Telegram к кабинету, ссылки нет — только код. В `site.json`: `account.login.{link_ask, link_note, link_yes, link_no}`; разметка `data-login-link` |
 
 ---
 
@@ -372,6 +373,7 @@
 | `POST /api/account/login` `{ method: "email", email, lang }` или `{ method: "telegram", lang }` | шлёт код на почту (`{ ok, sent_to }` — адрес наполовину скрыт) или даёт ссылку в бота (`{ ok, bot_url }`); ставит cookie `__Host-kl` на 15 минут — код подходит только этому браузеру |
 | `POST /api/account/login/code` `{ code }` | вход по шести цифрам |
 | `POST /api/account/login/link` `{ token }` | вход по кнопке письма или бота: страница получает `#login=<token>` и сразу убирает его из адреса |
+| `POST /api/account/login/link` `{ token, peek: true }` **[v1.10]** | `{ ok, account }` — чей кабинет откроет ссылка (`o***a@company.com` или `Telegram @o***g`); ничего не тратит. Страница спрашивает посетителя и входит, только если он согласился: чужая ссылка тихо впустила бы браузер в чужой кабинет |
 | `GET /api/account/me` | `{ ok, csrf, client, contacts[], loyalty: { enabled, currency, orders, spent, offer, eggs_used, welcome_used, tier?, next?, personal? }, eggs[], orders: { earned: [{ id, at, new }], shares, big_order }, sessions[], bot }`; никто не вошёл — `200 { ok: false, error: "signed_out" }` |
 | `POST /api/account/logout` | выход |
 | `GET /api/account/leads` | заявки и обращения: `[{ number, kind, status, created, updated, direction, subject?, excerpt, amount?, parent?, unread, discount }]` |
@@ -380,7 +382,7 @@
 | `POST /api/account/inquiries` `{ subject, text, parent }` | новое обращение (`201 { ok, number }`) |
 | `POST /api/account/contacts` `{ kind, value }`, `…/contacts/remove` `{ id }` | контакты и соцсети; виды — `account.contacts.kinds` |
 | `POST /api/account/profile` `{ name, company, lang, preferred }` | профиль |
-| `POST /api/account/email` `{ email }`, `…/telegram` `{}`, `…/telegram/unlink` | сменить почту / привязать Telegram (дальше — код, как при входе) / отвязать |
+| `POST /api/account/email` `{ email }`, `…/telegram` `{}`, `…/telegram/unlink` | сменить почту / привязать Telegram (дальше — код, как при входе, но **только код**: ссылки в таком письме и сообщении бота нет) / отвязать |
 | `POST /api/account/sessions/end` `{ id }` | завершить сеанс; `id: ""` — все, кроме этого |
 | `POST /api/account/eggs` `{ receipts }` | перенести находки браузера в кабинет |
 | `POST /api/account/achievements/seen` `{ ids }` | баннеры новых ачивок за заказы показаны |
@@ -388,4 +390,4 @@
 
 Ачивки за заказы: `first_order` (первый выполненный заказ), `second_order` (второй), `big_order` (заказ от `loyalty.big_order`), `all_orders` (все три — золотая, звук `epic`). Скидок не дают. Новая (`new: true`) показывается баннером при открытии кабинета, затем отмечается показанной. Редкость — доля кабинетов, у которых она есть (от десяти кабинетов).
 
-**Разметка кабинета, на которую опирается скрипт** (`web/src/scripts/account.ts`): корень `data-account` с текстами в `data-texts`; виды `data-view="loading|login|dashboard"`; вход — `data-login-methods`, `data-login-email`, `data-login-telegram` (`data-bot-link`), `data-login-code` (`data-sent`, `data-login-back`), `data-login-error`; кабинет — `data-hello`, `data-since`, `data-logout`, `data-loyalty` (`data-next-percent`, `data-next-reason`, `data-tier`, `data-orders`, `data-spent`, `data-progress*`, `data-top`, `data-personal`), `data-requests` (`data-requests-list`, `data-thread*`), `data-inquiry`, `data-achievements-card` (`data-orders` со строками `data-order="<id>"`, `data-eggs-card`), `data-contacts`, `data-profile`, `data-access`, `data-sessions`, `data-delete`; строки списков — `<template id="tpl-request|tpl-entry|tpl-contact|tpl-session">`.
+**Разметка кабинета, на которую опирается скрипт** (`web/src/scripts/account.ts`): корень `data-account` с текстами в `data-texts`; виды `data-view="loading|login|dashboard"`; вход — `data-login-methods`, `data-login-email`, `data-login-telegram` (`data-bot-link`), `data-login-code` (`data-sent`, `data-login-back`), `data-login-link` (`data-link-account`, `data-link-yes`, `data-link-no`), `data-login-error`; кабинет — `data-hello`, `data-since`, `data-logout`, `data-loyalty` (`data-next-percent`, `data-next-reason`, `data-tier`, `data-orders`, `data-spent`, `data-progress*`, `data-top`, `data-personal`), `data-requests` (`data-requests-list`, `data-thread*`), `data-inquiry`, `data-achievements-card` (`data-orders` со строками `data-order="<id>"`, `data-eggs-card`), `data-contacts`, `data-profile`, `data-access`, `data-sessions`, `data-delete`; строки списков — `<template id="tpl-request|tpl-entry|tpl-contact|tpl-session">`.

@@ -227,6 +227,8 @@ func (h *Handler) clientAction(w http.ResponseWriter, r *http.Request, action, f
 		h.showClient(w, r, http.StatusConflict, "Аккаунт заблокирован: сначала разблокируйте его.")
 	case errors.Is(err, leads.ErrNotFound):
 		h.showClient(w, r, http.StatusNotFound, "Заявки с таким номером нет.")
+	case errors.Is(err, leads.ErrOtherClient):
+		h.showClient(w, r, http.StatusConflict, "Эта заявка в кабинете другого клиента: сначала отвяжите её в карточке заявки.")
 	default:
 		h.fail(w, r, "cannot change a client", err)
 	}
@@ -446,12 +448,18 @@ func (h *Handler) leadClient(w http.ResponseWriter, r *http.Request) {
 	if text := strings.TrimSpace(r.PostFormValue("client")); text != "" && r.PostFormValue("detach") == "" {
 		number, err := strconv.ParseInt(strings.TrimPrefix(text, "#"), 10, 64)
 		if err != nil || number <= 0 {
-			rows, _, listErr := h.opts.Clients.List(r.Context(), clients.Filter{Query: text, Limit: 2})
-			if listErr != nil || len(rows) != 1 {
-				h.showLead(w, r, http.StatusBadRequest, "Клиент не найден однозначно: укажите его номер (#12) или точный адрес.", "")
+			// The address exactly: a part of one may be somebody else's, and the request with its
+			// conversation would show in their account.
+			found, findErr := h.opts.Clients.ByEmail(r.Context(), text)
+			if findErr != nil {
+				if !errors.Is(findErr, clients.ErrNotFound) {
+					h.fail(w, r, "cannot find a client", findErr)
+					return
+				}
+				h.showLead(w, r, http.StatusBadRequest, "Клиент не найден: укажите его номер (#12) или адрес, которым он входит, целиком.", "")
 				return
 			}
-			number = rows[0].ID
+			number = found
 		}
 		client = number
 	}
@@ -461,6 +469,8 @@ func (h *Handler) leadClient(w http.ResponseWriter, r *http.Request) {
 		h.backToLead(w, r, id, "lead-client")
 	case errors.Is(err, leads.ErrNoClient):
 		h.showLead(w, r, http.StatusBadRequest, "Такого клиента нет.", "")
+	case errors.Is(err, leads.ErrOtherClient):
+		h.showLead(w, r, http.StatusConflict, "Заявка в кабинете другого клиента: сначала отвяжите её.", "")
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:

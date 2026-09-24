@@ -150,6 +150,20 @@ const scriptTexts = JSON.stringify({
           </a>
         </div>
 
+        {/* A link from a letter or from the bot asks first: a link somebody else sent would open their account. */}
+        <div class="step" data-login-link hidden>
+          <p class="sent" data-link-account></p>
+          <p class="muted">{account.login.link_note}</p>
+          <p class="row">
+            <button class="pill pill-inverse submit" type="button" data-link-yes>
+              {account.login.link_yes}
+            </button>
+            <button class="link" type="button" data-link-no>
+              {account.login.link_no}
+            </button>
+          </p>
+        </div>
+
         <form class="step" data-login-code hidden novalidate>
           <p class="sent" data-sent></p>
           <label class="label" for="login-code">
@@ -385,8 +399,8 @@ const scriptTexts = JSON.stringify({
             </details>
           </section>
 
-          <section class="card" aria-labelledby="achievements-title" data-achievements-card>
-            <h2 class="card-title" id="achievements-title">
+          <section class="card" aria-labelledby="account-achievements-title" data-achievements-card>
+            <h2 class="card-title" id="account-achievements-title">
               {account.eggs.title}
             </h2>
             <h3 class="subtitle mono">{account.orders.title}</h3>
