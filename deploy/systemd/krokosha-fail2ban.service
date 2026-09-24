@@ -1,0 +1,9 @@
+[Unit]
+Description=krokosha site: count whom fail2ban keeps out, for the admin area
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+After=fail2ban.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/krokosha/repo/deploy/bin/krokosha-fail2ban-report
+TimeoutStartSec=2min

@@ -736,6 +736,15 @@ a_letter=$(cd "$first_backup" && find mail/data -type f -path '*/cur/*' -o -type
 check "…shares the letters that did not change with the first: a month of backups takes the room of one" bash -c "[[ -n '$a_letter' && '$first_backup' != '$second_backup' && \$(stat -c %i '$first_backup/$a_letter') == \$(stat -c %i '$second_backup/$a_letter') ]]"
 check "…without being the same file as the live letter" bash -c "[[ \$(stat -c %i '/srv/krokosha/$a_letter') != \$(stat -c %i '$second_backup/$a_letter') ]]"
 check "old backups go: --keep-daily 1 leaves one" bash -c "sleep 1; '$SOURCE/deploy/backup.sh' --keep-daily 1 --keep-weekly 0 >/dev/null 2>&1 && [[ \$(find /srv/krokosha/backups -mindepth 1 -maxdepth 1 -type d | wc -l) == 1 ]]"
+# The «backup now» button: the web service leaves a request, root makes the very nightly backup.
+sleep 1
+before_backup=$(readlink /srv/krokosha/backups/latest)
+check "the «backup now» button is accepted" test "$(admin_post /status/backup --data-urlencode "csrf=$(csrf)")" = 303
+backup_was_made() { [[ $(readlink /srv/krokosha/backups/latest) != "$before_backup" && ! -e /var/lib/krokosha/requests/backup ]]; }
+check "…and a backup is made within two minutes, the request removed" wait_for 120 backup_was_made
+check "…in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.backup'")" = 1
+check "fail2ban's bans are counted for the status screen, as the site user" bash -c "systemctl is-enabled --quiet krokosha-fail2ban.timer && systemctl start krokosha-fail2ban.service && grep -q '\"name\":\"krokosha-admin\"' /var/lib/krokosha/status/fail2ban.json && [[ \$(stat -c %U /var/lib/krokosha/status/fail2ban.json) == krokosha ]]"
+check "…and shown there" grep -q 'krokosha-admin: ' <(admin_get "$ADMIN/status")
 check "the certificate watch finds what the site and the mail server really serve" bash -c "'$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"name\":\"site\",\"host\":\"$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"name\":\"mail\",\"host\":\"mail.$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"ok\":true' /var/lib/krokosha/status/certwatch.json"
 # A certificate «about to expire» that nothing renews (this one is self-signed): the watch
 # fails, says so on the status screen, and the owner hears about it — once.
@@ -888,6 +897,7 @@ check "the map's timer is gone" bash -c "! systemctl cat krokosha-netmap.timer >
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"
+check "…and so are «backup now» and the count of bans" bash -c "! systemctl cat krokosha-backup-now.path >/dev/null 2>&1 && ! systemctl cat krokosha-fail2ban.timer >/dev/null 2>&1"
 check "the CLI link and the fail2ban filter are gone" bash -c "[[ ! -e /usr/local/bin/krokosha-cli && ! -L /usr/local/bin/krokosha-cli && ! -e /etc/fail2ban/filter.d/krokosha-admin.conf ]]"
 check "fail2ban still runs" systemctl is-active --quiet fail2ban
 check "user is gone" bash -c "! id krokosha >/dev/null 2>&1"

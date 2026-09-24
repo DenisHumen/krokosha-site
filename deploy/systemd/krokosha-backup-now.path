@@ -1,0 +1,15 @@
+[Unit]
+Description=krokosha site: the «backup now» button of the admin area
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+
+# The web service has no right to start anything. It drops a file; this unit notices it and starts
+# the very backup the nightly timer runs. deploy/backup.sh removes the file first thing.
+[Path]
+PathExists=/var/lib/krokosha/requests/backup
+Unit=krokosha-backup.service
+# A backup that cannot even start must not be retried in a tight loop, nor fill the disk.
+TriggerLimitIntervalSec=1h
+TriggerLimitBurst=4
+
+[Install]
+WantedBy=multi-user.target

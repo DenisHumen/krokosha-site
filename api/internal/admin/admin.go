@@ -315,6 +315,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
 	mux.Handle("GET "+p+"/status", h.private(h.status))
 	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
+	mux.Handle("POST "+p+"/status/backup", h.private(h.backupNow))
 	mux.Handle("GET "+p+"/account", h.private(h.account))
 	mux.Handle("POST "+p+"/account/password", h.private(h.changePassword))
 	mux.Handle("POST "+p+"/account/totp/begin", h.private(h.totpBegin))
@@ -497,6 +498,7 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"totp-off": "Двухфакторная аутентификация выключена.",
 	"revoked":  "Сеанс завершён.",
 	"rebuild":  "Пересборка запрошена: она начнётся в течение нескольких секунд и займёт около минуты.",
+	"backup":   "Резервная копия запрошена: она начнётся в течение нескольких секунд; итог появится здесь.",
 
 	"lead-status":      "Статус изменён.",
 	"lead-note":        "Заметка сохранена.",

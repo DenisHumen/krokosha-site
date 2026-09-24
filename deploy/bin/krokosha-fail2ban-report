@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Counts whom fail2ban keeps out, jail by jail, for the «system status» screen of the admin area:
+# only root may ask fail2ban, the web service may not and should not. Runs every ten minutes
+# (krokosha-fail2ban.timer); by hand:
+#
+#   sudo /opt/krokosha/repo/deploy/bin/krokosha-fail2ban-report
+#
+# The report is /var/lib/krokosha/status/fail2ban.json: the jails, how many addresses each has
+# banned now and since fail2ban started. Addresses themselves are not written anywhere.
+set -Eeuo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=deploy/lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
+
+STATUS_FILE=$KROKOSHA_STATE/status/fail2ban.json
+
+report() { # report OK JAILS ERROR
+  local error=$3
+  error=${error//\\/\\\\}
+  error=${error//\"/\\\"}
+  error=${error//$'\n'/ }
+  printf '{"checked_at":"%s","ok":%s,"jails":[%s],"error":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$error" |
+    write_as_site_user "$STATUS_FILE"
+}
+
+# number TEXT LABEL — the number after «LABEL:» in the answer of fail2ban-client, 0 when none.
+number() {
+  local value
+  value=$(sed -n "s/.*$2:[[:space:]]*\([0-9][0-9]*\).*/\1/p" <<<"$1" | head -n 1)
+  printf '%s\n' "${value:-0}"
+}
+
+main() {
+  require_root
+  if ! have fail2ban-client; then
+    report false "" "fail2ban is not installed"
+    return 0
+  fi
+  local overview jails jail status list=''
+  if ! overview=$(timeout 30 fail2ban-client status 2>&1); then
+    report false "" "fail2ban does not answer: $overview"
+    return 0
+  fi
+  jails=$(sed -n 's/.*Jail list:[[:space:]]*//p' <<<"$overview" | tr ',' ' ')
+  for jail in $jails; do
+    [[ $jail =~ ^[A-Za-z0-9._-]+$ ]] || continue
+    status=$(timeout 30 fail2ban-client status "$jail" 2>/dev/null) || continue
+    list+=$(printf '%s{"name":"%s","banned":%s,"total":%s}' "${list:+,}" "$jail" \
+      "$(number "$status" 'Currently banned')" "$(number "$status" 'Total banned')")
+  done
+  report true "$list" ""
+  ok "fail2ban: ${jails:-no jails}"
+}
+
+main "$@"

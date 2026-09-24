@@ -124,6 +124,32 @@ type WatchedCertificate struct {
 	NotAfter time.Time `json:"-"`
 }
 
+// Fail2ban is what deploy/bin/krokosha-fail2ban-report found when it last asked (status/fail2ban.json):
+// only root may ask fail2ban itself.
+type Fail2ban struct {
+	Known     bool      `json:"-"`
+	CheckedAt time.Time `json:"checked_at"`
+	OK        bool      `json:"ok"`
+	Jails     []Jail    `json:"jails"`
+	Error     string    `json:"error"`
+}
+
+// Jail is one of them: how many addresses it keeps out now, and has banned since fail2ban started.
+type Jail struct {
+	Name   string `json:"name"`
+	Banned int    `json:"banned"`
+	Total  int    `json:"total"`
+}
+
+// Banned is how many addresses all the jails keep out now.
+func (f Fail2ban) Banned() int {
+	var sum int
+	for _, jail := range f.Jails {
+		sum += jail.Banned
+	}
+	return sum
+}
+
 // GitHubData describes content/generated/github.json, the input of the projects section.
 type GitHubData struct {
 	Known    bool
@@ -206,7 +232,9 @@ type Status struct {
 	Geo              *geo.Info     // nil — geolocation is switched off
 	Map              MapStatus
 	Backup           Backup
+	BackupRequested  bool // the «backup now» button was pressed and the backup has not begun yet
 	CertWatch        CertWatch
+	Fail2ban         Fail2ban
 	Mailbox          string
 	Version          string
 	Uptime           time.Duration
@@ -222,7 +250,9 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	out.GitHub = s.readGitHub()
 	out.Backup.Known = s.readReport("backup.json", &out.Backup)
 	out.CertWatch.Known = s.readReport("certwatch.json", &out.CertWatch)
+	out.Fail2ban.Known = s.readReport("fail2ban.json", &out.Fail2ban)
 	out.RebuildRequested = s.RebuildRequested()
+	out.BackupRequested = s.requested("backup")
 	if target, err := os.Readlink(filepath.Join(s.opts.WWWDir, "current")); err == nil {
 		out.Release = filepath.Base(target)
 		if at, err := time.ParseInLocation("20060102-150405", out.Release, time.UTC); err == nil {
@@ -538,13 +568,14 @@ func (s *Service) redis(ctx context.Context) string {
 
 // --- «rebuild now» -------------------------------------------------------------------------------
 
-func (s *Service) requestFile() string { return filepath.Join(s.opts.StateDir, "requests", "rebuild") }
+func (s *Service) requestFile(name string) string {
+	return filepath.Join(s.opts.StateDir, "requests", name)
+}
 
-// RequestRebuild asks for a rebuild of the site. The web service cannot start systemd units and
-// should not be able to: it drops a file, krokosha-rebuild.path notices it and starts the same
-// krokosha-sync.service the timer runs.
-func (s *Service) RequestRebuild() error {
-	file, err := os.OpenFile(s.requestFile(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+// request drops the file a path unit of systemd waits for. The web service cannot start systemd
+// units and should not be able to.
+func (s *Service) request(name string) error {
+	file, err := os.OpenFile(s.requestFile(name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -552,8 +583,19 @@ func (s *Service) RequestRebuild() error {
 	return file.Close()
 }
 
-// RebuildRequested reports a request that the build has not picked up yet.
-func (s *Service) RebuildRequested() bool {
-	_, err := os.Stat(s.requestFile())
+// requested reports a request nobody has picked up yet.
+func (s *Service) requested(name string) bool {
+	_, err := os.Stat(s.requestFile(name))
 	return err == nil || !errors.Is(err, fs.ErrNotExist)
 }
+
+// RequestRebuild asks for a rebuild of the site: krokosha-rebuild.path notices the file and starts
+// the same krokosha-sync.service the timer runs.
+func (s *Service) RequestRebuild() error { return s.request("rebuild") }
+
+// RebuildRequested reports a request that the build has not picked up yet.
+func (s *Service) RebuildRequested() bool { return s.requested("rebuild") }
+
+// RequestBackup asks for a backup now: krokosha-backup-now.path starts the nightly
+// krokosha-backup.service, and deploy/backup.sh removes the file first thing.
+func (s *Service) RequestBackup() error { return s.request("backup") }
