@@ -35,7 +35,7 @@ func TestLettersWithoutARequest(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Входящие без заявки", "olena@else.test", "Пишу по рекомендации.", "shop@spam.test", testMailbox, "30 дней",
-		`>Входящие <span class="badge">2</span></a>`, // in the menu
+		`<span class="tick-k">Входящие</span><span class="tick-v">2</span>`, // in the header
 		`<option value="K-0001">Иван Петров · Сети и оборудование</option>`,
 		"&lt;b&gt;Нужна&lt;/b&gt; помощь",
 	} {
@@ -76,7 +76,7 @@ func TestLettersWithoutARequest(t *testing.T) {
 		t.Fatalf("discarding: %d → %s", got.status, got.location)
 	}
 	empty := s.do(http.MethodGet, prefix+"/inbox?ok=letter-discarded", nil, nil)
-	if !strings.Contains(empty.body, "Писем без заявки нет.") || !strings.Contains(empty.body, "Письмо удалено.") || strings.Contains(empty.body, `>Входящие <span`) {
+	if !strings.Contains(empty.body, "Писем без заявки нет.") || !strings.Contains(empty.body, "Письмо удалено.") || !strings.Contains(empty.body, `<span class="tick-k">Входящие</span><span class="tick-v">пусто</span>`) {
 		t.Error("the page after both letters were dealt with")
 	}
 	if left := s.mailbox.Messages(); len(left) != 0 {

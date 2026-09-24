@@ -59,6 +59,16 @@ type Service struct {
 	cert     *Certificate
 	certErr  string
 	certRead time.Time
+
+	// The processor's counters when last looked at (cpuPercent): busy time is their difference.
+	cpuMu   sync.Mutex
+	cpuBase cpuSample
+	cpuLast float64
+}
+
+type cpuSample struct {
+	at          time.Time
+	busy, total uint64
 }
 
 // New builds the service.
@@ -143,8 +153,10 @@ type Disk struct {
 
 // Host is the machine.
 type Host struct {
-	Supported   bool // false where /proc is not available (development on another OS)
-	CPUs        int
+	Supported bool // false where /proc is not available (development on another OS)
+	CPUs      int
+	// CPUPercent is how busy all the cores together were lately, 0…100 (cpuPercent).
+	CPUPercent  float64
 	Load        [3]float64
 	MemoryTotal uint64
 	MemoryFree  uint64 // «available»: what programs can still get without swapping
@@ -221,6 +233,7 @@ func (s *Service) Collect(ctx context.Context) *Status {
 		out.Certificate, out.CertificateError = s.certificate(ctx)
 	}
 	out.Host = readHost(s.opts.DataDir)
+	out.Host.CPUPercent = s.cpuPercent(out.Host)
 	out.Database = s.database(ctx)
 	out.Redis = s.redis(ctx)
 	if s.opts.LogPolled != nil {
@@ -246,6 +259,53 @@ func (s *Service) Collect(ctx context.Context) *Status {
 	}
 	out.Problems = problems(out, now)
 	return out
+}
+
+// Vitals are the few numbers the header of the admin area shows on every page: cheap to read.
+type Vitals struct {
+	CPU    float64 // percent, as Host.CPUPercent
+	Disk   float64 // percent used of the fullest disk (the root, or the data disk when it is separate)
+	Backup Backup
+}
+
+// Vitals reads them.
+func (s *Service) Vitals() Vitals {
+	host := readHost(s.opts.DataDir)
+	out := Vitals{CPU: s.cpuPercent(host)}
+	for _, disk := range host.Disks {
+		out.Disk = max(out.Disk, disk.UsedPercent)
+	}
+	out.Backup.Known = s.readReport("backup.json", &out.Backup)
+	return out
+}
+
+// cpuPercent says how busy the processor was since it was last asked — between one second and
+// two minutes ago; the counters are kept for at least ten seconds, so that quick reloads of a page
+// still compare with something. Without a recent sample, the load average stands in: the number of
+// processes that wanted a core, as a share of the cores.
+func (s *Service) cpuPercent(host Host) float64 {
+	byLoad := 0.0
+	if host.CPUs > 0 {
+		byLoad = min(100, host.Load[0]*100/float64(host.CPUs))
+	}
+	busy, total, ok := readCPUTimes()
+	if !ok {
+		return byLoad
+	}
+	now := time.Now()
+	s.cpuMu.Lock()
+	defer s.cpuMu.Unlock()
+	base, elapsed := s.cpuBase, now.Sub(s.cpuBase.at)
+	switch {
+	case base.at.IsZero() || elapsed > 2*time.Minute || total <= base.total || busy < base.busy:
+		s.cpuBase, s.cpuLast = cpuSample{at: now, busy: busy, total: total}, byLoad
+	case elapsed >= time.Second:
+		s.cpuLast = min(100, float64(busy-base.busy)*100/float64(total-base.total))
+		if elapsed >= 10*time.Second {
+			s.cpuBase = cpuSample{at: now, busy: busy, total: total}
+		}
+	}
+	return s.cpuLast
 }
 
 func problems(status *Status, now time.Time) []Problem {

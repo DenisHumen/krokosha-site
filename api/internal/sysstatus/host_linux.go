@@ -67,3 +67,29 @@ func readHost(dataDir string) Host {
 	}
 	return host
 }
+
+// readCPUTimes sums the time all cores spent since boot (the first line of /proc/stat, in ticks):
+// busy is everything but idling and waiting for the disk. Guest time is already part of user time.
+func readCPUTimes() (busy, total uint64, ok bool) {
+	raw, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, 0, false
+	}
+	line, _, _ := strings.Cut(string(raw), "\n")
+	fields := strings.Fields(line)
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return 0, 0, false
+	}
+	var idle uint64
+	for i, field := range fields[1:min(len(fields), 9)] { // user nice system idle iowait irq softirq steal
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		total += value
+		if i == 3 || i == 4 {
+			idle += value
+		}
+	}
+	return total - idle, total, true
+}

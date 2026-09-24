@@ -156,6 +156,15 @@ func escapeLike(text string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
 }
 
+// ChannelMessages counts the messages of clients and the answers to them in one channel since a
+// moment: the «Бот» screen says how busy Telegram is.
+func (s *Store) ChannelMessages(ctx context.Context, channel string, since time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lead_messages WHERE channel = ? AND direction IN ('in', 'out') AND created_at >= ?`,
+		channel, since.UTC()).Scan(&count)
+	return count, err
+}
+
 // Counts returns how many requests there are in each status.
 func (s *Store) Counts(ctx context.Context) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM leads GROUP BY status`)
@@ -800,6 +809,8 @@ func event(ctx context.Context, tx *sql.Tx, id int64, now time.Time, actor, acti
 // Funnel is the summary above the list (brief B10.6).
 type Funnel struct {
 	Total, New, InProgress, Waiting, Done, Rejected, Spam int
+	// Amount is what the completed ones came to, as the owner entered it (Lead.Amount).
+	Amount float64
 	// FirstResponse is the median time from a request to the first answer; zero when unknown.
 	FirstResponse time.Duration
 	Sources       []SourceStat
@@ -818,9 +829,10 @@ func (s *Store) Funnel(ctx context.Context, from, to time.Time) (*Funnel, error)
 	out := &Funnel{}
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(status = 'new'), 0), COALESCE(SUM(status = 'in_progress'), 0), COALESCE(SUM(status = 'waiting_client'), 0),
-		       COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status = 'rejected'), 0), COALESCE(SUM(status = 'spam'), 0)
+		       COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status = 'rejected'), 0), COALESCE(SUM(status = 'spam'), 0),
+		       COALESCE(SUM(IF(status = 'done', COALESCE(amount, 0), 0)), 0)
 		FROM leads WHERE created_at >= ? AND created_at < ?`, from.UTC(), to.UTC()).
-		Scan(&out.Total, &out.New, &out.InProgress, &out.Waiting, &out.Done, &out.Rejected, &out.Spam)
+		Scan(&out.Total, &out.New, &out.InProgress, &out.Waiting, &out.Done, &out.Rejected, &out.Spam, &out.Amount)
 	if err != nil {
 		return nil, err
 	}

@@ -332,13 +332,15 @@ func run() error {
 		Active: func(ctx context.Context, window time.Duration) int {
 			return store.CountActive(ctx, analytics.ActiveSet, window)
 		},
-		Traffic:   nginxlog.NewReports(pool, location),
-		System:    system,
-		LogPolled: accessLog.LastPoll,
-		Leads:     leadStore,
-		Form:      form.Current,
-		Kick:      deliveries.Kick,
-		BotAccess: botAccess,
+		Traffic:        nginxlog.NewReports(pool, location),
+		System:         system,
+		LogPolled:      accessLog.LastPoll,
+		Leads:          leadStore,
+		Form:           form.Current,
+		Kick:           deliveries.Kick,
+		BotAccess:      botAccess,
+		BotRemindAfter: time.Duration(env.Telegram.RemindMinutes) * time.Minute,
+		BotDigestAt:    env.Telegram.DigestAt,
 		BotStatus: func() (telegram.Status, bool) {
 			if botRunner == nil {
 				return telegram.Status{}, false
@@ -353,6 +355,14 @@ func run() error {
 		Loyalty:         form.Loyalty,
 		Achievements:    eggs,
 		Mailboxes:       staffMail,
+		MailFrom:        env.Mail.From,
+		SMTPAddr:        env.Mail.SMTPAddr,
+		Deliveries: func(ctx context.Context, limit int) ([]outbox.Entry, error) {
+			return outbox.Recent(ctx, pool, limit)
+		},
+		SentSince: func(ctx context.Context, channel string, since time.Time) (int, error) {
+			return outbox.SentSince(ctx, pool, channel, since)
+		},
 	})
 	if err != nil {
 		return err

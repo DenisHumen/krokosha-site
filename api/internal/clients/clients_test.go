@@ -780,6 +780,15 @@ func TestDiscountsOfASignedInClient(t *testing.T) {
 	if percent, _ := discountOf(f.submit(b, "loyal@example.com", nil)); percent != 5 {
 		t.Errorf("the personal discount once was not spent: %v", percent)
 	}
+
+	// The numbers on top of the admin's list: one account, new, one order so far, and its amount.
+	totals, err := f.service.Totals(context.Background(), f.now.Add(-24*time.Hour), f.now.AddDate(-1, 0, 0))
+	if err != nil || totals != (Totals{Clients: 1, New: 1, Repeat: 0, Revenue: 1200}) {
+		t.Errorf("totals: %+v %v", totals, err)
+	}
+	if totals, err = f.service.Totals(context.Background(), f.now.Add(time.Hour), f.now.AddDate(-1, 0, 0)); err != nil || totals.New != 0 {
+		t.Errorf("an account made before «since» is not new: %+v %v", totals, err)
+	}
 }
 
 func allReceipt(t *testing.T) string {

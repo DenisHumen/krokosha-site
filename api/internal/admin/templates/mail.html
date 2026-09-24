@@ -1,138 +1,163 @@
 {{define "content"}}
   {{$d := .Data}}
   {{$csrf := .Session.CSRFToken}}
-  <div class="page-head">
-    <h1>Почта</h1>
-  </div>
+  {{if $d.Stuck}}
+    <p class="notice notice-warn">Запрос по ящику ждёт дольше минуты: помощник, который применяет запросы, не запускается. Проверьте на сервере: <span class="mono">systemctl status krokosha-mailbox.path krokosha-mailbox.service</span></p>
+  {{end}}
+  {{if $d.Issued}}
+    <section class="tile tile-beige">
+      <span class="label">Пароль ящика {{$d.IssuedAddress}}</span>
+      <p class="secret mono copyable">{{$d.Issued}}</p>
+      <p class="text-s">Скопируйте его сейчас и передайте сотруднику: пароль нигде не сохраняется, и больше он не покажется. Почтовый сервер применит его через несколько секунд.</p>
+      <a class="btn" href="{{path "/mail"}}">Готово</a>
+    </section>
+  {{end}}
+
+  <section class="tiles tiles-3" aria-label="Почта сайта">
+    <div class="tile tile-accent tile-stat">
+      <div class="tile-head"><span>Отправка · SMTP</span><span>{{if $d.SMTP}}● настроена{{else}}○ не настроена{{end}}</span></div>
+      <div class="who">
+        <span class="num-m">{{if $d.From}}{{$d.From}}{{else}}—{{end}}</span>
+        <span class="meta">{{if $d.SMTP}}{{$d.SMTP}} · {{plural $d.SentWeek "письмо" "письма" "писем"}} за неделю{{else}}письма ждут в очереди: SMTP_ADDR в настройках{{end}}</span>
+      </div>
+    </div>
+    <div class="tile tile-stat">
+      <div class="tile-head"><span>Приём · IMAP</span>
+        {{with $d.Inbox}}<span class="{{if .Connected}}ok{{else}}warn{{end}}">{{if .Connected}}● на связи{{else}}● нет связи{{end}}</span>{{else}}<span class="muted-2">○ не настроен</span>{{end}}</div>
+      <div class="who">
+        <span class="num-m">{{if $d.Mailbox}}{{$d.Mailbox}}{{else}}—{{end}}</span>
+        <span class="meta muted">{{with $d.Inbox}}{{if not .CheckedAt.IsZero}}проверен {{since .CheckedAt}}{{else}}ещё не проверялся{{end}} · без заявки: {{.Unmatched}}{{else}}ответы клиентов письмом не читаются: IMAP_ADDR{{end}}</span>
+      </div>
+    </div>
+    <div class="tile tile-beige tile-stat">
+      <div class="tile-head"><span>Ответы на заявки</span></div>
+      <div class="who">
+        <span class="num-m">{{if $d.ReplyTo}}{{$d.ReplyTo}}{{else}}—{{end}}</span>
+        <span class="meta">Адрес с номером заявки и подписью: ответ сам находит заявку</span>
+      </div>
+    </div>
+  </section>
+
+  {{if $d.HasQueue}}
+    <section class="table" aria-label="Исходящая очередь">
+      <div class="table-in">
+        <div class="table-title table-title-l"><span>Исходящая очередь · письма и Telegram</span></div>
+        <div class="t-head cols-outbox" aria-hidden="true"><span>Время</span><span>Канал</span><span>Что</span><span>Состояние</span></div>
+        {{range $d.Queue}}
+          <div class="t-row cols-outbox">
+            <span class="muted">{{when .CreatedAt}}</span>
+            <span>{{if eq .Channel "telegram"}}Telegram{{else}}почта{{end}}</span>
+            {{if .LeadID}}<a class="cell-text" href="{{path "/leads/" (print .LeadID)}}">{{.What}}</a>{{else}}<span class="cell-text">{{.What}}</span>{{end}}
+            <span><span class="pill {{if eq .Tone "ok"}}pill-ok{{else if eq .Tone "warn"}}pill-warn{{else}}pill-muted{{end}}" {{if .LastError}}title="{{.LastError}}"{{end}}>{{.State}}</span></span>
+          </div>
+        {{else}}
+          <p class="t-empty">Пока ничего не отправлялось.</p>
+        {{end}}
+      </div>
+    </section>
+  {{end}}
 
   {{if not $d.Installed}}
-    <p class="notice notice-warn">Почтового сервера здесь нет: сайт установлен с <span class="mono">--no-mail</span>. Установить: <span class="mono">sudo deploy/install.sh --from-env --mailbox denis@{{$d.Domain}}</span></p>
+    <p class="notice notice-warn">Почтового сервера здесь нет: сайт установлен с <span class="mono">--no-mail</span>. Ящики для сотрудников появятся после установки: <span class="mono">sudo deploy/install.sh --from-env --mailbox denis@{{$d.Domain}}</span></p>
   {{else}}
-    <div class="stack">
-      {{if $d.Stuck}}
-        <p class="notice notice-warn">Запрос ждёт дольше минуты: помощник, который применяет запросы, не запускается. Проверьте на сервере: <span class="mono">systemctl status krokosha-mailbox.path krokosha-mailbox.service</span></p>
-      {{end}}
-      {{if $d.Issued}}
-        <section class="card">
-          <h2 class="card-title">Пароль ящика {{$d.IssuedAddress}}</h2>
-          <div class="card-body">
-            <p class="secret mono copyable">{{$d.Issued}}</p>
-            <p class="notice notice-warn">Скопируйте его сейчас и передайте сотруднику: пароль нигде не сохраняется, и больше он не покажется. Почтовый сервер применит его через несколько секунд.</p>
-            <p><a class="button button-ghost" href="{{path "/mail"}}">Готово</a></p>
-          </div>
-        </section>
-      {{end}}
-
-      <div class="mail-layout">
-        <section class="card">
-          <h2 class="card-title">Ящики @{{$d.Domain}}</h2>
-          <div class="card-body">
-            <div class="table-scroll">
-              <table class="table table-wide">
-                <thead><tr><th>Адрес</th><th>Что это</th><th>Действия</th></tr></thead>
-                <tbody>
-                  {{range $d.Mailboxes}}
-                    <tr>
-                      <td class="mono">{{.Address}}</td>
-                      <td>
-                        {{if .Service}}<span class="tag">служебный</span> <span class="cell-sub">сайт читает его и отправляет с него письма</span>
-                        {{else if .Owner}}<span class="tag tag-ok">владелец</span> <span class="cell-sub">письма клиентам — от этого имени</span>
-                        {{else}}<span class="muted">сотрудник</span>{{end}}
-                        {{if eq .Pending "add"}}<span class="tag tag-warn">создаётся…</span>
-                        {{else if eq .Pending "passwd"}}<span class="tag tag-warn">меняется пароль…</span>
-                        {{else if eq .Pending "del"}}<span class="tag tag-warn">удаляется…</span>{{end}}
-                      </td>
-                      <td>
-                        {{if and (not .Service) (not .Pending)}}
-                          <details>
-                            <summary>Новый пароль</summary>
-                            <form method="post" action="{{path "/mail/password"}}">
-                              <input type="hidden" name="csrf" value="{{$csrf}}" />
-                              <input type="hidden" name="address" value="{{.Address}}" />
-                              {{template "password-fields" (print "pw-" .Address)}}
-                              <button class="button button-ghost" type="submit">Сменить пароль</button>
-                            </form>
-                          </details>
-                          <details>
-                            <summary>Удалить</summary>
-                            <form method="post" action="{{path "/mail/delete"}}">
-                              <input type="hidden" name="csrf" value="{{$csrf}}" />
-                              <input type="hidden" name="address" value="{{.Address}}" />
-                              <p class="muted">Войти в ящик станет нельзя. Письма останутся на диске сервера, пока их не удалят вручную.</p>
-                              <label for="del-{{.Address}}">Введите адрес для подтверждения</label>
-                              <input id="del-{{.Address}}" name="confirm" autocomplete="off" placeholder="{{.Address}}" required />
-                              <button class="button button-danger" type="submit">Удалить ящик</button>
-                            </form>
-                          </details>
-                        {{else if .Service}}<span class="muted">пароль — в настройках сервиса</span>{{end}}
-                      </td>
-                    </tr>
-                  {{end}}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <div class="stack">
-          <section class="card">
-            <h2 class="card-title">Новый ящик</h2>
-            <form class="card-body" method="post" action="{{path "/mail"}}">
-              <input type="hidden" name="csrf" value="{{$csrf}}" />
-              <label for="mail-address">Адрес</label>
-              <span class="inline">
-                <input id="mail-address" name="address" maxlength="64" autocomplete="off" placeholder="ivan" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}(@{{$d.Domain}})?" />
-                <span class="mono muted">@{{$d.Domain}}</span>
+    <div class="split">
+      <section class="table" aria-label="Ящики">
+        <div class="table-in">
+          <div class="table-title table-title-l"><span>Ящики @{{$d.Domain}}</span></div>
+          <div class="t-head cols-mailboxes" aria-hidden="true"><span>Адрес</span><span>Что это</span><span>Состояние</span><span>Действия</span></div>
+          {{range $d.Mailboxes}}
+            <div class="t-row cols-mailboxes">
+              <span class="mono">{{.Address}}</span>
+              <span>{{if .Service}}<span class="pill pill-muted">служебный</span>{{else if .Owner}}<span class="pill pill-ok">владелец</span>{{else}}<span class="muted">сотрудник</span>{{end}}</span>
+              <span>
+                {{if eq .Pending "add"}}<span class="pill pill-warn">создаётся…</span>
+                {{else if eq .Pending "passwd"}}<span class="pill pill-warn">меняется пароль…</span>
+                {{else if eq .Pending "del"}}<span class="pill pill-warn">удаляется…</span>
+                {{else if .Service}}<span class="text-xs">сайт читает его и пишет с него</span>
+                {{else if .Owner}}<span class="text-xs">письма клиентам — от этого имени</span>{{end}}
               </span>
-              {{template "password-fields" "new"}}
-              <button class="button" type="submit">Создать ящик</button>
-            </form>
-          </section>
-
-          <section class="card">
-            <h2 class="card-title">Настройки почтовой программы</h2>
-            <div class="card-body">
-              <dl class="facts">
-                <div><dt>Входящие (IMAP)</dt><dd class="mono">{{$d.Host}}:993 · SSL/TLS</dd></div>
-                <div><dt>Исходящие (SMTP)</dt><dd class="mono">{{$d.Host}}:465 · SSL/TLS<br />{{$d.Host}}:587 · STARTTLS</dd></div>
-                <div><dt>Логин</dt><dd>адрес целиком</dd></div>
-              </dl>
-              <p class="muted">Thunderbird находит эти настройки сам по адресу. Веб-почты нет: только почтовые программы и телефоны.</p>
+              <span class="stack">
+                {{if and (not .Service) (not .Pending)}}
+                  <details class="more">
+                    <summary>Новый пароль</summary>
+                    <form class="form" method="post" action="{{path "/mail/password"}}">
+                      <input type="hidden" name="csrf" value="{{$csrf}}" />
+                      <input type="hidden" name="address" value="{{.Address}}" />
+                      {{template "password-fields" (print "pw-" .Address)}}
+                      <button class="btn" type="submit">Сменить пароль</button>
+                    </form>
+                  </details>
+                  <details class="more danger-zone">
+                    <summary>Удалить</summary>
+                    <form class="form" method="post" action="{{path "/mail/delete"}}">
+                      <input type="hidden" name="csrf" value="{{$csrf}}" />
+                      <input type="hidden" name="address" value="{{.Address}}" />
+                      <p class="text-s">Войти в ящик станет нельзя. Письма останутся на диске сервера, пока их не удалят вручную.</p>
+                      <label class="field" for="del-{{.Address}}">Адрес для подтверждения
+                        <input class="input input-s" id="del-{{.Address}}" name="confirm" autocomplete="off" placeholder="{{.Address}}" required />
+                      </label>
+                      <button class="btn btn-danger" type="submit">Удалить ящик</button>
+                    </form>
+                  </details>
+                {{else if .Service}}<span class="text-xs">пароль — в настройках сервиса</span>{{end}}
+              </span>
             </div>
-          </section>
-        </div>
-      </div>
-
-      <section class="card">
-        <h2 class="card-title">Последние операции</h2>
-        <div class="card-body">
-          <ul class="rows rows-plain">
-            {{range $d.Log}}
-              <li class="row">
-                <span class="row-name">{{if .OK}}<span class="dot dot-ok"></span>{{else}}<span class="dot dot-error"></span>{{end}}
-                  <span class="mono">{{.Address}}</span> — {{if eq .Action "add"}}создание{{else if eq .Action "passwd"}}новый пароль{{else if eq .Action "del"}}удаление{{else}}{{.Action}}{{end}}: {{.Message}}</span>
-                <span class="row-value mono">{{time .At}}</span>
-              </li>
-            {{else}}
-              <li class="muted">Из админки ящики ещё не менялись.</li>
-            {{end}}
-          </ul>
-          <p class="muted">Из админки уходит только запрос — адрес и хэш пароля; применяет его служба сервера с правами root (<span class="mono">krokosha-mailbox apply</span>), проверив ещё раз. То же вручную: <span class="mono">sudo krokosha-mailbox list | add | passwd | del</span>.</p>
+          {{end}}
         </div>
       </section>
+
+      <div class="stack">
+        <section class="tile">
+          <span class="label">Новый ящик</span>
+          <form class="form" method="post" action="{{path "/mail"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label class="visually-hidden" for="mail-address">Адрес</label>
+            <span class="form-row">
+              <input class="input input-s" id="mail-address" name="address" maxlength="64" autocomplete="off" placeholder="ivan" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}(@{{$d.Domain}})?" />
+              <span class="muted mono">@{{$d.Domain}}</span>
+            </span>
+            {{template "password-fields" "new"}}
+            <button class="btn btn-accent btn-l" type="submit">Создать ящик</button>
+          </form>
+        </section>
+        <section class="tile">
+          <span class="label">Настройки почтовой программы</span>
+          <dl class="lines">
+            <div><dt>Входящие · IMAP</dt><dd class="mono">{{$d.Host}}:993 · SSL/TLS</dd></div>
+            <div><dt>Исходящие · SMTP</dt><dd class="mono">{{$d.Host}}:465 · SSL/TLS<br />{{$d.Host}}:587 · STARTTLS</dd></div>
+            <div><dt>Логин</dt><dd>адрес целиком</dd></div>
+          </dl>
+          <p class="text-xs">Thunderbird находит эти настройки сам по адресу. Веб-почты нет: только почтовые программы и телефоны.</p>
+        </section>
+      </div>
     </div>
+
+    <section class="tile">
+      <span class="label">Последние операции с ящиками</span>
+      <div class="lines">
+        {{range $d.Log}}
+          <div class="line">
+            <span class="line-name"><span class="dot{{if not .OK}} dot-error{{end}}"></span> <span class="mono">{{.Address}}</span> — {{if eq .Action "add"}}создание{{else if eq .Action "passwd"}}новый пароль{{else if eq .Action "del"}}удаление{{else}}{{.Action}}{{end}}: {{.Message}}</span>
+            <span class="muted">{{time .At}}</span>
+          </div>
+        {{else}}
+          <p class="empty">Из админки ящики ещё не менялись.</p>
+        {{end}}
+      </div>
+      <p class="text-xs">Из админки уходит только запрос — адрес и хэш пароля; применяет его служба сервера с правами root (<span class="mono">krokosha-mailbox apply</span>), проверив ещё раз. То же вручную: <span class="mono">sudo krokosha-mailbox list | add | passwd | del</span>.</p>
+    </section>
   {{end}}
 {{end}}
 
 {{/* The password of a mailbox: made here (default) or typed twice by hand. Works without scripts. */}}
 {{define "password-fields"}}
   <fieldset class="choices">
-    <legend>Пароль</legend>
-    <label class="choice"><input type="radio" name="mode" value="generate" checked /> сгенерировать — покажу один раз</label>
-    <label class="choice"><input type="radio" name="mode" value="custom" /> задать свой</label>
-    <label for="{{.}}-password">Свой пароль <span class="muted">— не короче 12 символов</span></label>
-    <input id="{{.}}-password" name="password" type="password" autocomplete="new-password" minlength="12" />
-    <label for="{{.}}-again">Ещё раз</label>
-    <input id="{{.}}-again" name="again" type="password" autocomplete="new-password" minlength="12" />
+    <legend class="label-s">Пароль</legend>
+    <label class="check"><input type="radio" name="mode" value="generate" checked /> сгенерировать — покажу один раз</label>
+    <label class="check"><input type="radio" name="mode" value="custom" /> задать свой</label>
+    <label class="visually-hidden" for="{{.}}-password">Свой пароль — не короче 12 символов</label>
+    <input class="input input-s" id="{{.}}-password" name="password" type="password" autocomplete="new-password" minlength="12" placeholder="свой пароль, от 12 символов" />
+    <label class="visually-hidden" for="{{.}}-again">Ещё раз</label>
+    <input class="input input-s" id="{{.}}-again" name="again" type="password" autocomplete="new-password" minlength="12" placeholder="ещё раз" />
   </fieldset>
 {{end}}

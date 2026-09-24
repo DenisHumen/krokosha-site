@@ -108,9 +108,33 @@ func TestBotPage(t *testing.T) {
 	if got := s.do(http.MethodPost, prefix+"/bot/invite", url.Values{"role": {"owner"}, "csrf": {"nope"}}, nil); got.status != http.StatusForbidden {
 		t.Errorf("a forged form: %d", got.status)
 	}
+	// A colleague let in by id, with notifications only; roles change here too, the only owner stays.
+	if got := s.post("/bot/add", url.Values{"telegram_id": {"12ab"}, "role": {"notify"}}); got.status != http.StatusBadRequest || !strings.Contains(got.body, "@userinfobot") {
+		t.Errorf("an id that is not a number: %d", got.status)
+	}
+	if got := s.post("/bot/add", url.Values{"telegram_id": {"1004"}, "role": {"notify"}, "name": {"Рома"}}); got.status != http.StatusSeeOther {
+		t.Fatalf("adding by id: %d %s", got.status, got.body)
+	}
+	watcher, err := access.Member(ctx, 1004)
+	if err != nil || watcher.Role != telegram.RoleNotify || watcher.Name != "Рома" || watcher.InvitedBy != "denis" {
+		t.Fatalf("the colleague added by id: %+v %v", watcher, err)
+	}
+	if page = s.do(http.MethodGet, prefix+"/bot", nil, nil); !strings.Contains(page.body, "только уведомления") || !strings.Contains(page.body, "не писал(а)") {
+		t.Error("the page does not show the new role, or when the person was last seen")
+	}
+	if got := s.post("/bot/role", url.Values{"id": {strconv.FormatInt(watcher.ID, 10)}, "role": {"member"}}); got.status != http.StatusSeeOther {
+		t.Errorf("a new role: %d", got.status)
+	}
+	if got := s.post("/bot/role", url.Values{"id": {strconv.FormatInt(owner.ID, 10)}, "role": {"notify"}}); got.status != http.StatusConflict {
+		t.Errorf("the only owner made a watcher: %d", got.status)
+	}
+	if got := s.post("/bot/role", url.Values{"id": {strconv.FormatInt(owner.ID, 10)}, "role": {"root"}}); got.status != http.StatusBadRequest {
+		t.Errorf("a made-up role: %d", got.status)
+	}
+
 	var actions string
 	if err := s.db.QueryRow(`SELECT GROUP_CONCAT(action ORDER BY id SEPARATOR ' ') FROM audit_log WHERE action LIKE 'bot.%'`).Scan(&actions); err != nil ||
-		actions != "bot.invite bot.invite bot.disable bot.enable bot.invite bot.invite-revoke" {
+		actions != "bot.invite bot.invite bot.disable bot.enable bot.invite bot.invite-revoke bot.add bot.role" {
 		t.Errorf("the journal: %q %v", actions, err)
 	}
 }

@@ -105,6 +105,19 @@ func TestDeliveryAndIdempotentQueueing(t *testing.T) {
 	f.deliver(0) // sent is sent
 	f.enqueue(task)
 	f.deliver(0) // …and stays sent: the key is remembered
+
+	// The «Почта» screen lists it and counts it.
+	ctx := context.Background()
+	recent, err := Recent(ctx, f.db, 10)
+	if err != nil || len(recent) != 1 || recent[0].Kind != "lead.notify" || recent[0].LeadID != 42 || recent[0].Status != "sent" || !recent[0].SentAt.Valid {
+		t.Errorf("recent: %+v %v", recent, err)
+	}
+	if sent, err := SentSince(ctx, f.db, ChannelEmail, f.now.Add(-time.Hour)); err != nil || sent != 1 {
+		t.Errorf("sent since an hour ago: %d %v", sent, err)
+	}
+	if sent, err := SentSince(ctx, f.db, ChannelTelegram, f.now.Add(-time.Hour)); err != nil || sent != 0 {
+		t.Errorf("sent to Telegram: %d %v", sent, err)
+	}
 }
 
 func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {

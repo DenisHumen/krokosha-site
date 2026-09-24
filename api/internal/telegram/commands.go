@@ -137,21 +137,21 @@ func (b *Bot) listButton(ctx context.Context, query *CallbackQuery, member *Memb
 var reLeadNumber = regexp.MustCompile(`(?i)^#?(?:k-?)?0*([1-9][0-9]{0,17})$`)
 
 // leadCommand sends the card of a request by its number: «/lead K-0042», «/lead 42».
-func (b *Bot) leadCommand(ctx context.Context, chatID int64, argument string) {
+func (b *Bot) leadCommand(ctx context.Context, chatID int64, member *Member, argument string) {
 	match := reLeadNumber.FindStringSubmatch(strings.TrimSpace(argument))
 	if match == nil {
 		b.say(ctx, Outgoing{ChatID: chatID, Text: "Нужен номер заявки: <code>/lead K-0042</code>"})
 		return
 	}
 	id, _ := strconv.ParseInt(match[1], 10, 64)
-	if !b.sendCard(ctx, chatID, id) {
+	if !b.sendCard(ctx, chatID, member, id) {
 		b.say(ctx, Outgoing{ChatID: chatID, Text: "Заявки #" + leads.Number(id) + " нет: такого номера не было, либо данные клиента удалены."})
 	}
 }
 
 // sendCard sends a fresh card of a request into a chat. It is remembered like the first one:
 // both follow the request from then on.
-func (b *Bot) sendCard(ctx context.Context, chatID, leadID int64) bool {
+func (b *Bot) sendCard(ctx context.Context, chatID int64, member *Member, leadID int64) bool {
 	card, err := b.opts.Leads.Card(ctx, leadID)
 	if err != nil {
 		if !errors.Is(err, leads.ErrNotFound) {
@@ -160,6 +160,9 @@ func (b *Bot) sendCard(ctx context.Context, chatID, leadID int64) bool {
 		return false
 	}
 	text, buttons := b.renderCard(card)
+	if !member.CanAct() {
+		buttons = b.readingButtons(card)
+	}
 	sent, err := b.opts.API.Send(ctx, Outgoing{ChatID: chatID, Text: text, Buttons: buttons})
 	if err != nil {
 		if ctx.Err() == nil {

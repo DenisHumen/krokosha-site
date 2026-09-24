@@ -2,7 +2,6 @@ package admin
 
 import (
 	"fmt"
-	"html"
 	"html/template"
 	"math"
 	"strings"
@@ -14,159 +13,9 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 )
 
-// Charts are drawn on the server as SVG. The admin area's CSP allows no inline styles and needs
-// no chart library: shapes get classes, colours live in admin.css. Every number below is computed
-// here; every piece of text goes through html.EscapeString.
-
-const (
-	chartWidth   = 960.0
-	chartHeight  = 220.0
-	chartLeft    = 34.0 // room for the axis labels
-	chartBottom  = 22.0
-	chartTop     = 8.0
-	minimumScale = 4 // a single visit should not look like a full house
-)
-
-// niceCeil rounds a maximum up to a number that makes readable grid lines.
-func niceCeil(value int) int {
-	if value <= minimumScale {
-		return minimumScale
-	}
-	magnitude := math.Pow(10, math.Floor(math.Log10(float64(value))))
-	for _, step := range []float64{1, 2, 2.5, 5, 10} {
-		if candidate := step * magnitude; candidate >= float64(value) {
-			return int(candidate)
-		}
-	}
-	return value
-}
-
-// barSeries is one colour of a stacked bar chart.
-type barSeries struct {
-	Class  string // CSS class of its bars (admin.css): chart-bar, chart-bar-ads, chart-bar-bots…
-	Values []int64
-}
-
-// barChartSpec describes a chart over the buckets of a period: hours of a day, or days.
-type barChartSpec struct {
-	Summary string // for screen readers: what the chart shows and the totals
-	Starts  []time.Time
-	Hourly  bool
-	Series  []barSeries            // stacked bottom-up
-	Title   func(index int) string // tooltip of a bucket
-	Axis    func(value int64) string
-	Bytes   bool // the scale counts bytes: round it in binary units
-}
-
-// barChart draws stacked bars with a light grid and a label under every n-th bucket.
-func barChart(spec barChartSpec) template.HTML {
-	if len(spec.Starts) == 0 {
-		return ""
-	}
-	var highest int64
-	for i := range spec.Starts {
-		var total int64
-		for _, series := range spec.Series {
-			total += series.Values[i]
-		}
-		highest = max(highest, total)
-	}
-	scale := int64(niceCeil(int(highest)))
-	if spec.Bytes {
-		scale = niceCeilBytes(highest)
-	}
-	axis := spec.Axis
-	if axis == nil {
-		axis = func(value int64) string { return fmt.Sprint(value) }
-	}
-	plotWidth, plotHeight := chartWidth-chartLeft, chartHeight-chartTop-chartBottom
-	slot := plotWidth / float64(len(spec.Starts))
-	barWidth := math.Max(slot*0.72, 1)
-
-	var svg strings.Builder
-	fmt.Fprintf(&svg, `<svg class="chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`,
-		chartWidth, chartHeight, html.EscapeString(spec.Summary))
-
-	// Grid: the floor, the middle, the top.
-	for _, level := range []int64{0, scale / 2, scale} {
-		y := chartTop + plotHeight - plotHeight*float64(level)/float64(scale)
-		fmt.Fprintf(&svg, `<line class="chart-grid" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>`, chartLeft, y, chartWidth, y)
-		fmt.Fprintf(&svg, `<text class="chart-label" x="%.1f" y="%.1f" text-anchor="end">%s</text>`, chartLeft-6, y+3.5, html.EscapeString(axis(level)))
-	}
-
-	every := labelEvery(len(spec.Starts), spec.Hourly)
-	for i, start := range spec.Starts {
-		x := chartLeft + slot*float64(i) + (slot-barWidth)/2
-		label := bucketLabel(start, spec.Hourly)
-		fmt.Fprintf(&svg, `<g><title>%s</title>`, html.EscapeString(spec.Title(i)))
-		// An invisible full-height target: the tooltip works on empty buckets too.
-		fmt.Fprintf(&svg, `<rect class="chart-slot" x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>`, chartLeft+slot*float64(i), chartTop, slot, plotHeight)
-		top := chartTop + plotHeight
-		for _, series := range spec.Series {
-			if series.Values[i] <= 0 {
-				continue
-			}
-			height := plotHeight * float64(series.Values[i]) / float64(scale)
-			top -= height
-			fmt.Fprintf(&svg, `<rect class="chart-bar %s" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5"/>`,
-				html.EscapeString(series.Class), x, top, barWidth, height)
-		}
-		svg.WriteString(`</g>`)
-		if i%every == 0 {
-			fmt.Fprintf(&svg, `<text class="chart-label" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`,
-				chartLeft+slot*float64(i)+slot/2, chartHeight-6, html.EscapeString(label))
-		}
-	}
-	svg.WriteString(`</svg>`)
-	return template.HTML(svg.String()) //nolint:gosec // built above from numbers and escaped text
-}
-
-// niceCeilBytes rounds a number of bytes up to a round number of its own unit: 1.3 MB → 2 MB.
-func niceCeilBytes(value int64) int64 {
-	unit := int64(1)
-	for value/unit >= 1024 && unit < 1<<40 {
-		unit *= 1024
-	}
-	return int64(niceCeil(int((value+unit-1)/unit))) * unit
-}
-
-// timelineChart draws visits per hour (or per day): people below, paid traffic above them, and —
-// when the «server traffic» reader has data — automated clients on top (brief B6).
-func timelineChart(overview *analytics.Overview, bots []int64) template.HTML {
-	spec := barChartSpec{Summary: timelineSummary(overview), Hourly: overview.Hourly}
-	organic, ads := make([]int64, len(overview.Timeline)), make([]int64, len(overview.Timeline))
-	for i, bucket := range overview.Timeline {
-		spec.Starts = append(spec.Starts, bucket.Start)
-		organic[i], ads[i] = int64(bucket.Organic), int64(bucket.Ads)
-	}
-	spec.Series = []barSeries{{"chart-bar-people", organic}, {"chart-bar-ads", ads}}
-	if len(bots) == len(overview.Timeline) {
-		spec.Series = append(spec.Series, barSeries{"chart-bar-bots", bots})
-	}
-	spec.Title = func(i int) string {
-		title := bucketTitle(bucketLabel(overview.Timeline[i].Start, overview.Hourly), overview.Timeline[i], overview.Hourly)
-		if len(bots) == len(overview.Timeline) && bots[i] > 0 {
-			title += fmt.Sprintf("; ботов: %d", bots[i])
-		}
-		return title
-	}
-	return barChart(spec)
-}
-
-func labelEvery(buckets int, hourly bool) int {
-	switch {
-	case hourly:
-		return 2
-	case buckets <= 14:
-		return 1
-	case buckets <= 45:
-		return 3
-	case buckets <= 120:
-		return 7
-	default:
-		return 30
-	}
-}
+// Charts are drawn on the server: bars are elements with size classes (.h-N, .w-N in admin.css),
+// rings and thin bars small SVGs. The admin area's CSP allows no inline styles and needs no chart
+// library; every number below is computed here.
 
 func bucketLabel(start time.Time, hourly bool) string {
 	if hourly {
@@ -185,14 +34,6 @@ func bucketTitle(label string, bucket analytics.Bucket, hourly bool) string {
 		title += fmt.Sprintf(", из них по рекламе: %d", bucket.Ads)
 	}
 	return title
-}
-
-func timelineSummary(overview *analytics.Overview) string {
-	unit := "по дням"
-	if overview.Hourly {
-		unit = "по часам"
-	}
-	return fmt.Sprintf("Визиты %s: всего %d, из них по рекламе %d", unit, overview.Totals.Visits, overview.Totals.AdVisits)
 }
 
 // ring is a conversion «score»: a circle filled to the given percentage.
@@ -260,6 +101,15 @@ func duration(ms int64) string {
 	}
 }
 
+// minutesSeconds prints a duration the way a stopwatch does: «1:48», «12:05», «1:02:03».
+func minutesSeconds(ms int64) string {
+	seconds := (max(ms, 0) + 500) / 1000
+	if seconds >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", seconds/3600, seconds%3600/60, seconds%60)
+	}
+	return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+}
+
 func periodTitle(period analytics.Period) string {
 	day := func(t time.Time) string { return fmt.Sprintf("%d %s", t.Day(), months[t.Month()]) }
 	switch {
@@ -274,6 +124,29 @@ func periodTitle(period analytics.Period) string {
 	}
 }
 
+// periodShort is the compact form of the period next to the switcher: «19 сен 2026»,
+// «14–20 сен 2026», «28 сен – 4 окт 2026», «сентябрь 2026».
+func periodShort(period analytics.Period) string {
+	from, to := period.From, period.To
+	day := func(t time.Time) string { return fmt.Sprintf("%d %s", t.Day(), shortMonths[t.Month()]) }
+	switch {
+	case period.Kind == "month":
+		return fmt.Sprintf("%s %d", strings.ToLower(monthNames[from.Month()]), from.Year())
+	case period.Days() == 1:
+		return fmt.Sprintf("%s %d", day(from), from.Year())
+	case from.Year() != to.Year():
+		return fmt.Sprintf("%s %d – %s %d", day(from), from.Year(), day(to), to.Year())
+	case from.Month() != to.Month():
+		return fmt.Sprintf("%s – %s %d", day(from), day(to), to.Year())
+	default:
+		return fmt.Sprintf("%d–%d %s %d", from.Day(), to.Day(), shortMonths[to.Month()], to.Year())
+	}
+}
+
+var shortMonths = [...]string{"", "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"}
+
+var periodKinds = map[string]string{"day": "день", "week": "неделя", "month": "месяц", "custom": "период"}
+
 var weekdayNames = [...]string{"Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 
 var monthNames = [...]string{"", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"}
@@ -287,7 +160,9 @@ var (
 	sourceNames = map[string]string{
 		"direct": "Прямые заходы", "search": "Поиск", "social": "Соцсети", "other": "Другие сайты", "ads": "Реклама",
 	}
-	deviceNames   = map[string]string{"desktop": "Компьютер", "mobile": "Телефон", "tablet": "Планшет"}
+	deviceNames = map[string]string{"desktop": "Компьютер", "mobile": "Телефон", "tablet": "Планшет"}
+	// shortNames label the strip of devices: «ПК 58% · ТЕЛ 36% · ПЛ 6%».
+	shortNames    = map[string]string{"Компьютер": "ПК", "Телефон": "Тел", "Планшет": "Пл"}
 	languageNames = map[string]string{"en": "English", "uk": "Українська", "ru": "Русский", "": "не указан"}
 	contactNames  = map[string]string{"telegram": "Telegram", "email": "Почта", "github": "GitHub"}
 )
@@ -387,6 +262,17 @@ func toInt64(value any) int64 {
 		return int64(number)
 	}
 	return 0
+}
+
+// toNumber is toInt64 for what a template may pass as a share: floats stay fractional.
+func toNumber(value any) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	}
+	return float64(toInt64(value))
 }
 
 // formatBytes prints a size the way people read it: «1,4 МБ».

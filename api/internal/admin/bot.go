@@ -4,8 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
 
@@ -20,6 +22,34 @@ type botData struct {
 	Invites    []telegram.Invite
 	// NewInvite is shown once, right after it was made: the database keeps only a hash of the code.
 	NewInvite *newInvite
+	// Messages of clients and answers in Telegram over the last week; accounts that sign in with
+	// Telegram, of all accounts; the bot's reminders; its commands.
+	Messages    int
+	ByTelegram  int
+	Accounts    int
+	HasAccounts bool
+	RemindAfter time.Duration
+	DigestAt    string
+	Commands    []telegram.Command
+	Roles       []botRole
+}
+
+// botRole is a role in the words of the admin area.
+type botRole struct{ ID, Name, Hint string }
+
+var botRoles = []botRole{
+	{telegram.RoleMember, "участник", "получает заявки и работает с ними"},
+	{telegram.RoleOwner, "владелец", "ещё и управляет доступом"},
+	{telegram.RoleNotify, "только уведомления", "получает карточки, но ничего не меняет"},
+}
+
+func botRoleName(id string) string {
+	for _, role := range botRoles {
+		if role.ID == id {
+			return role.Name
+		}
+	}
+	return id
 }
 
 type newInvite struct {
@@ -45,6 +75,21 @@ func (h *Handler) showBot(w http.ResponseWriter, r *http.Request, status int, pr
 		h.fail(w, r, "cannot list the invitations", err)
 		return
 	}
+	data.RemindAfter, data.DigestAt, data.Commands, data.Roles = h.opts.BotRemindAfter, h.opts.BotDigestAt, telegram.Commands(), botRoles
+	if h.opts.Leads != nil {
+		if data.Messages, err = h.opts.Leads.ChannelMessages(r.Context(), leads.MethodTelegram, time.Now().AddDate(0, 0, -7)); err != nil {
+			h.fail(w, r, "cannot count the messages in the bot", err)
+			return
+		}
+	}
+	if h.opts.Clients != nil {
+		totals, err := h.opts.Clients.Totals(r.Context(), time.Now(), time.Now())
+		if err != nil {
+			h.fail(w, r, "cannot count the accounts", err)
+			return
+		}
+		data.ByTelegram, data.Accounts, data.HasAccounts = totals.Telegram, totals.Clients, true
+	}
 	h.render(w, r, status, "bot", view{Title: "Бот", Nav: "bot", Error: problem, Data: data})
 }
 
@@ -53,7 +98,7 @@ func (h *Handler) botInvite(w http.ResponseWriter, r *http.Request) {
 	role := r.PostFormValue("role")
 	code, expires, err := h.opts.BotAccess.Invite(r.Context(), role, actor)
 	if errors.Is(err, telegram.ErrBadRole) {
-		h.showBot(w, r, http.StatusBadRequest, "Роль — «участник» или «владелец».", nil)
+		h.showBot(w, r, http.StatusBadRequest, badRole, nil)
 		return
 	}
 	if err != nil {
@@ -110,5 +155,54 @@ func (h *Handler) botMember(w http.ResponseWriter, r *http.Request) {
 		}
 		h.opts.Auth.Audit(r.Context(), sessionOf(r).User.Login, action, strconv.FormatInt(member.TelegramID, 10), member.Name, h.attemptMeta(r).IPPrefix)
 		http.Redirect(w, r, h.opts.Prefix+"/bot?ok="+flash, http.StatusSeeOther)
+	}
+}
+
+const badRole = "Роль — «участник», «владелец» или «только уведомления»."
+
+// botAdd lets a person in by their numeric Telegram id, without an invitation.
+func (h *Handler) botAdd(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(strings.TrimSpace(r.PostFormValue("telegram_id")), 10, 64)
+	if err != nil || id <= 0 {
+		h.showBot(w, r, http.StatusBadRequest, "Telegram ID — число, например 123456789. Его показывает, например, @userinfobot.", nil)
+		return
+	}
+	actor := sessionOf(r).User.Login
+	member, err := h.opts.BotAccess.Add(r.Context(), id, r.PostFormValue("role"), r.PostFormValue("name"), actor)
+	switch {
+	case errors.Is(err, telegram.ErrBadRole):
+		h.showBot(w, r, http.StatusBadRequest, badRole, nil)
+	case errors.Is(err, telegram.ErrLastOwner):
+		h.showBot(w, r, http.StatusConflict, "Это единственный владелец: сначала сделайте владельцем кого-то ещё.", nil)
+	case err != nil:
+		h.fail(w, r, "cannot add a member of the bot", err)
+	default:
+		h.opts.Auth.Audit(r.Context(), actor, "bot.add", strconv.FormatInt(id, 10), member.Role, h.attemptMeta(r).IPPrefix)
+		// Cards that waited for somebody to receive them go out now.
+		h.opts.Kick()
+		http.Redirect(w, r, h.opts.Prefix+"/bot?ok=bot-added", http.StatusSeeOther)
+	}
+}
+
+// botRole changes what a person may do in the bot; the last owner stays one.
+func (h *Handler) botRole(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
+	if err != nil {
+		h.showBot(w, r, http.StatusBadRequest, "Такого участника нет.", nil)
+		return
+	}
+	member, err := h.opts.BotAccess.SetRole(r.Context(), id, r.PostFormValue("role"))
+	switch {
+	case errors.Is(err, telegram.ErrBadRole):
+		h.showBot(w, r, http.StatusBadRequest, badRole, nil)
+	case errors.Is(err, telegram.ErrLastOwner):
+		h.showBot(w, r, http.StatusConflict, "Это единственный владелец: сначала сделайте владельцем кого-то ещё.", nil)
+	case errors.Is(err, telegram.ErrNoAccess):
+		h.showBot(w, r, http.StatusNotFound, "Такого участника нет.", nil)
+	case err != nil:
+		h.fail(w, r, "cannot change a role in the bot", err)
+	default:
+		h.opts.Auth.Audit(r.Context(), sessionOf(r).User.Login, "bot.role", strconv.FormatInt(member.TelegramID, 10), member.Role, h.attemptMeta(r).IPPrefix)
+		http.Redirect(w, r, h.opts.Prefix+"/bot?ok=bot-role", http.StatusSeeOther)
 	}
 }

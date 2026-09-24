@@ -20,6 +20,11 @@ type achievementsData struct {
 	Eggs    []achievements.Stat
 	Updated time.Time
 	Players int
+	// EggCount: the eggs hidden on the site; AllFound: players who found every one; EggsDiscount:
+	// what that gives once (content/site.yaml → loyalty.eggs).
+	EggCount     int
+	AllFound     int
+	EggsDiscount int
 	// Orders: the achievements of orders, with how many accounts have each.
 	Orders   []orderStat
 	Accounts int
@@ -72,7 +77,7 @@ func sharePhrase(percent float64, whose string) string {
 
 func (h *Handler) achievementsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := achievementsData{BigOrder: h.opts.Loyalty().BigOrder}
+	data := achievementsData{BigOrder: h.opts.Loyalty().BigOrder, EggCount: len(achievements.Eggs), EggsDiscount: h.opts.Loyalty().Eggs}
 	eggShare := map[string]float64{}
 	if h.opts.Achievements != nil {
 		stats, updated, err := h.opts.Achievements.Stats(ctx)
@@ -83,6 +88,9 @@ func (h *Handler) achievementsPage(w http.ResponseWriter, r *http.Request) {
 		data.Eggs, data.Updated = stats, updated
 		for _, stat := range stats {
 			data.Players = max(data.Players, stat.Players)
+			if stat.ID == achievements.All {
+				data.AllFound = stat.Found
+			}
 			if stat.Players >= achievements.MinPlayers {
 				eggShare[stat.ID] = stat.Percent
 			}

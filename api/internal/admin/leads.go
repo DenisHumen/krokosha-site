@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
@@ -25,6 +26,12 @@ const leadsPerPage = 50
 var statusNames = map[string]string{
 	leads.StatusNew: "Новая", leads.StatusInProgress: "В работе", leads.StatusWaitingClient: "Ждём клиента",
 	leads.StatusDone: "Завершена", leads.StatusRejected: "Отклонена", leads.StatusSpam: "Спам",
+}
+
+// groupNames name the tabs and the columns of the board: a group of requests, not one of them.
+var groupNames = map[string]string{
+	leads.StatusNew: "Новые", leads.StatusInProgress: "В работе", leads.StatusWaitingClient: "Ждём клиента",
+	leads.StatusDone: "Завершено", leads.StatusRejected: "Отклонено", leads.StatusSpam: "Спам",
 }
 
 var methodNames = map[string]string{leads.MethodEmail: "почта", leads.MethodTelegram: "Telegram", leads.MethodPhone: "телефон"}
@@ -69,6 +76,7 @@ type leadsData struct {
 	Funnel  *leads.Funnel
 	Period  string
 	Waiting int // the client wrote last: somebody should answer
+	Pages   int
 }
 
 func (h *Handler) leadsList(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +121,7 @@ func (h *Handler) leadsList(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Tabs = append(data.Tabs, statusTab{ID: "", Name: "Все", Count: open, Current: data.Status == "", Query: link("", data.View, 1)})
 	for _, status := range leads.Statuses {
-		data.Tabs = append(data.Tabs, statusTab{ID: status, Name: statusNames[status], Count: counts[status], Current: data.Status == status, Query: link(status, data.View, 1)})
+		data.Tabs = append(data.Tabs, statusTab{ID: status, Name: groupNames[status], Count: counts[status], Current: data.Status == status, Query: link(status, data.View, 1)})
 	}
 	data.ListQ, data.BoardQ = link(data.Status, "list", 1), link(data.Status, "board", 1)
 
@@ -125,7 +133,7 @@ func (h *Handler) leadsList(w http.ResponseWriter, r *http.Request) {
 				h.fail(w, r, "cannot list the requests", err)
 				return
 			}
-			data.Board = append(data.Board, boardColumn{Status: status, Name: statusNames[status], Cards: cards})
+			data.Board = append(data.Board, boardColumn{Status: status, Name: groupNames[status], Cards: cards})
 		}
 	} else {
 		items, total, err := h.opts.Leads.List(ctx, leads.Filter{Status: data.Status, Query: data.Search, Limit: leadsPerPage, Offset: (data.Page - 1) * leadsPerPage})
@@ -134,6 +142,7 @@ func (h *Handler) leadsList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data.Items, data.Total = items, total
+		data.Pages = max(1, (total+leadsPerPage-1)/leadsPerPage)
 		if data.Page > 1 {
 			data.Prev = link(data.Status, "list", data.Page-1)
 		}
@@ -172,6 +181,14 @@ type leadData struct {
 	VisitID       string
 	CanReply      bool
 	ByPhone       bool
+	// Description is what the client wrote in the form (the first message); Thread is the rest
+	// of the conversation and the history, oldest first.
+	Description *leads.Entry
+	Thread      []leads.Entry
+	// Client is the personal account of the request, as the list of clients shows it; nil — none.
+	Client *clients.Row
+	// Template is the ready-made answer chosen with ?template=…
+	Template int64
 }
 
 func leadID(r *http.Request) (int64, bool) {
@@ -212,6 +229,20 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	if lead.Session.Known {
 		data.VisitID = lead.Session.SessionHex()
 	}
+	for i, entry := range card.Feed {
+		if data.Description == nil && entry.Kind == "message" && entry.Direction == "in" {
+			data.Description = &card.Feed[i]
+			continue
+		}
+		data.Thread = append(data.Thread, entry)
+	}
+	if lead.ClientID > 0 && h.opts.Clients != nil {
+		if data.Client, err = h.opts.Clients.Summary(r.Context(), lead.ClientID); err != nil && !errors.Is(err, clients.ErrNotFound) {
+			h.fail(w, r, "cannot read the client of the request", err)
+			return
+		}
+	}
+	data.Template, _ = strconv.ParseInt(r.URL.Query().Get("template"), 10, 64)
 	if h.opts.BotStatus != nil && data.CanReply && lead.PublicToken != "" {
 		if state, _ := h.opts.BotStatus(); state.Username != "" {
 			data.ClientBotLink = "https://t.me/" + state.Username + "?start=" + telegram.ClientPrefix + lead.PublicToken
@@ -241,7 +272,11 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 			}
 		}
 	}
-	h.render(w, r, status, "lead", view{Title: "Заявка #" + lead.Number(), Nav: "leads", Error: problem, Data: data})
+	title := "Заявка #"
+	if lead.Kind == leads.KindInquiry {
+		title = "Обращение #"
+	}
+	h.render(w, r, status, "lead", view{Title: title + lead.Number(), Nav: "leads", Error: problem, Data: data})
 }
 
 func (h *Handler) notFound(w http.ResponseWriter, r *http.Request, message string) {

@@ -345,6 +345,13 @@ func TestListSearchAndFunnel(t *testing.T) {
 	if err != nil || len(funnel.Sources) != 1 || funnel.Sources[0] != (SourceStat{Source: "ads", Campaign: "mikrotik-kyiv", Requests: 2, Done: 1}) {
 		t.Errorf("sources: %+v %v", funnel.Sources, err)
 	}
+	// What the completed ones came to: only theirs, the amount of an open request is not money yet.
+	if _, err := f.db.ExecContext(ctx, `UPDATE leads SET amount = IF(status = 'done', 1500, 700)`); err != nil {
+		t.Fatal(err)
+	}
+	if funnel, err = store.Funnel(ctx, noon.Add(-time.Hour), noon.Add(24*time.Hour)); err != nil || funnel.Amount != 1500 {
+		t.Errorf("amount of the completed requests: %+v %v", funnel, err)
+	}
 
 	var rows [][]string
 	if err := store.Export(ctx, func(row []string) error { rows = append(rows, append([]string(nil), row...)); return nil }); err != nil {
