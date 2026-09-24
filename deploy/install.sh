@@ -369,12 +369,20 @@ if ! id "$KROKOSHA_USER" >/dev/null 2>&1; then
   ok "created system user $KROKOSHA_USER (no shell, no password)"
 fi
 install -d -m 0755 -o root -g root "$KROKOSHA_ROOT" "$KROKOSHA_ROOT/bin" "$KROKOSHA_ROOT/toolchain"
-install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE" "$KROKOSHA_STATE/cache"
-install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW" "$WWW/releases"
+install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE"
+install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW"
+# Inside the site user's directories that user makes the directories itself. The user may put a
+# link in the place of any name there, and root would follow it: `install -d -o` would hand the
+# owner and the mode of /etc to the site user. cache/npm and cache/github are what the sandbox of
+# the build may write to (krokosha-sync.service), so they must be there before it runs.
+as_site_user mkdir -p -m 0750 "$KROKOSHA_STATE/cache" "$KROKOSHA_STATE/cache/npm" "$KROKOSHA_STATE/cache/github"
+as_site_user mkdir -p -m 0755 "$WWW/releases"
 # The map of the internet (docs/netmap.md): its sources, and the overview nginx serves.
-install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/netmap"
-install -d -m 0755 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$WWW/netmap"
-install -d -m 0755 -o root -g root "$WWW/acme"
+as_site_user mkdir -p -m 0750 "$KROKOSHA_STATE/netmap"
+as_site_user mkdir -p -m 0755 "$WWW/netmap"
+# certbot's webroot is root's: made once, never chowned again for the reason above.
+[[ ! -L $WWW/acme ]] || die "$WWW/acme is a symbolic link: something changed the files of the site user"
+[[ -d $WWW/acme ]] || install -d -m 0755 -o root -g root "$WWW/acme"
 # The data root: everything that cannot be rebuilt (docs/architecture.md §6).
 install -d -m 0755 -o root -g root "$DATA_DIR"
 install -d -m 0750 -o root -g "$KROKOSHA_USER" "$DATA_DIR/config"
@@ -594,11 +602,17 @@ step "Building the programs and the site"
 as_site_user mkdir -p "$KROKOSHA_STATE/cache/bin"
 as_site_user env GOCACHE="$KROKOSHA_STATE/cache/go-build" GOPATH="$KROKOSHA_STATE/cache/go" GOFLAGS=-mod=readonly GOTOOLCHAIN=local CGO_ENABLED=0 \
   go -C "$KROKOSHA_REPO/api" build -trimpath -ldflags '-s -w' -o "$KROKOSHA_STATE/cache/bin/" ./cmd/krokosha-cli ./cmd/krokosha-api
-install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-cli" "$KROKOSHA_ROOT/bin/krokosha-cli" 0755 || true
+# The binaries are read as the site user, into files of root's: whatever stands under their names
+# in the site user's cache, root copies nothing it could read and that user could not.
+built=$(mktemp -d)
+as_site_user cat "$KROKOSHA_STATE/cache/bin/krokosha-cli" >"$built/krokosha-cli"
+as_site_user cat "$KROKOSHA_STATE/cache/bin/krokosha-api" >"$built/krokosha-api"
+install_if_changed "$built/krokosha-cli" "$KROKOSHA_ROOT/bin/krokosha-cli" 0755 || true
 # `sudo krokosha-cli admin passwd LOGIN` should simply work.
 ln -sfn "$KROKOSHA_ROOT/bin/krokosha-cli" /usr/local/bin/krokosha-cli
 api_changed=$ENV_CHANGED
-install_if_changed "$KROKOSHA_STATE/cache/bin/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
+install_if_changed "$built/krokosha-api" "$KROKOSHA_ROOT/bin/krokosha-api" 0755 && api_changed=yes
+rm -rf "$built"
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
 for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
@@ -609,12 +623,15 @@ for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
 done
 # Where the API leaves requests for a rebuild and the build leaves its report (both run as the
 # site user; the API may write to requests/ only).
-install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/requests" "$KROKOSHA_STATE/status"
+as_site_user mkdir -p -m 0750 "$KROKOSHA_STATE/requests" "$KROKOSHA_STATE/status"
 install_if_changed "$DEPLOY/systemd/krokosha-api.service" /etc/systemd/system/krokosha-api.service && api_changed=yes
 # The unit is static; the one path that depends on --data-dir goes into a drop-in.
 api_dropin=$(mktemp)
 printf '[Service]\nReadWritePaths=-%s/attachments\n' "$DATA_DIR" >"$api_dropin"
 install_if_changed "$api_dropin" /etc/systemd/system/krokosha-api.service.d/data-dir.conf && api_changed=yes
+# The build does not see the files of requests at all.
+printf '[Service]\nInaccessiblePaths=-%s/attachments\n' "$DATA_DIR" >"$api_dropin"
+install_if_changed "$api_dropin" /etc/systemd/system/krokosha-sync.service.d/data-dir.conf || true
 rm -f "$api_dropin"
 systemctl daemon-reload
 
@@ -1053,14 +1070,16 @@ RECORDS
   # Thunderbird and others ask the site how to set a mailbox up.
   tmp=$(mktemp)
   sed -e "s/@@DOMAIN@@/$DOMAIN/g" -e "s/@@MAIL_HOST@@/$MAIL_HOST/g" "$DEPLOY/mail/autoconfig.xml.tmpl" >"$tmp"
-  install_if_changed "$tmp" "$WWW/mail-autoconfig.xml" 0644 || true
+  write_as_site_user "$WWW/mail-autoconfig.xml" <"$tmp"
   rm -f "$tmp"
 
   install_if_changed "$DEPLOY/bin/krokosha-mailbox" /usr/local/bin/krokosha-mailbox 0755 || true
-  # The «Почта» screen of the admin area: the API drops requests into requests/mail (its own), the
-  # root helper applies them and lists the mailboxes in mail/ (root's, the site user reads it).
-  install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/requests/mail"
-  install -d -m 0750 -o root -g "$KROKOSHA_USER" "$KROKOSHA_STATE/mail"
+  # The «Почта» screen of the admin area: the API drops requests into requests/mail, the root
+  # helper applies them and lists the mailboxes in mail/. Both belong to the site user: the helper
+  # reads and writes there as that user (bin/krokosha-mailbox). mail/ was root's until 2026-09;
+  # chown -h changes a link itself, never what it points at.
+  as_site_user mkdir -p -m 0750 "$KROKOSHA_STATE/requests/mail" "$KROKOSHA_STATE/mail"
+  [[ $(stat -c %U "$KROKOSHA_STATE/mail") == "$KROKOSHA_USER" ]] || chown -h "$KROKOSHA_USER:$KROKOSHA_USER" "$KROKOSHA_STATE/mail"
   for unit in krokosha-mailbox.service krokosha-mailbox.path; do
     install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
   done

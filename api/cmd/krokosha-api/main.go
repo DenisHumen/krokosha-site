@@ -30,6 +30,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
+	"github.com/DenisHumen/krokosha-site/api/internal/hardening"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
@@ -46,6 +47,10 @@ import (
 )
 
 func main() {
+	if err := hardening.PrivateEnvironment(); err != nil {
+		fmt.Fprintln(os.Stderr, "krokosha-api: cannot keep the environment private:", err)
+		os.Exit(1)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "krokosha-api:", err)
 		os.Exit(1)
