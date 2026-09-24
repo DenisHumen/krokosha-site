@@ -1,0 +1,1478 @@
+---
+// The personal account (docs/architecture.md, 2026-09-24; api/internal/clients): the client's requests
+// and inquiries with their statuses and conversations, the discount of the next request and the level
+// of a regular client, contacts and social networks, the ways to sign in, the devices. No password: a
+// one-time code comes by email or from the site's Telegram bot. Everything here is the page's frame
+// and its texts; scripts/account.ts asks the API and fills it in. A service page: not indexed.
+import Achievements from '../../components/Achievements.astro';
+import { localeFromParam, localePath } from '../../i18n/locales.ts';
+import { fill, plural } from '../../i18n/localize.ts';
+import Base from '../../layouts/Base.astro';
+import { getContent } from '../../lib/content.ts';
+import { getPageData } from '../../lib/page-data.ts';
+import { localeStaticPaths } from '../../lib/routes.ts';
+
+export const getStaticPaths = localeStaticPaths;
+
+const lang = localeFromParam(Astro.params.lang);
+const data = await getPageData(lang);
+const { account, loyalty, flags } = data.site;
+const { form } = data.site.contacts;
+const orders = getContent().site.plurals.orders[lang];
+const money = new Intl.NumberFormat(lang, {
+  style: 'currency',
+  currency: loyalty.currency,
+  maximumFractionDigits: 0,
+});
+const panel = flags.easter_eggs.enabled && flags.easter_eggs['achievements'] !== false;
+// The achievements of orders (api/internal/clients/orders.go), in the order the account shows them.
+const ORDER_ACHIEVEMENTS = ['first_order', 'second_order', 'big_order', 'all_orders'] as const;
+
+/** «3 orders or $5,000»: what a level asks, whichever comes first. */
+function rule(tier: (typeof loyalty.tiers)[number]): string {
+  const count = tier.orders > 0 ? `${tier.orders} ${plural(orders, tier.orders, lang)}` : '';
+  const sum = tier.spent > 0 ? money.format(tier.spent) : '';
+  return count && sum
+    ? fill(account.loyalty.level_rule, { orders: count, spent: sum })
+    : count || sum;
+}
+
+const kinds = Object.entries(account.contacts.kinds);
+// What a value of each kind looks like: examples, the same in every language.
+const examples: Record<string, string> = {
+  phone: '+380 …',
+  whatsapp: '+380 …',
+  viber: '+380 …',
+  signal: '+380 …',
+  telegram: '@username',
+  linkedin: 'linkedin.com/in/…',
+  facebook: 'facebook.com/…',
+  instagram: '@username',
+  x: '@username',
+  discord: 'username',
+  skype: 'live:…',
+  github: 'username',
+  website: 'https://…',
+};
+
+// What the script needs: the texts, and the words it builds sentences from.
+const scriptTexts = JSON.stringify({
+  lang,
+  account,
+  orders,
+  examples,
+  directions: Object.fromEntries(form.directions.map((item) => [item.id, item.label])),
+  loyalty: {
+    enabled: loyalty.enabled,
+    currency: loyalty.currency,
+    eggs: loyalty.eggs,
+    tiers: loyalty.tiers.map(({ id, name, discount }) => ({ id, name, discount })),
+  },
+});
+---
+
+<Base
+  data={data}
+  page="account"
+  title={`${account.title} — ${data.profile.nickname}`}
+  description={account.description}
+  noindex
+>
+  <div class="account" data-account data-texts={scriptTexts}>
+    <noscript>
+      <p class="notice">{account.no_script}</p>
+    </noscript>
+
+    <p class="loading mono needs-js" data-view="loading" role="status">
+      <i aria-hidden="true"></i>
+      <span data-loading>{account.loading}</span>
+    </p>
+
+    {/* Signed out: an address or Telegram, then the code. */}
+    <section class="login" data-view="login" hidden aria-labelledby="login-title">
+      <p class="status mono">
+        <i aria-hidden="true"></i>AUTH · ONE-TIME CODE
+      </p>
+      <h1 id="login-title">{account.title}</h1>
+      <p class="lead">{account.login.lead}</p>
+
+      <div class="login-card">
+        <fieldset class="choose" data-login-methods>
+          <legend class="label">{account.login.method}</legend>
+          <span class="methods">
+            <label class="method">
+              <input type="radio" name="login-method" value="email" checked />
+              <span>{account.login.email}</span>
+            </label>
+            <label class="method">
+              <input type="radio" name="login-method" value="telegram" />
+              <span>{account.login.telegram}</span>
+            </label>
+          </span>
+        </fieldset>
+
+        <form class="step" data-login-email novalidate>
+          <label class="label" for="login-email">
+            {account.login.email_label}
+          </label>
+          <input
+            id="login-email"
+            name="email"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            maxlength="200"
+            required
+            placeholder="you@company.com"
+          />
+          <button class="pill pill-inverse submit" type="submit">
+            {account.login.send}
+            <span class="arrow" aria-hidden="true">
+              →
+            </span>
+          </button>
+        </form>
+
+        <div class="step" data-login-telegram hidden>
+          <p class="muted">{account.login.telegram_text}</p>
+          <a
+            class="pill pill-inverse submit is-waiting"
+            href={localePath(lang, 'account')}
+            target="_blank"
+            rel="noopener"
+            aria-disabled="true"
+            data-bot-link
+          >
+            {account.login.telegram_open}
+            <span class="arrow" aria-hidden="true">
+              →
+            </span>
+          </a>
+        </div>
+
+        <form class="step" data-login-code hidden novalidate>
+          <p class="sent" data-sent></p>
+          <label class="label" for="login-code">
+            {account.login.code}
+          </label>
+          <input
+            class="code mono"
+            id="login-code"
+            name="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            required
+          />
+          <p class="row">
+            <button class="pill pill-inverse submit" type="submit">
+              {account.login.submit}
+            </button>
+            <button class="link" type="button" data-login-back>
+              {account.login.back}
+            </button>
+          </p>
+        </form>
+
+        <p class="error" role="alert" data-login-error></p>
+      </div>
+      <p class="note muted">{account.login.note}</p>
+    </section>
+
+    {/* Signed in. */}
+    <div class="dashboard" data-view="dashboard" hidden>
+      <header class="head">
+        <p class="status mono">
+          <i aria-hidden="true"></i>SESSION · ESTABLISHED
+        </p>
+        <h1 data-hello>{account.title}</h1>
+        <p class="muted" data-since></p>
+        <p class="row">
+          <a class="pill pill-inverse cta" href={`${localePath(lang)}#contacts`}>
+            {account.home.new_request}
+            <span class="arrow" aria-hidden="true">
+              →
+            </span>
+          </a>
+          <button class="pill pill-line cta" type="button" data-logout>
+            {account.home.sign_out}
+          </button>
+        </p>
+      </header>
+
+      <div class="columns">
+        <div class="stack">
+          <section class="card" aria-labelledby="requests-title" data-requests>
+            <div data-list-view>
+              <h2 class="card-title" id="requests-title">
+                {account.requests.title}
+              </h2>
+              <p class="muted" data-requests-empty hidden>
+                {account.requests.empty}
+              </p>
+              <ul class="requests" data-requests-list></ul>
+            </div>
+
+            <article class="thread" data-thread hidden aria-live="polite">
+              <button class="link back mono" type="button" data-thread-back>
+                <span aria-hidden="true">←</span>
+                {account.requests.back}
+              </button>
+              <header class="thread-head">
+                <p class="mono muted" data-thread-meta></p>
+                <h2 class="card-title" data-thread-title>
+                  {account.requests.request}
+                </h2>
+                <span class="pill-status" data-thread-status></span>
+              </header>
+              <dl class="facts" data-thread-facts></dl>
+              <p class="description" data-thread-description></p>
+              <h3 class="subtitle mono">{account.requests.conversation}</h3>
+              <ol class="feed" data-thread-feed></ol>
+              <form class="reply" data-thread-reply novalidate>
+                <label class="visually-hidden" for="reply-text">
+                  {account.requests.write}
+                </label>
+                <textarea
+                  id="reply-text"
+                  name="text"
+                  rows="3"
+                  maxlength="4000"
+                  placeholder={account.requests.write}
+                ></textarea>
+                <p class="field-error" role="alert" data-error></p>
+                <p class="row">
+                  <button class="pill pill-inverse submit" type="submit">
+                    {account.requests.send}
+                  </button>
+                  <span class="done mono" role="status" data-done></span>
+                </p>
+              </form>
+              <p class="muted" data-thread-closed hidden>
+                {account.requests.closed}
+              </p>
+              <button class="link ask" type="button" data-thread-ask>
+                {account.requests.ask} <span aria-hidden="true">→</span>
+              </button>
+            </article>
+          </section>
+
+          <section class="card" aria-labelledby="inquiry-title" id="inquiry">
+            <h2 class="card-title" id="inquiry-title">
+              {account.inquiry.title}
+            </h2>
+            <p class="muted">{account.inquiry.lead}</p>
+            <form class="fields" data-inquiry novalidate>
+              <label class="label" for="inquiry-parent">
+                {account.inquiry.parent}
+              </label>
+              <select id="inquiry-parent" name="parent" data-parent>
+                <option value="">{account.inquiry.none}</option>
+              </select>
+              <label class="label" for="inquiry-subject">
+                {account.inquiry.subject}
+              </label>
+              <input id="inquiry-subject" name="subject" maxlength="150" autocomplete="off" />
+              <label class="label" for="inquiry-text">
+                {account.inquiry.text}
+              </label>
+              <textarea id="inquiry-text" name="text" rows="5" maxlength="4000" required></textarea>
+              <p class="field-error" role="alert" data-error></p>
+              <p class="row">
+                <button class="pill pill-inverse submit" type="submit">
+                  {account.inquiry.send}
+                </button>
+                <span class="done mono" role="status" data-done></span>
+              </p>
+            </form>
+          </section>
+
+          <section class="card" aria-labelledby="contacts-title" data-contacts>
+            <h2 class="card-title" id="contacts-title">
+              {account.contacts.title}
+            </h2>
+            <p class="muted">{account.contacts.lead}</p>
+            <ul class="list" data-contact-list></ul>
+            <p class="muted" data-contacts-empty hidden>
+              {account.contacts.empty}
+            </p>
+            <form class="fields add" data-contact-form novalidate>
+              <label class="label" for="contact-kind">
+                {account.contacts.kind}
+              </label>
+              <select id="contact-kind" name="kind">
+                {kinds.map(([id, label]) => (
+                  <option value={id}>{label}</option>
+                ))}
+              </select>
+              <label class="label" for="contact-value">
+                {account.contacts.value}
+              </label>
+              <input
+                id="contact-value"
+                name="value"
+                maxlength="200"
+                autocomplete="off"
+                required
+                placeholder={examples[kinds[0]?.[0] ?? 'phone']}
+              />
+              <p class="field-error" role="alert" data-error></p>
+              <p class="row">
+                <button class="pill pill-line submit" type="submit">
+                  {account.contacts.add}
+                </button>
+              </p>
+            </form>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="card loyalty" aria-labelledby="loyalty-title" data-loyalty>
+            <h2 class="card-title" id="loyalty-title">
+              {account.loyalty.title}
+            </h2>
+            <div class="next">
+              <p class="next-label mono muted">{account.loyalty.next}</p>
+              <p class="percent mono" data-next-percent>
+                —
+              </p>
+              <p class="muted" data-next-reason></p>
+            </div>
+            <dl class="facts">
+              <div>
+                <dt>{account.loyalty.level}</dt>
+                <dd>
+                  <span class="tier" data-tier></span>
+                </dd>
+              </div>
+              <div>
+                <dt>{account.loyalty.orders}</dt>
+                <dd class="mono" data-orders>
+                  0
+                </dd>
+              </div>
+              <div>
+                <dt>{account.loyalty.spent}</dt>
+                <dd class="mono" data-spent></dd>
+              </div>
+            </dl>
+            <div class="progress" data-progress hidden>
+              <p data-progress-title></p>
+              <i class="meter" aria-hidden="true">
+                <b data-progress-bar></b>
+              </i>
+              <p class="mono muted" data-progress-left></p>
+            </div>
+            <p class="top" data-top hidden>
+              {account.loyalty.top}
+            </p>
+            <p class="personal" data-personal hidden></p>
+            <details class="rules">
+              <summary>{account.loyalty.levels}</summary>
+              <ol class="tiers">
+                {loyalty.tiers.map((tier) => (
+                  <li data-tier-id={tier.id}>
+                    <span class="tier-name">{tier.name}</span>
+                    <span class="mono muted">{rule(tier)}</span>
+                    <span class="mono">−{tier.discount}%</span>
+                  </li>
+                ))}
+              </ol>
+              <p class="muted">
+                {fill(account.loyalty.rules, { welcome: loyalty.welcome, eggs: loyalty.eggs })}
+              </p>
+            </details>
+          </section>
+
+          <section class="card" aria-labelledby="achievements-title" data-achievements-card>
+            <h2 class="card-title" id="achievements-title">
+              {account.eggs.title}
+            </h2>
+            <h3 class="subtitle mono">{account.orders.title}</h3>
+            <ol class="achievements-list" data-orders>
+              {ORDER_ACHIEVEMENTS.map((id) => (
+                <li class:list={['achievement', { crown: id === 'all_orders' }]} data-order={id}>
+                  <span class="achievement-icon" data-icon></span>
+                  <span class="achievement-body">
+                    <span class="achievement-name">{account.orders[id].name}</span>
+                    <span class="achievement-text">
+                      {fill(account.orders[id].text, { amount: money.format(loyalty.big_order) })}
+                    </span>
+                    <span class="achievement-state mono" data-state>
+                      {account.orders.locked}
+                    </span>
+                  </span>
+                  <span class="achievement-share mono" data-share></span>
+                </li>
+              ))}
+            </ol>
+            {panel && (
+              <div class="eggs" data-eggs-card>
+                <h3 class="subtitle mono">
+                  {account.eggs.heading} · <span data-eggs-count>0/8</span>
+                </h3>
+                <div class="eggs-icons" aria-hidden="true" data-eggs-icons></div>
+                <button class="pill pill-line cta" type="button" data-eggs-open>
+                  {account.eggs.open}
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section class="card" aria-labelledby="profile-title">
+            <h2 class="card-title" id="profile-title">
+              {account.profile.title}
+            </h2>
+            <form class="fields" data-profile novalidate>
+              <label class="label" for="profile-name">
+                {account.profile.name}
+              </label>
+              <input id="profile-name" name="name" maxlength="100" autocomplete="name" />
+              <label class="label" for="profile-company">
+                {account.profile.company}
+              </label>
+              <input
+                id="profile-company"
+                name="company"
+                maxlength="120"
+                autocomplete="organization"
+              />
+              <label class="label" for="profile-lang">
+                {account.profile.lang}
+              </label>
+              <select id="profile-lang" name="lang">
+                <option value="en">English</option>
+                <option value="uk">Українська</option>
+                <option value="ru">Русский</option>
+              </select>
+              <fieldset class="choose">
+                <legend class="label">{account.profile.preferred}</legend>
+                <span class="methods">
+                  <label class="method">
+                    <input type="radio" name="preferred" value="email" />
+                    <span>{account.profile.preferred_email}</span>
+                  </label>
+                  <label class="method">
+                    <input type="radio" name="preferred" value="telegram" />
+                    <span>{account.profile.preferred_telegram}</span>
+                  </label>
+                </span>
+              </fieldset>
+              <p class="row">
+                <button class="pill pill-line submit" type="submit">
+                  {account.profile.save}
+                </button>
+                <span class="done mono" role="status" data-done></span>
+              </p>
+            </form>
+          </section>
+
+          <section class="card" aria-labelledby="access-title" data-access>
+            <h2 class="card-title" id="access-title">
+              {account.access.title}
+            </h2>
+            <dl class="facts">
+              <div>
+                <dt>{account.access.email}</dt>
+                <dd data-access-email></dd>
+              </div>
+              <div>
+                <dt>{account.access.telegram}</dt>
+                <dd data-access-telegram></dd>
+              </div>
+            </dl>
+            <p class="row actions">
+              <button class="link" type="button" data-email-change></button>
+              <button class="link" type="button" data-telegram-link>
+                {account.access.link_telegram}
+              </button>
+              <button class="link" type="button" data-telegram-unlink>
+                {account.access.unlink}
+              </button>
+            </p>
+            <form class="fields" data-access-email-form hidden novalidate>
+              <label class="label" for="access-email">
+                {account.login.email_label}
+              </label>
+              <input
+                id="access-email"
+                name="email"
+                type="email"
+                inputmode="email"
+                autocomplete="email"
+                maxlength="200"
+                required
+              />
+              <p class="row">
+                <button class="pill pill-line submit" type="submit">
+                  {account.login.send}
+                </button>
+                <button class="link" type="button" data-access-cancel>
+                  {account.access.cancel}
+                </button>
+              </p>
+            </form>
+            <form class="fields" data-access-code-form hidden novalidate>
+              <p class="sent" data-sent></p>
+              <p class="row" data-access-bot hidden>
+                <a
+                  class="pill pill-inverse submit"
+                  href={localePath(lang, 'account')}
+                  target="_blank"
+                  rel="noopener"
+                  data-access-bot-link
+                >
+                  {account.login.telegram_open}
+                  <span class="arrow" aria-hidden="true">
+                    →
+                  </span>
+                </a>
+              </p>
+              <label class="label" for="access-code">
+                {account.login.code}
+              </label>
+              <input
+                class="code mono"
+                id="access-code"
+                name="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxlength="6"
+                required
+              />
+              <p class="row">
+                <button class="pill pill-inverse submit" type="submit">
+                  {account.login.submit}
+                </button>
+                <button class="link" type="button" data-access-cancel>
+                  {account.access.cancel}
+                </button>
+              </p>
+            </form>
+            <p class="field-error" role="alert" data-error></p>
+          </section>
+
+          <section class="card" aria-labelledby="sessions-title" data-sessions>
+            <h2 class="card-title" id="sessions-title">
+              {account.sessions.title}
+            </h2>
+            <ul class="list" data-session-list></ul>
+            <button class="link" type="button" data-sessions-end-all hidden>
+              {account.sessions.end_all}
+            </button>
+          </section>
+
+          <section class="card danger" aria-labelledby="delete-title">
+            <h2 class="card-title" id="delete-title">
+              {account.delete.title}
+            </h2>
+            <p class="muted">{account.delete.text}</p>
+            <form class="fields" data-delete novalidate>
+              <label class="consent">
+                <input type="checkbox" name="confirm" data-delete-confirm />
+                <span>{account.delete.confirm}</span>
+              </label>
+              <p class="row">
+                <button class="pill pill-danger submit" type="submit" disabled data-delete-button>
+                  {account.delete.button}
+                </button>
+              </p>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* Rows the script clones: a request, a line of the conversation, a contact, a device. */}
+  <template id="tpl-request">
+    <li>
+      <a class="request" href={localePath(lang, 'account')}>
+        <span class="request-top">
+          <span class="number mono" data-number></span>
+          <span class="kind mono muted" data-kind></span>
+          <span class="unread mono" data-unread hidden>
+            {account.requests.unread}
+          </span>
+          <span class="pill-status" data-status></span>
+        </span>
+        <span class="request-title" data-title></span>
+        <span class="excerpt muted" data-excerpt></span>
+        <span class="request-bottom mono muted">
+          <span data-date></span>
+          <span data-discount></span>
+        </span>
+      </a>
+    </li>
+  </template>
+  <template id="tpl-entry">
+    <li class="entry">
+      <p class="entry-head mono">
+        <span data-who></span>
+        <span class="muted" data-when></span>
+      </p>
+      <p class="entry-body" data-body></p>
+    </li>
+  </template>
+  <template id="tpl-contact">
+    <li class="row-item">
+      <span class="item-main">
+        <span class="mono muted" data-kind></span>
+        <span data-value></span>
+      </span>
+      <button class="link" type="button" data-remove>
+        {account.contacts.remove}
+      </button>
+    </li>
+  </template>
+  <template id="tpl-session">
+    <li class="row-item">
+      <span class="item-main">
+        <span data-device></span>
+        <span class="mono muted" data-seen></span>
+      </span>
+      <span class="current mono" data-current hidden>
+        {account.sessions.current}
+      </span>
+      <button class="link" type="button" data-end>
+        {account.sessions.end}
+      </button>
+    </li>
+  </template>
+
+  {panel && <Achievements data={data} account={false} />}
+</Base>
+
+<script>
+  import { initAccount } from '../../scripts/account.ts';
+
+  initAccount();
+</script>
+
+<style>
+  .account {
+    --amber: #e6b450;
+
+    max-width: var(--page);
+    width: 100%;
+    margin: 0 auto;
+    padding: 3.5rem var(--gutter) 6rem;
+  }
+
+  :global(:root[data-theme='light']) .account {
+    --amber: #8a5a00;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :global(:root:not([data-theme='dark'])) .account {
+      --amber: #8a5a00;
+    }
+  }
+
+  .notice {
+    max-width: 40rem;
+    padding: 1rem 1.2rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  /* A status line in the manner of the site's service pages: «404 · ICMP TIME EXCEEDED». */
+  .status,
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+
+  .status i,
+  .loading i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: kro-blink 1.6s infinite;
+  }
+
+  .dashboard .status i {
+    background: var(--ok);
+  }
+
+  h1 {
+    font-size: clamp(2rem, 4.5vw, 3.2rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+
+  .lead {
+    max-width: 36rem;
+    color: var(--fg-2);
+    text-wrap: pretty;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+  }
+
+  .label {
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--fg-2);
+  }
+
+  .muted {
+    color: var(--muted);
+  }
+
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-2);
+    font: inherit;
+    font-size: 0.875rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+
+  .link:hover {
+    color: var(--accent);
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input:not([type]),
+  select,
+  textarea {
+    width: 100%;
+    height: 2.9rem;
+    padding: 0 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    outline: none;
+    transition: border-color var(--dur-1);
+  }
+
+  textarea {
+    height: auto;
+    min-height: 6rem;
+    padding: 0.75rem 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--fg);
+  }
+
+  [aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+
+  .code {
+    max-width: 12rem;
+    font-size: 1.4rem;
+    letter-spacing: 0.4em;
+    text-align: center;
+  }
+
+  .submit {
+    height: 2.9rem;
+    padding: 0 1.3rem;
+    border: 0;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+
+  .submit:disabled,
+  .submit.is-waiting {
+    opacity: 0.55;
+    cursor: progress;
+  }
+
+  .cta {
+    height: 2.75rem;
+    padding: 0 1.2rem;
+    border: 0;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+
+  .pill-line.cta,
+  .pill-line.submit {
+    border: 1px solid var(--line-strong);
+    background: none;
+  }
+
+  .pill-danger {
+    border: 1px solid var(--danger);
+    background: none;
+    color: var(--danger);
+  }
+
+  .error,
+  .field-error {
+    font-size: 0.85rem;
+    color: var(--danger);
+  }
+
+  .error:empty,
+  .field-error:empty,
+  .done:empty {
+    display: none;
+  }
+
+  .done {
+    font-size: 0.75rem;
+    color: var(--ok);
+  }
+
+  /* Email · Telegram as the form's segmented switch; the radios stay real radios. */
+  .choose {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .methods {
+    display: inline-flex;
+    width: max-content;
+    max-width: 100%;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--bg);
+  }
+
+  .method {
+    position: relative;
+    padding: 0.4rem 0.95rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background var(--dur-1);
+  }
+
+  .method input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .method:has(input:checked) {
+    background: var(--inverse-bg);
+    color: var(--inverse-fg);
+  }
+
+  .method:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .consent {
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    font-size: 0.875rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+
+  .consent input {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.2rem 0 0;
+    accent-color: var(--danger);
+  }
+
+  /* --- signing in ---------------------------------------------------------------------------------- */
+
+  .login {
+    display: grid;
+    gap: 1.25rem;
+    max-width: 36rem;
+    margin: 0 auto;
+    animation: kro-up var(--dur-3) var(--ease-out) both;
+  }
+
+  .login-card {
+    display: grid;
+    gap: 1.1rem;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .step {
+    display: grid;
+    gap: 0.6rem;
+    justify-items: start;
+  }
+
+  .step input {
+    width: 100%;
+  }
+
+  .sent {
+    color: var(--fg-2);
+  }
+
+  .note {
+    font-size: 0.85rem;
+  }
+
+  /* --- signed in ----------------------------------------------------------------------------------- */
+
+  .dashboard {
+    display: grid;
+    gap: 2.5rem;
+    animation: kro-up var(--dur-3) var(--ease-out) both;
+  }
+
+  .head {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .stack {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .card {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+    min-width: 0;
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .card-title {
+    font-size: 1.2rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+
+  .subtitle {
+    font-size: 0.7rem;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .fields {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .fields .label {
+    margin-top: 0.35rem;
+  }
+
+  .fields .row {
+    margin-top: 0.4rem;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  /* The facts of a request are made by the script: its elements carry no scope, hence :global. */
+  .facts > :global(div) {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 0.4rem;
+    border-top: 1px dashed var(--line);
+  }
+
+  .facts :global(dt) {
+    flex: none;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+
+  .facts :global(dd) {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  /* The requests: one link per request, the newest first. */
+  .requests {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .request {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    transition:
+      border-color var(--dur-1),
+      transform var(--dur-1) var(--ease-out);
+  }
+
+  .request:hover {
+    border-color: var(--fg);
+    color: var(--fg);
+    transform: translateX(3px);
+  }
+
+  .request-top,
+  .request-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.8rem;
+    font-size: 0.75rem;
+  }
+
+  .request-top .pill-status {
+    margin-left: auto;
+  }
+
+  .number {
+    color: var(--fg);
+  }
+
+  .unread {
+    padding: 0.05rem 0.5rem;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+  }
+
+  .request-title {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .excerpt {
+    font-size: 0.875rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  .pill-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .pill-status::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .pill-status[data-value='waiting_client'] {
+    border-color: var(--amber);
+  }
+
+  .pill-status[data-value='waiting_client']::before {
+    background: var(--amber);
+  }
+
+  .pill-status[data-value='done']::before {
+    background: var(--ok);
+  }
+
+  .pill-status[data-value='rejected']::before {
+    background: var(--muted);
+  }
+
+  /* One request with its conversation. */
+  .thread {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .ask {
+    justify-self: start;
+  }
+
+  .back {
+    justify-self: start;
+    font-size: 0.75rem;
+    text-decoration: none;
+  }
+
+  .thread-head {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: start;
+  }
+
+  .thread-head .mono {
+    font-size: 0.75rem;
+  }
+
+  .description {
+    padding: 1rem;
+    border-radius: var(--radius-m);
+    background: var(--bg);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .feed {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .entry {
+    display: grid;
+    gap: 0.3rem;
+    max-width: 85%;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--bg);
+  }
+
+  .entry.is-in {
+    justify-self: end;
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  .entry.is-status {
+    justify-self: center;
+    max-width: none;
+    padding: 0.2rem 0.8rem;
+    border-style: dashed;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .entry.is-status .entry-body {
+    display: none;
+  }
+
+  .entry-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.8rem;
+    font-size: 0.7rem;
+  }
+
+  .entry-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .reply {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  /* The discount and the level. */
+  .next {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .next-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .percent {
+    font-size: clamp(2.2rem, 5vw, 3rem);
+    line-height: 1.1;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .tier {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .tier::before {
+    content: '';
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--tier-color, var(--dot-dim));
+  }
+
+  .tier[data-value='silver'],
+  .tiers [data-tier-id='silver'] {
+    --tier-color: #b7bcc6;
+  }
+
+  .tier[data-value='gold'],
+  .tiers [data-tier-id='gold'] {
+    --tier-color: #ffb84e;
+  }
+
+  .tier[data-value='platinum'],
+  .tiers [data-tier-id='platinum'] {
+    --tier-color: #b9d7f0;
+  }
+
+  .progress {
+    display: grid;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+  }
+
+  .progress .mono {
+    font-size: 0.75rem;
+  }
+
+  .meter {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    overflow: hidden;
+  }
+
+  .meter b {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+    transition: width var(--dur-3) var(--ease-out);
+  }
+
+  .top,
+  .personal {
+    padding: 0.6rem 0.9rem;
+    border: 1px dashed var(--accent-line);
+    border-radius: var(--radius-m);
+    background: var(--accent-soft);
+    font-size: 0.9rem;
+  }
+
+  .rules summary {
+    font-size: 0.875rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+
+  .rules[open] {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .rules p {
+    font-size: 0.85rem;
+  }
+
+  .tiers {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+
+  .tiers li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    align-items: baseline;
+    font-size: 0.875rem;
+  }
+
+  .tier-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .tier-name::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tier-color, var(--dot-dim));
+  }
+
+  .tiers .muted {
+    font-size: 0.75rem;
+  }
+
+  /* Achievements: those of orders as Steam lists them — the icon, the name, when, how many have it —
+     and the eggs as a row of icons with the way to their panel. */
+  .achievements-list {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .achievement {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.45rem 0;
+  }
+
+  .achievement-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 2px;
+    background: var(--bg);
+  }
+
+  .achievement-body {
+    display: grid;
+    gap: 0.05rem;
+    min-width: 0;
+  }
+
+  .achievement-name {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .achievement:not(.is-found) .achievement-name,
+  .achievement:not(.is-found) .achievement-text {
+    color: var(--muted);
+  }
+
+  .achievement-text {
+    font-size: 0.85rem;
+    color: var(--fg-2);
+  }
+
+  .achievement-state,
+  .achievement-share {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .achievement.is-rare .achievement-state,
+  .achievement.is-rare .achievement-share {
+    color: var(--amber);
+  }
+
+  .eggs {
+    display: grid;
+    gap: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--line);
+  }
+
+  .eggs-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .cta,
+  [data-eggs-open] {
+    justify-self: start;
+  }
+
+  /* Contacts and devices: a line each, with its action on the right. */
+  .list {
+    display: grid;
+  }
+
+  .row-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-top: 1px dashed var(--line);
+  }
+
+  .row-item:first-child {
+    border-top: 0;
+  }
+
+  .item-main {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+    margin-right: auto;
+    overflow-wrap: anywhere;
+  }
+
+  .item-main .mono {
+    font-size: 0.7rem;
+  }
+
+  .current {
+    font-size: 0.7rem;
+    color: var(--ok);
+  }
+
+  .actions {
+    gap: 0.5rem 1.25rem;
+  }
+
+  .danger {
+    border-color: color-mix(in oklab, var(--danger) 45%, var(--line));
+  }
+
+  @media (min-width: 1000px) {
+    .columns {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    }
+  }
+</style>

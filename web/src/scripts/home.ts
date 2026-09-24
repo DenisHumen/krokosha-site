@@ -11,11 +11,18 @@ interface EggsConfig {
 }
 
 interface EggEvent {
+  id: string;
   count: number;
   total: number;
 }
 
 type EggsModule = typeof import('../../../design/components/eggs/eggs.js');
+type ServerModule = typeof import('./achievements.ts');
+
+const fill = (template: string, values: Record<string, string | number>) =>
+  template.replace(/\{([a-z_]+)\}/g, (match, name: string) =>
+    name in values ? String(values[name]) : match,
+  );
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
@@ -124,22 +131,53 @@ export function initHome(): void {
   const config = readEggs();
   if (!config?.flags.enabled) return;
   const achievements = config.flags.achievements !== false;
-  const captions = document.querySelectorAll<HTMLElement>('[data-eggs-caption]');
+  const lang = document.documentElement.lang || 'en';
+  const texts = config.texts as { rarity?: string; panel?: { open?: string } };
+  // «eggs 3/8» in the rail and the footer: a button that opens the panel of achievements.
+  const captions = document.querySelectorAll<HTMLButtonElement>('[data-eggs-caption]');
   const count = (found: number, total: number) => {
     if (!achievements) return;
-    for (const node of captions) node.textContent = found > 0 ? `eggs ${found}/${total}` : '';
+    for (const node of captions) {
+      node.hidden = found === 0;
+      node.textContent = found > 0 ? `eggs ${found}/${total}` : '';
+      node.setAttribute('aria-label', fill(texts.panel?.open ?? '', { found, total }));
+    }
+  };
+  for (const node of captions) {
+    node.addEventListener('click', () => {
+      void import('./achievements-panel.ts').then((panel) => panel.openAchievements());
+    });
+  }
+
+  // Finds are reported to the site (scripts/achievements.ts): a receipt comes back, and the shares of
+  // players make the rarity the banner shows.
+  let server: ServerModule | null = null;
+  let shares: Partial<Record<string, number>> = {};
+  const rarity = (id: string) => {
+    const share = shares[id];
+    if (share === undefined || !server || !texts.rarity) return null;
+    return { share, line: fill(texts.rarity, { percent: server.formatShare(share, lang) }) };
   };
   document.addEventListener('kro:egg', (event) => {
-    const { count: found, total } = (event as CustomEvent<EggEvent>).detail;
+    const { id, count: found, total } = (event as CustomEvent<EggEvent>).detail;
     count(found, total);
+    if (server && (server.EGGS as readonly string[]).includes(id))
+      void server.report(id as (typeof server.EGGS)[number]);
   });
 
   let eggs: EggsModule | null = null;
   afterLoad(() => {
-    void import('../../../design/components/eggs/eggs.js').then((module) => {
+    void Promise.all([
+      import('../../../design/components/eggs/eggs.js'),
+      import('./achievements.ts'),
+    ]).then(([module, reports]) => {
       eggs = module;
+      server = reports;
+      module.configure({ flags: config.flags, rarity });
       count(module.foundList().length, module.TOTAL);
       module.initEggs({ flags: config.flags, texts: config.texts, experience: config.experience });
+      void reports.backfill(module.foundList());
+      void reports.rarity().then((value) => (shares = value));
     });
   }, 800);
 

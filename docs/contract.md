@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.8** (2026-09-23). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]**.
+**Версия 1.9** (2026-09-24). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]** / **[v1.9]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -14,6 +14,7 @@
 | 1.6 | **Карта интернета** (§8): страница `/map`, её тексты — `site.json → map.*`. Пункт меню может вести на другую страницу: `nav[]` — `{ number, label, anchor }` или `{ number, label, page }` |
 | 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
 | 1.8 | **Ачивки пасхалок** (§2.4, §4): найденная пасхалка — баннер как в Steam со звуком. `eggs.achievements.<id>.{name, text}`; `eggs.all` и `eggs.croc5` убраны — их тексты теперь в ачивках `all` и `croc5` |
+| 1.9 | **Редкость ачивок, скидки, личный кабинет** (§2.4, §4, §7, §9): находки учитываются сервером и возвращаются подписанными квитанциями, редкость — доля игроков, как в Steam; панель ачивок; скидки заявки (первая, за все пасхалки, уровни, персональная); `/account/` — заявки и обращения, статусы, переписка, достижения за заказы. В `site.json`: `eggs.rarity`, `eggs.panel.*`, `loyalty`, `account`, `contacts.form.messages.discount_*`, `signed_in`, `track` |
 
 ---
 
@@ -145,6 +146,9 @@
 | **[v1.2]** `not_found` | 404: `title`, `text`, `game_hint`, `back`; **[v1.5]** `game.{prompt, warm, cold, found, port}` — игра «найди пакет». Технические подписи игры (`ping port 7 … timeout`, `tries 3`, `SW-CORE-01`, `LINK UP`) — часть оформления, одинаковы на всех языках |
 | `footer` | **[v1.2]** `copyright`, `game_entry`, `play_stub`; **[v1.5]** `play_status` — строка над заглушкой `/play` («HATCH SEALED · ACCESS LATER») |
 | **[v1.5]** `eggs` | тексты пасхалок на языке страницы: `found` (экранный диктор читает его перед названием ачивки), **[v1.8]** `achievements.{konami, sudo, croc, croc5, cat, reboot, console, lost_packet, all}.{name, text}` — название и строка описания баннера ачивки, `all` — за все пасхалки сразу (золотая, как редкая ачивка Steam); `night` (подпись «ночного режима»), `croc`, `console` (подсказка в DevTools), `terminal.{whoami, uptime, ping, rm}` (ответы sudo-терминала; `uptime` уже содержит стаж). Команды терминала и строки «BIOS» аватара — английские, как в настоящей консоли |
+| **[v1.9]** `eggs` (дополнение) | `rarity` — строка редкости под описанием баннера (`{percent}` — «3,4 %»); `panel.*` — панель ачивок: `title`, `open` (подпись кнопки-счётчика для экранного диктора, `{found}`, `{total}`), `progress`, `locked`, `found_on` (`{date}`), `rare`, `counting` (пока игроков меньше десяти), `discount` / `discount_ready` / `discount_used` (`{percent}`), `account`, `close` |
+| **[v1.9]** `loyalty` | правила скидок: `enabled`, `currency` (ISO 4217), `welcome` (% на первую заявку), `eggs` (% разово за все пасхалки), `big_order` (сумма «крупного» заказа для ачивки), `tiers[]` — `{ id, name, orders, spent, discount }` уровни постоянного клиента: уровень наступает по числу выполненных заказов **или** по их сумме, что раньше; скидки не суммируются — действует наибольшая |
+| **[v1.9]** `account` | тексты личного кабинета `/account/` (§9): `title`, `description`, `link` (кнопка в шапке), `no_script`, `loading`, `login.*`, `errors.*` (ключи = коды ошибок API), `home.*`, `loyalty.*` (с `reasons.{welcome, eggs, tier, personal, manual}`), `requests.*`, `statuses.{new, in_progress, waiting_client, done, rejected}` — статусы, как их видит клиент, `channels.*`, `inquiry.*`, `contacts.*` (с `kinds.*` — виды контактов, которые принимает API), `profile.*`, `access.*`, `sessions.*`, `eggs.*`, `orders.*` (ачивки за заказы: `title`, `found`, `rarity`, `locked`, `earned`, `{first_order, second_order, big_order, all_orders}.{name, text}`), `delete.*` |
 | `flags` | `easter_eggs.*` — какие пасхалки включены; дизайн проверяет флаг перед запуском |
 | **[v1.6]** `map` | страница `/map` (§8): `title`, `status`, `lead`, `description`, `stats.*`, `views.{label, map, core, globe, core_hint}`, `controls.*`, `legend.*`, `form.*` (с `examples[]` — `{ ip, label }`), `panel.*` — таблица маршрута (`networks` — формы слова для числа: две в английском, три в украинском и русском; `anycast` с подстановкой `{ip}`), `network.*` — карточка сети, **[v1.7]** `trace.*` — замер пути с сервера сайта (`hops` — формы слова для числа), `errors.*` — по кодам ответа API, `loading`, `no_webgl`, `no_data`, `about.{heading, paragraphs[]}`, `credits.{heading, items[], citation}` |
 
@@ -202,6 +206,8 @@
 | **[v1.2]** `lang-<code>` | переключение языка: `lang-en`, `lang-uk`, `lang-ru` |
 
 **[v1.5] События на `document`.** `krokosha:egg` (`detail` — id пасхалки строкой: `konami`, `sudo`, `croc`, `croc5`, `cat`, `reboot`, `console`, `lost_packet`) — его слушает статистика (`/assets/analytics.js`, тип события `egg`). Внутренние события дизайна: `kro:egg` (`detail.{id, count, total}` — счётчик «eggs 2/8»), `kro:link` / `kro:unlink` (руки героя соприкоснулись и разошлись). Найденные пасхалки хранятся в `localStorage['krokosha:eggs']`. **[v1.8]** Баннер ачивки — `#kro-achievement` (`role="status"`) в правом нижнем углу; при флаге `achievements: false` его нет.
+
+**[v1.9] Ачивки на сервере.** Сайт (`web/src/scripts/achievements.ts`) слушает `kro:egg` и сообщает находку серверу (§9) — в ответ квитанция, она хранится в `localStorage['krokosha:receipts']` (`{ <id>: "<квитанция>", all: "…" }`); с восьмой приходит квитанция `all` и событие `kro:eggs-complete`. Прочие ключи: `krokosha:player` (браузер учтён как игрок — с первой находкой), `krokosha:eggs-spent` (номер заявки, получившей скидку за пасхалки), `krokosha:account` (подсказка: браузер входил в кабинет — находки уходят и туда). Пока ничего не найдено, не пишется и не отправляется ничего; автоматизированные браузеры не отправляют ничего, при Do Not Track / GPC находки не учитываются. `eggs.configure({ rarity })` — функция сайта `id → { share, line } | null`: доля < 10 % делает ачивку редкой (золото, лучи, звук `rare`), последняя в наборе — звук `epic`. Счётчик «eggs 3/8» (`data-eggs-caption`) — теперь `<button>`, скрыт до первой находки и открывает панель ачивок: `<dialog id="achievements" data-achievements>` (`components/Achievements.astro`). Трек **[v1.9]** `account` — кнопка личного кабинета в шапке.
 
 ---
 
@@ -273,6 +279,7 @@
 | `lang` | скрытое: язык страницы (`en` / `uk` / `ru`) — на нём клиенту придёт письмо | — |
 | `altcha` | скрытое, пустое: сюда скрипт кладёт решение proof-of-work | — |
 | `website` | **ловушка для роботов**: текстовое поле, которое человек не видит и не достигает с клавиатуры (`tabindex="-1"`, вынесено за экран, **не** `display: none`). Заполнено → заявка молча уходит в спам | — |
+| **[v1.9]** `eggs` | скрытое: квитанция «все пасхалки» из `localStorage['krokosha:receipts'].all` — разовая скидка за пасхалки; пустое — без неё. Чужая или уже использованная квитанция ничего не даёт | — |
 
 **Подписи и ошибки.** У каждого поля — `<label>` из `form.labels.*` (`data-field="labels.<ключ>"`). Рядом с полем — пустой элемент `data-error-for="<name>"` с `role="alert"`: скрипт пишет туда текст из `form.errors.*`. Коды ошибок: `required`, `invalid_email`, `invalid_telegram`, `invalid_phone`, `description_length`, `consent_required`; **[v1.4]** для поля `files` — `too_many_files`, `file_too_big`, `file_type` (сервер определяет тип по содержимому файла, а не по имени; пустой файл — тоже `file_type`).
 
@@ -287,6 +294,8 @@
 
 **Что делает скрипт** (`/assets/form.js`, подключается как есть — в нём нет ничего о внешнем виде): отключает проверку браузера (`novalidate`) и проверяет поля сам, на языке страницы; при первом касании формы берёт задачу `GET /api/leads/challenge` и решает её, пока человек пишет; отправляет `FormData` на `/api/leads` с `Accept: application/json`. Ответы: `201 {ok, id, reply_within_hours?, telegram_url?}`, `422 {errors: {<name>: <код>}}`, **[v1.4]** `413 {errors: {files: "file_too_big"}}` (файлы вместе больше, чем сервер читает), `429`, остальное — ошибка сервера. После успеха — событие `krokosha:lead` на `document` (`detail.id`), на него можно повесить анимацию.
 
+**[v1.9] Скидка.** При первом касании формы скрипт спрашивает `POST /api/leads/offer` (`{ "eggs": "<квитанция>" }`) → `{ ok, enabled, signed_in, percent, reason, detail? }` и показывает её над кнопкой: блок `data-offer` (`data-offer-percent` — «−10%», `data-offer-reason` — слова из `messages.discount_{welcome, eggs, tier, personal}`), а вошедшему в кабинет — `data-signed-in` (`messages.signed_in`). `reason`: `welcome`, `eggs`, `tier` (`detail` — id уровня), `personal` (`detail` — подпись), `manual` (назначена вручную). Посторонний видит только `welcome` и `eggs` — уровень и персональную скидку того, чей адрес он ввёл, форма не раскрывает. Ответ `201` дополняется `discount: { percent, reason, detail? }` — скидка, зафиксированная в заявке; в блоке успеха её показывает `data-field="discount"` (`messages.discount_fixed`), а вошедшему — ссылка `data-field="account"` на заявку в кабинете (`messages.track`).
+
 **Страница «спасибо»** — `/thanks/`, `/uk/thanks/`, `/ru/thanks/` (`noindex`). Посетитель без JavaScript попадает на неё после отправки: API берёт собранную страницу из релиза и заменяет метки. Метки обязательны, проверяются при сборке:
 
 | Метка | Где | На что заменяется |
@@ -296,6 +305,8 @@
 | `%%GENERIC_CLASS%%` | класс заголовка без номера (`data-field="generic"`) | `is-hidden` |
 | `%%NUMBERED_CLASS%%` | класс заголовка с номером (`data-field="numbered"`) | `is-shown` |
 | `%%TELEGRAM_CLASS%%` | класс блока с кнопкой (`data-field="telegram"`) | `is-shown` или пусто |
+| **[v1.9]** `%%DISCOUNT_CLASS%%` | класс блока скидки (`data-field="discount"`, CSS `.thanks-discount`) | `is-shown` или пусто |
+| **[v1.9]** `%%DISCOUNT%%` | в тексте `messages.discount_fixed` | процент скидки |
 
 В собранном виде (без замены) страница должна выглядеть законченной: виден заголовок без номера, заголовок с номером и кнопка Telegram скрыты. CSS: `.thanks-numbered`, `.thanks-telegram` скрыты по умолчанию и показываются с `.is-shown`; `.thanks-generic.is-hidden` скрыт.
 
@@ -338,3 +349,43 @@
 | **[v1.7]** `data-route-trace="<ip>"`, `data-trace-result`, `data-show="model\|trace"` | кнопка замера с сервера сайта, блок измеренного пути, переключатель «что на карте» (с `aria-pressed`); всё это рисует скрипт |
 
 Адрес страницы хранит маршрут: `?from=me&to=1.1.1.1` (`me` — адрес того, кто открыл ссылку), маршрут строится при открытии.
+
+---
+
+## 9. [v1.9] Ачивки и личный кабинет
+
+Решения — [architecture.md](architecture.md), 2026-09-24. Все ответы — JSON; `POST` — только с этого же сайта (`Origin`, `Sec-Fetch-Site`) и с `Content-Type: application/json`.
+
+**Ачивки пасхалок** (`api/internal/achievements`):
+
+| Запрос | Ответ |
+|---|---|
+| `GET /api/eggs` | `{ updated, eggs: { <id>: <процент> } }` — доля игроков с каждой ачивкой; пусто, пока игроков меньше 10. Кэш — 5 минут |
+| `POST /api/eggs/hello` | `204` — браузер учтён как игрок (один раз, с первой находкой) |
+| `POST /api/eggs/<id>` | `{ receipt }` — квитанция находки: `<id>.<время>.<подпись>`. Роботу — `204` без квитанции |
+| `POST /api/eggs/all` `{ receipts: [8 квитанций] }` | `{ receipt }` — квитанция «все пасхалки» (`all.<время>.<за сколько>.<подпись>`); без полного набора — `400` / `422` |
+
+**Личный кабинет** — `/account/`, `/uk/account/`, `/ru/account/` (`noindex`, без JavaScript — только сообщение `account.no_script`). Сессия — cookie `__Host-kc` (HttpOnly, SameSite=Strict); каждый `POST` вошедшего несёт `X-CSRF-Token` из `GET /api/account/me`. Ошибки — `{ ok: false, error: "<код>" }`, коды = ключи `account.errors` (`server_error` → `server`).
+
+| Запрос | Что делает |
+|---|---|
+| `POST /api/account/login` `{ method: "email", email, lang }` или `{ method: "telegram", lang }` | шлёт код на почту (`{ ok, sent_to }` — адрес наполовину скрыт) или даёт ссылку в бота (`{ ok, bot_url }`); ставит cookie `__Host-kl` на 15 минут — код подходит только этому браузеру |
+| `POST /api/account/login/code` `{ code }` | вход по шести цифрам |
+| `POST /api/account/login/link` `{ token }` | вход по кнопке письма или бота: страница получает `#login=<token>` и сразу убирает его из адреса |
+| `GET /api/account/me` | `{ ok, csrf, client, contacts[], loyalty: { enabled, currency, orders, spent, offer, eggs_used, welcome_used, tier?, next?, personal? }, eggs[], orders: { earned: [{ id, at, new }], shares, big_order }, sessions[], bot }`; никто не вошёл — `200 { ok: false, error: "signed_out" }` |
+| `POST /api/account/logout` | выход |
+| `GET /api/account/leads` | заявки и обращения: `[{ number, kind, status, created, updated, direction, subject?, excerpt, amount?, parent?, unread, discount }]` |
+| `GET /api/account/leads/<K-0042>` | заявка с перепиской: `description`, `budget?`, `timeline?`, `contact`, `method`, `can_write`, `feed: [{ at, kind: message\|status, direction?, channel?, body?, status?, files? }]`; помечает прочитанной |
+| `POST /api/account/leads/<K-0042>/messages` `{ text }` | ответ в заявке |
+| `POST /api/account/inquiries` `{ subject, text, parent }` | новое обращение (`201 { ok, number }`) |
+| `POST /api/account/contacts` `{ kind, value }`, `…/contacts/remove` `{ id }` | контакты и соцсети; виды — `account.contacts.kinds` |
+| `POST /api/account/profile` `{ name, company, lang, preferred }` | профиль |
+| `POST /api/account/email` `{ email }`, `…/telegram` `{}`, `…/telegram/unlink` | сменить почту / привязать Telegram (дальше — код, как при входе) / отвязать |
+| `POST /api/account/sessions/end` `{ id }` | завершить сеанс; `id: ""` — все, кроме этого |
+| `POST /api/account/eggs` `{ receipts }` | перенести находки браузера в кабинет |
+| `POST /api/account/achievements/seen` `{ ids }` | баннеры новых ачивок за заказы показаны |
+| `POST /api/account/delete` `{ confirm: true }` | удалить кабинет |
+
+Ачивки за заказы: `first_order` (первый выполненный заказ), `second_order` (второй), `big_order` (заказ от `loyalty.big_order`), `all_orders` (все три — золотая, звук `epic`). Скидок не дают. Новая (`new: true`) показывается баннером при открытии кабинета, затем отмечается показанной. Редкость — доля кабинетов, у которых она есть (от десяти кабинетов).
+
+**Разметка кабинета, на которую опирается скрипт** (`web/src/scripts/account.ts`): корень `data-account` с текстами в `data-texts`; виды `data-view="loading|login|dashboard"`; вход — `data-login-methods`, `data-login-email`, `data-login-telegram` (`data-bot-link`), `data-login-code` (`data-sent`, `data-login-back`), `data-login-error`; кабинет — `data-hello`, `data-since`, `data-logout`, `data-loyalty` (`data-next-percent`, `data-next-reason`, `data-tier`, `data-orders`, `data-spent`, `data-progress*`, `data-top`, `data-personal`), `data-requests` (`data-requests-list`, `data-thread*`), `data-inquiry`, `data-achievements-card` (`data-orders` со строками `data-order="<id>"`, `data-eggs-card`), `data-contacts`, `data-profile`, `data-access`, `data-sessions`, `data-delete`; строки списков — `<template id="tpl-request|tpl-entry|tpl-contact|tpl-session">`.

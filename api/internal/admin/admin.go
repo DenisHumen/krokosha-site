@@ -170,11 +170,12 @@ func New(opts Options) (*Handler, error) {
 		"kindName":    named(clients.KindNames, "—"),
 		"leadKind":    named(map[string]string{leads.KindRequest: "Заявка", leads.KindInquiry: "Обращение"}, "Заявка"),
 		"eggName":     named(eggNames, "—"),
+		"orderName":   named(orderNames, "—"),
 		"percentOf":   func(part, whole float64) float64 { return 100 * part / max(whole, 1) },
 		"since":       func(t time.Time) string { return ago(time.Since(t)) },
 	}
 	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error",
-		"clients", "client", "mail"} {
+		"clients", "client", "mail", "achievements"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -215,6 +216,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/leads/{id}/discount", h.private(h.leadDiscount))
 	mux.Handle("POST "+p+"/leads/{id}/amount", h.private(h.leadAmount))
 	mux.Handle("POST "+p+"/leads/{id}/client", h.private(h.leadClient))
+	if h.opts.Achievements != nil || h.opts.Clients != nil {
+		mux.Handle("GET "+p+"/achievements", h.private(h.achievementsPage))
+	}
 	if h.opts.Mailboxes != nil {
 		mux.Handle("GET "+p+"/mail", h.private(h.mailPage))
 		mux.Handle("POST "+p+"/mail", h.private(h.mailAdd))
@@ -367,8 +371,12 @@ type view struct {
 	HasMail    bool
 	// Refresh: the page reloads itself in a few seconds (a mailbox request is being applied).
 	Refresh bool
-	Session *auth.Session
-	Version string
+	// Script: a module of static/ the page needs besides admin.js («Ачивки» → achievements.js).
+	Script string
+	// HasAchievements: the menu shows «Ачивки».
+	HasAchievements bool
+	Session         *auth.Session
+	Version         string
 	// GeoSource is the maker of the GeoIP database whom the footer credits: «DB-IP», «MaxMind» or "".
 	GeoSource string
 	Flash     string // a message about what just happened
@@ -386,6 +394,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	}
 	v.HasClients = v.Session != nil && h.opts.Clients != nil
 	v.HasMail = v.Session != nil && h.opts.Mailboxes != nil
+	v.HasAchievements = v.Session != nil && (h.opts.Achievements != nil || h.opts.Clients != nil)
 	if data, ok := v.Data.(mailData); ok && data.Waiting && data.Issued == "" {
 		v.Refresh = true
 	}

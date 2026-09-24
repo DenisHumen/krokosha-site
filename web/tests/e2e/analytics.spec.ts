@@ -126,6 +126,9 @@ test('everything sent passes the rules of the server', async ({ page }) => {
   );
   await hide();
   await expect.poll(() => events().length).toBeGreaterThan(4);
+  // A stray character in an id is cleaned up instead of costing the whole batch. The egg may come in
+  // a batch of its own, a moment after the others.
+  await expect.poll(() => events().find((event) => event.t === 'egg')?.x).toBe('konami-code-');
 
   for (const batch of batches) {
     expect(batch.p).toMatch(/^\/[A-Za-z0-9/_.~%-]{0,199}$/);
@@ -136,8 +139,6 @@ test('everything sent passes the rules of the server', async ({ page }) => {
       if (event.x !== undefined) expect(event.x).toMatch(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/);
     }
   }
-  // A stray character in an id is cleaned up instead of costing the whole batch.
-  expect(events().find((event) => event.t === 'egg')?.x).toBe('konami-code-');
 });
 
 for (const [name, init] of [

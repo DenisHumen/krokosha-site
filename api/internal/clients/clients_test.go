@@ -200,7 +200,7 @@ func (b *browser) signInByEmail(email string) {
 func (b *browser) me() map[string]any {
 	b.f.t.Helper()
 	got := b.send(http.MethodGet, "/api/account/me", nil)
-	if got.status != http.StatusOK {
+	if got.status != http.StatusOK || got.body["ok"] != true {
 		b.f.t.Fatalf("me: %d %s", got.status, got.raw)
 	}
 	b.csrf, _ = got.body["csrf"].(string)
@@ -391,8 +391,13 @@ func TestTheAPIRefusesStrangers(t *testing.T) {
 	if crossOrigin.status != http.StatusForbidden || crossSite.status != http.StatusForbidden || form.status != http.StatusUnsupportedMediaType || noToken.status != http.StatusForbidden {
 		t.Errorf("guards: origin %d, site %d, form %d, csrf %d", crossOrigin.status, crossSite.status, form.status, noToken.status)
 	}
-	if got := f.browser("203.0.113.9").send(http.MethodGet, "/api/account/me", nil); got.status != http.StatusUnauthorized || got.body["error"] != "signed_out" {
+	// Nobody signed in is an answer to «who is it», not an error; any other route refuses.
+	stranger := f.browser("203.0.113.9")
+	if got := stranger.send(http.MethodGet, "/api/account/me", nil); got.status != http.StatusOK || got.body["ok"] != false || got.body["error"] != "signed_out" {
 		t.Errorf("signed out: %d %v", got.status, got.body)
+	}
+	if got := stranger.send(http.MethodGet, "/api/account/leads", nil); got.status != http.StatusUnauthorized {
+		t.Errorf("signed out, the requests: %d", got.status)
 	}
 
 	// Somebody else's request does not exist for this account.
@@ -745,8 +750,8 @@ func TestTheOwnersTools(t *testing.T) {
 	if err := f.service.SetDisabled(ctx, emailID, true); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.send(http.MethodGet, "/api/account/me", nil); got.status != http.StatusUnauthorized {
-		t.Errorf("a blocked account: %d", got.status)
+	if got := a.send(http.MethodGet, "/api/account/me", nil); got.body["ok"] != false || got.body["error"] != "signed_out" {
+		t.Errorf("a blocked account: %d %v", got.status, got.body)
 	}
 	a.send(http.MethodPost, "/api/account/login", map[string]string{"method": "email", "email": "twin@example.com", "lang": "ru"})
 	if f.tasks(TaskLogin) != 1 {
@@ -813,5 +818,95 @@ func TestOrdersSurviveAnonymisation(t *testing.T) {
 	}
 	if list := b.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any); len(list) != 0 {
 		t.Errorf("an anonymised request is still in the account: %v", list)
+	}
+}
+
+func TestAchievementsOfOrders(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.rules.BigOrder = 3000
+	// As main.go wires it: every change of a request gives its account what its orders earned.
+	f.leads.OnChange(func(leadID int64) {
+		if err := f.service.AwardOrdersOfLead(ctx, leadID); err != nil {
+			t.Errorf("award: %v", err)
+		}
+	})
+	b := f.browser("203.0.113.21")
+	b.signInByEmail("nina@example.com")
+	earned := func() map[string]bool {
+		t.Helper()
+		out := map[string]bool{}
+		for _, item := range b.me()["orders"].(map[string]any)["earned"].([]any) {
+			entry := item.(map[string]any)
+			out[entry["id"].(string)] = entry["new"].(bool)
+		}
+		return out
+	}
+	complete := func(amount *float64) int64 {
+		t.Helper()
+		id := mustNumber(t, f.submit(b, "nina@example.com", nil)["id"].(string))
+		if _, err := f.leads.Take(ctx, id, "denis"); err != nil {
+			t.Fatal(err)
+		}
+		if amount != nil {
+			if err := f.leads.SetAmount(ctx, id, "denis", amount); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := f.leads.SetStatus(ctx, id, "denis", leads.StatusDone, ""); err != nil {
+			t.Fatal(err)
+		}
+		f.now = f.now.Add(time.Minute)
+		return id
+	}
+
+	if got := earned(); len(got) != 0 {
+		t.Fatalf("before any order: %v", got)
+	}
+	small := 1200.0
+	first := complete(&small)
+	if got := earned(); len(got) != 1 || !got[FirstOrder] {
+		t.Fatalf("after the first order: %v", got)
+	}
+	// The banner was shown: no longer new. Unknown ids are no business of this endpoint.
+	if got := b.send(http.MethodPost, "/api/account/achievements/seen", map[string][]string{"ids": {FirstOrder, "konami"}}); got.status != http.StatusOK {
+		t.Fatalf("seen: %d %s", got.status, got.raw)
+	}
+	if got := earned(); got[FirstOrder] {
+		t.Errorf("still new after being shown: %v", got)
+	}
+
+	// A second order, a big one: the second, the big and — all three there — the golden one.
+	big := 3500.0
+	complete(&big)
+	got := earned()
+	if len(got) != 4 || got[FirstOrder] || !got[SecondOrder] || !got[BigOrder] || !got[AllOrders] {
+		t.Fatalf("after a second, big order: %v", got)
+	}
+
+	// An order that goes back to work keeps what it earned.
+	if err := f.leads.SetStatus(ctx, first, "denis", leads.StatusInProgress, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := earned(); len(got) != 4 {
+		t.Errorf("an order back in work took an achievement away: %v", got)
+	}
+
+	// The shares are of all the accounts, and only from ten of them.
+	shares := b.me()["orders"].(map[string]any)["shares"].(map[string]any)
+	if len(shares) != 0 {
+		t.Errorf("shares of one account: %v", shares)
+	}
+	for i := range 9 {
+		if _, err := f.service.Create(ctx, "", fmt.Sprintf("client%d@example.com", i), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shares = b.me()["orders"].(map[string]any)["shares"].(map[string]any)
+	if shares[FirstOrder] != 10.0 || shares[AllOrders] != 10.0 {
+		t.Errorf("shares of ten accounts: %v", shares)
+	}
+	if b.me()["orders"].(map[string]any)["big_order"] != 3000.0 {
+		t.Error("the page is not told what a big order is")
 	}
 }

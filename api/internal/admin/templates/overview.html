@@ -179,26 +179,6 @@
       </div>
     </section>
 
-    {{with .Data.Rarity}}
-      <section class="card">
-        <h2 class="card-title">Ачивки · редкость</h2>
-        <div class="card-body">
-          <p class="muted">За всё время: доля игроков (браузеров, открывших пасхалки), нашедших каждую, — как глобальная статистика Steam. Игроков: {{(index . 0).Players}}. Пересчёт каждые 5 минут, последний — {{time $.Data.RarityUpdated}}.</p>
-          <ul class="rows">
-            {{range .}}
-              <li class="row">
-                <span class="row-share">{{printf "%.1f%%" .Percent}}</span>
-                <span class="row-name">{{eggName .ID}}</span>
-                {{bar .Percent (or (and (lt .Percent 10.0) "pink") "accent")}}
-                <span class="row-value">{{.Found}}</span>
-              </li>
-            {{end}}
-          </ul>
-          <p class="muted">Меньше 10% — редкая: на сайте она золотая. Сайт показывает доли, когда игроков не меньше десяти.</p>
-        </div>
-      </section>
-    {{end}}
-
     <section class="card">
       <h2 class="card-title">Экспорт</h2>
       <div class="card-body">

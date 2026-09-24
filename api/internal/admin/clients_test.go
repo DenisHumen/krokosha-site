@@ -1,9 +1,14 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"html"
 	"net/http"
 	"net/url"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,7 +18,7 @@ import (
 )
 
 func testLoyalty() config.Loyalty {
-	return config.Loyalty{Enabled: true, Currency: "USD", Welcome: 10, Eggs: 20, Tiers: []config.LoyaltyTier{
+	return config.Loyalty{Enabled: true, Currency: "USD", Welcome: 10, Eggs: 20, BigOrder: 3000, Tiers: []config.LoyaltyTier{
 		{ID: "silver", Name: config.Localized{"en": "Silver", "ru": "Серебряный"}, Orders: 1, Spent: 1000, Discount: 5},
 		{ID: "gold", Name: config.Localized{"en": "Gold", "ru": "Золотой"}, Orders: 3, Spent: 5000, Discount: 10},
 	}}
@@ -131,7 +136,7 @@ func TestDiscountAndAmountOfARequest(t *testing.T) {
 	}
 }
 
-func TestOverviewShowsTheRarityOfAchievements(t *testing.T) {
+func TestAchievementsPage(t *testing.T) {
 	s := newSite(t)
 	for id, n := range map[string]int{"players": 40, "konami": 10, "sudo": 2} {
 		if _, err := s.db.Exec(`INSERT INTO achievement_daily (day, id, n) VALUES ('2026-09-19', ?, ?)`, id, n); err != nil {
@@ -142,10 +147,51 @@ func TestOverviewShowsTheRarityOfAchievements(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.signIn()
-	page := s.do(http.MethodGet, prefix+"/", nil, nil)
-	for _, want := range []string{"Ачивки · редкость", "25.0%", "5.0%", "Игроков: 40"} {
+	page := s.do(http.MethodGet, prefix+"/achievements", nil, nil)
+	for _, want := range []string{"Пасхалки · редкость", "25.0%", "5.0%", "Игроков: 40", "За заказы · редкость", "Крупный проект",
+		`<script type="module" src="/_test1234/static/achievements.js">`, `href="/_test1234/achievements" aria-current="page"`} {
 		if !strings.Contains(page.body, want) {
-			t.Errorf("the overview has no %q", want)
+			t.Errorf("the page has no %q", want)
 		}
+	}
+	// Every kind of banner, with the shares of the site where there are enough players.
+	buttons := regexp.MustCompile(`data-toast="([^"]+)"`).FindAllStringSubmatch(page.body, -1)
+	if len(buttons) != 7 {
+		t.Fatalf("buttons: %d", len(buttons))
+	}
+	var common struct {
+		Rarity string `json:"rarity"`
+		Sound  string `json:"sound"`
+		Rare   bool   `json:"rare"`
+	}
+	if err := json.Unmarshal([]byte(html.UnescapeString(buttons[0][1])), &common); err != nil || common.Sound != "egg" || common.Rare {
+		t.Errorf("the common banner: %+v %v", common, err)
+	}
+	for i, sound := range map[int]string{1: "rare", 2: "epic", 5: "epic"} {
+		if !strings.Contains(html.UnescapeString(buttons[i][1]), `"sound":"`+sound+`"`) {
+			t.Errorf("button %d does not sound %q: %s", i, sound, buttons[i][1])
+		}
+	}
+	// The script and the banner it shows are served, as JavaScript.
+	for _, file := range []string{"achievements.js", "achievement.js"} {
+		got := s.do(http.MethodGet, prefix+"/static/"+file, nil, nil)
+		if got.status != http.StatusOK || !strings.Contains(got.header.Get("Content-Type"), "javascript") {
+			t.Errorf("%s: %d %s", file, got.status, got.header.Get("Content-Type"))
+		}
+	}
+}
+
+// The banner of the admin area's bench is the site's: the file is copied, and must stay the same.
+func TestTheBenchShowsTheSitesBanner(t *testing.T) {
+	site, err := os.ReadFile("../../../design/components/eggs/achievement.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied, err := os.ReadFile("static/achievement.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(site, copied) {
+		t.Fatal("api/internal/admin/static/achievement.js differs from design/components/eggs/achievement.js: copy it again")
 	}
 }

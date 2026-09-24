@@ -22,7 +22,7 @@ const words = {
 // The found packet is an achievement like the eggs of the home page (design/components/eggs/eggs.js).
 const achievement = {
   flags: flags.easter_eggs,
-  texts: { found: eggs.found, achievements: eggs.achievements },
+  texts: { found: eggs.found, achievements: eggs.achievements, rarity: eggs.rarity },
 };
 ---
 
@@ -89,8 +89,9 @@ const achievement = {
 <script>
   // The packet hides behind a random port; the ports around it are «warm». A found packet is an
   // easter egg: it goes into the same list as the others and shows its achievement
-  // (design/components/eggs/eggs.js).
+  // (design/components/eggs/eggs.js), reported to the site like them (scripts/achievements.ts).
   type EggsModule = typeof import('../../../../design/components/eggs/eggs.js');
+  type ServerModule = typeof import('../../scripts/achievements.ts');
 
   const board = document.querySelector<HTMLElement>('[data-game]');
   if (board) {
@@ -108,9 +109,17 @@ const achievement = {
     const distance = (i: number) =>
       Math.abs((i % 8) - (target % 8)) + Math.abs(Math.floor(i / 8) - Math.floor(target / 8));
     let count = 0;
-    // The eggs arrive with the first ping, so that the banner and its sound are ready by the find.
-    let eggs: Promise<EggsModule> | null = null;
-    const load = () => (eggs ??= import('../../../../design/components/eggs/eggs.js'));
+    // The eggs arrive with the first ping, so that the banner and its sound are ready by the find; the
+    // rarity is asked for at the same moment.
+    let eggs: Promise<[EggsModule, ServerModule]> | null = null;
+    const load = () =>
+      (eggs ??= Promise.all([
+        import('../../../../design/components/eggs/eggs.js'),
+        import('../../scripts/achievements.ts'),
+      ]).then((modules) => {
+        void modules[1].rarity();
+        return modules;
+      }));
 
     for (const port of ports) {
       port.addEventListener('click', () => {
@@ -134,9 +143,20 @@ const achievement = {
           log.classList.add('found');
           log.textContent = words['found'] ?? '';
         }
-        void load().then((module) => {
-          module.configure({ flags: achievement.flags ?? {} });
+        void load().then(async ([module, server]) => {
+          const shares = await server.rarity();
+          const line = String(achievement.texts?.['rarity'] ?? '');
+          const lang = document.documentElement.lang || 'en';
+          module.configure({
+            flags: achievement.flags ?? {},
+            rarity: (id: string) => {
+              const share = shares[id as keyof typeof shares];
+              if (share === undefined || !line) return null;
+              return { share, line: line.replace('{percent}', server.formatShare(share, lang)) };
+            },
+          });
           module.found('lost_packet', achievement.texts ?? {});
+          void server.report('lost_packet');
         });
       });
     }

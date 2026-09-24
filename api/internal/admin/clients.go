@@ -106,6 +106,8 @@ type clientData struct {
 	Sessions     []clients.SessionInfo
 	Eggs         []clients.Found
 	EggsTotal    int
+	Orders       []clients.Earned // the achievements of orders
+	OrdersTotal  int
 	Leads        []leads.ClientSummary
 	History      loyalty.History
 	Tier         config.LoyaltyTier
@@ -145,11 +147,17 @@ func (h *Handler) showClient(w http.ResponseWriter, r *http.Request, status int,
 		return
 	}
 	data := clientData{Client: client, Rules: h.opts.Loyalty(), Kinds: clients.Kinds, EggsTotal: len(achievements.Eggs),
-		Today: time.Now().In(h.opts.Location).Format(time.DateOnly)}
+		OrdersTotal: len(clients.OrderAchievements), Today: time.Now().In(h.opts.Location).Format(time.DateOnly)}
+	// Orders completed before the achievements existed earn them here as well.
+	if err := h.opts.Clients.AwardOrders(ctx, id); err != nil {
+		h.opts.Log.Warn("cannot award the achievements of orders", "client", id, "error", err)
+	}
 	if data.Contacts, err = h.opts.Clients.Contacts(ctx, id); err == nil {
 		if data.Sessions, err = h.opts.Clients.Sessions(ctx, id, nil); err == nil {
 			if data.Eggs, err = h.opts.Clients.Eggs(ctx, id); err == nil {
-				data.Leads, err = h.opts.Leads.ClientLeads(ctx, id)
+				if data.Orders, err = h.opts.Clients.Orders(ctx, id); err == nil {
+					data.Leads, err = h.opts.Leads.ClientLeads(ctx, id)
+				}
 			}
 		}
 	}

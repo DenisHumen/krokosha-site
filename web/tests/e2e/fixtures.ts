@@ -19,9 +19,14 @@ export const test = base.extend<{ problems: string[] }>({
         if (message.type() === 'error') problems.push(`console: ${message.text()}`);
       });
       page.on('pageerror', (error) => problems.push(`exception: ${error.message}`));
-      page.on('requestfailed', (request) =>
-        problems.push(`request failed: ${request.url()} (${request.failure()?.errorText})`),
-      );
+      page.on('requestfailed', (request) => {
+        const reason = request.failure()?.errorText;
+        // A test that moves on to the next page cancels what the last one was still loading (the
+        // eggs arrive a moment after the load): the browser's doing, not a failure of the site. A
+        // blocked or broken request fails otherwise — ERR_BLOCKED_BY_CSP, a network error, a 404.
+        if (reason === 'net::ERR_ABORTED') return;
+        problems.push(`request failed: ${request.url()} (${reason})`);
+      });
       page.on('response', (response) => {
         if (response.status() >= 400) problems.push(`HTTP ${response.status()}: ${response.url()}`);
       });
@@ -30,6 +35,18 @@ export const test = base.extend<{ problems: string[] }>({
           console.error(`CSP violation: ${event.violatedDirective} blocked ${event.blockedURI}`);
         });
       });
+      // The form asks what discount a request would get as soon as it is touched; there is no API
+      // behind `astro preview`, so here the answer is a first request's. Tests may answer otherwise.
+      // The eggs ask how rare each achievement is (scripts/achievements.ts): too few players yet.
+      await page.route(
+        (url) => url.pathname === '/api/eggs',
+        (route) => route.fulfill({ json: { updated: '2026-09-24T08:00:00Z', eggs: {} } }),
+      );
+      await page.route('**/api/leads/offer', (route) =>
+        route.fulfill({
+          json: { ok: true, enabled: true, signed_in: false, percent: 10, reason: 'welcome' },
+        }),
+      );
       await use(problems);
       expect(problems, 'browser-side problems').toEqual([]);
     },

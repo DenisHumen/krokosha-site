@@ -31,8 +31,9 @@ func (s *Service) SyncEggs(ctx context.Context, clientID int64, receipts []strin
 		if err != nil || receipt.ID == achievements.All {
 			continue
 		}
-		if _, err := s.opts.DB.ExecContext(ctx, `INSERT INTO client_achievements (client_id, id, found_at) VALUES (?, ?, ?)
-			ON DUPLICATE KEY UPDATE found_at = LEAST(found_at, VALUES(found_at))`, clientID, receipt.ID, receipt.At); err != nil {
+		// Found in a browser, which showed it then: seen.
+		if _, err := s.opts.DB.ExecContext(ctx, `INSERT INTO client_achievements (client_id, id, found_at, seen_at) VALUES (?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE found_at = LEAST(found_at, VALUES(found_at))`, clientID, receipt.ID, receipt.At, receipt.At); err != nil {
 			return nil, err
 		}
 	}
@@ -317,9 +318,10 @@ func (s *Service) Merge(ctx context.Context, keep, drop int64) error {
 	for _, query := range []string{
 		`UPDATE leads SET client_id = ? WHERE client_id = ?`,
 		`INSERT IGNORE INTO client_contacts (client_id, kind, value, created_at) SELECT ?, kind, value, created_at FROM client_contacts WHERE client_id = ?`,
-		`INSERT INTO client_achievements (client_id, id, found_at)
-		 SELECT ?, moving.id, moving.found FROM (SELECT id, found_at AS found FROM client_achievements WHERE client_id = ?) AS moving
-		 ON DUPLICATE KEY UPDATE found_at = LEAST(client_achievements.found_at, moving.found)`,
+		`INSERT INTO client_achievements (client_id, id, found_at, seen_at)
+		 SELECT ?, moving.id, moving.found, moving.seen FROM (SELECT id, found_at AS found, seen_at AS seen FROM client_achievements WHERE client_id = ?) AS moving
+		 ON DUPLICATE KEY UPDATE found_at = LEAST(client_achievements.found_at, moving.found),
+		                         seen_at = COALESCE(client_achievements.seen_at, moving.seen)`,
 	} {
 		if _, err := tx.ExecContext(ctx, query, keep, drop); err != nil {
 			return err

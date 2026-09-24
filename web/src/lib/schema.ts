@@ -46,6 +46,258 @@ const option = z.strictObject({ id: slug, label: localized });
 /** An achievement of the easter eggs: the banner's name and its line of description. */
 const achievement = z.strictObject({ name: localized, text: localized });
 
+const percent = z.number().int().min(0).max(100);
+
+/**
+ * Discounts and levels of regular clients (api/internal/loyalty). The API reads the same rules and
+ * refuses the same mistakes (api/internal/config/loyalty.go): a level that asks less than the one
+ * before it, or gives less.
+ */
+const loyaltySchema = z
+  .strictObject({
+    enabled: z.boolean(),
+    currency: z.string().regex(/^[A-Z]{3}$/, 'expected an ISO 4217 code, e.g. USD'),
+    welcome: percent,
+    eggs: percent,
+    // The sum from which an order earns the «big project» achievement; 0 — never.
+    big_order: z.number().min(0),
+    tiers: z.array(
+      z
+        .strictObject({
+          id: z.string().regex(/^[a-z][a-z0-9-]{0,15}$/, 'expected a short lowercase id'),
+          name: localized,
+          orders: z.number().int().min(0),
+          spent: z.number().min(0),
+          discount: percent,
+        })
+        .refine((tier) => tier.orders > 0 || tier.spent > 0, {
+          message: 'a level needs orders or spent above zero',
+        }),
+    ),
+  })
+  .superRefine((rules, ctx) => {
+    const ids = new Set<string>();
+    rules.tiers.forEach((tier, i) => {
+      if (ids.has(tier.id))
+        ctx.addIssue({ code: 'custom', message: `duplicate level "${tier.id}"` });
+      ids.add(tier.id);
+      const prev = rules.tiers[i - 1];
+      if (
+        prev &&
+        (tier.discount < prev.discount ||
+          (tier.orders > 0 && prev.orders > 0 && tier.orders <= prev.orders) ||
+          (tier.spent > 0 && prev.spent > 0 && tier.spent <= prev.spent))
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `level "${tier.id}" must ask more than "${prev.id}" and give no less`,
+        });
+      }
+    });
+  });
+
+/** Texts of the personal account (/account/, api/internal/clients). */
+const accountSchema = z.strictObject({
+  title: localized,
+  description: localized,
+  link: localized,
+  no_script: localized,
+  loading: localized,
+  login: z.strictObject({
+    lead: localized,
+    method: localized,
+    email: localized,
+    telegram: localized,
+    email_label: localized,
+    send: localized,
+    telegram_text: localized,
+    telegram_open: localized,
+    sent_email: localized,
+    sent_telegram: localized,
+    code: localized,
+    submit: localized,
+    back: localized,
+    link: localized,
+    note: localized,
+  }),
+  // One per error code of the API (api/internal/clients/http.go), plus the page's own.
+  errors: z.strictObject({
+    bad_email: localized,
+    bad_code: localized,
+    throttled: localized,
+    no_bot: localized,
+    taken: localized,
+    disabled: localized,
+    signed_out: localized,
+    bad_contact: localized,
+    too_many: localized,
+    empty: localized,
+    too_long: localized,
+    last_way: localized,
+    no_way_back: localized,
+    server: localized,
+    network: localized,
+  }),
+  home: z.strictObject({
+    hello: localized,
+    hello_plain: localized,
+    since: localized,
+    new_request: localized,
+    sign_out: localized,
+  }),
+  loyalty: z.strictObject({
+    title: localized,
+    next: localized,
+    none: localized,
+    level: localized,
+    newcomer: localized,
+    orders: localized,
+    spent: localized,
+    to_next: localized,
+    more_orders: localized,
+    more_spent: localized,
+    top: localized,
+    personal: localized,
+    personal_once: localized,
+    personal_until: localized,
+    levels: localized,
+    level_rule: localized,
+    rules: localized,
+    reasons: z.strictObject({
+      welcome: localized,
+      eggs: localized,
+      tier: localized,
+      personal: localized,
+      manual: localized,
+    }),
+  }),
+  requests: z.strictObject({
+    title: localized,
+    empty: localized,
+    request: localized,
+    inquiry: localized,
+    unread: localized,
+    about: localized,
+    back: localized,
+    direction: localized,
+    budget: localized,
+    timeline: localized,
+    contact: localized,
+    discount: localized,
+    amount: localized,
+    conversation: localized,
+    you: localized,
+    answer: localized,
+    status: localized,
+    files: localized,
+    write: localized,
+    send: localized,
+    sent: localized,
+    closed: localized,
+    ask: localized,
+    missing: localized,
+  }),
+  // The statuses of a request as the client sees them (api/internal/leads/store.go), spam aside.
+  statuses: z.strictObject({
+    new: localized,
+    in_progress: localized,
+    waiting_client: localized,
+    done: localized,
+    rejected: localized,
+  }),
+  channels: z.strictObject({
+    form: localized,
+    site: localized,
+    email: localized,
+    telegram: localized,
+    phone: localized,
+  }),
+  inquiry: z.strictObject({
+    title: localized,
+    lead: localized,
+    subject: localized,
+    text: localized,
+    parent: localized,
+    none: localized,
+    send: localized,
+    sent: localized,
+  }),
+  contacts: z.strictObject({
+    title: localized,
+    lead: localized,
+    kind: localized,
+    value: localized,
+    add: localized,
+    remove: localized,
+    empty: localized,
+    // The kinds the API accepts (api/internal/clients/contacts.go → NormalizeContact).
+    kinds: z.strictObject({
+      phone: localized,
+      whatsapp: localized,
+      viber: localized,
+      signal: localized,
+      telegram: localized,
+      linkedin: localized,
+      facebook: localized,
+      instagram: localized,
+      x: localized,
+      discord: localized,
+      skype: localized,
+      github: localized,
+      website: localized,
+    }),
+  }),
+  profile: z.strictObject({
+    title: localized,
+    name: localized,
+    company: localized,
+    lang: localized,
+    preferred: localized,
+    preferred_email: localized,
+    preferred_telegram: localized,
+    save: localized,
+    saved: localized,
+  }),
+  access: z.strictObject({
+    title: localized,
+    email: localized,
+    telegram: localized,
+    missing: localized,
+    change_email: localized,
+    add_email: localized,
+    link_telegram: localized,
+    unlink: localized,
+    linked: localized,
+    cancel: localized,
+  }),
+  sessions: z.strictObject({
+    title: localized,
+    current: localized,
+    seen: localized,
+    end: localized,
+    end_all: localized,
+  }),
+  eggs: z.strictObject({ title: localized, open: localized, heading: localized }),
+  // The achievements of orders (api/internal/clients/orders.go).
+  orders: z.strictObject({
+    title: localized,
+    found: localized,
+    rarity: localized,
+    locked: localized,
+    earned: localized,
+    first_order: achievement,
+    second_order: achievement,
+    big_order: achievement,
+    all_orders: achievement,
+  }),
+  delete: z.strictObject({
+    title: localized,
+    text: localized,
+    confirm: localized,
+    button: localized,
+  }),
+});
+
 /** Texts of the /map page (docs/netmap.md). */
 const mapSchema = z.strictObject({
   title: localized,
@@ -198,6 +450,7 @@ export const siteSchema = z.strictObject({
     years: pluralForms,
     public_projects: pluralForms,
     skills: pluralForms,
+    orders: pluralForms,
   }),
   socials: z
     .array(
@@ -318,6 +571,22 @@ export const siteSchema = z.strictObject({
       lost_packet: achievement,
       all: achievement,
     }),
+    rarity: localized,
+    // The panel of achievements, opened by the «eggs 3/8» counter (components/Achievements.astro).
+    panel: z.strictObject({
+      title: localized,
+      open: localized,
+      progress: localized,
+      locked: localized,
+      found_on: localized,
+      rare: localized,
+      counting: localized,
+      discount: localized,
+      discount_ready: localized,
+      discount_used: localized,
+      account: localized,
+      close: localized,
+    }),
     night: localized,
     croc: localized,
     console: localized,
@@ -349,6 +618,8 @@ export const siteSchema = z.strictObject({
       })
       .optional(),
   }),
+  loyalty: loyaltySchema,
+  account: accountSchema,
   map: mapSchema,
   flags: z.strictObject({
     skills: z.strictObject({ show_unconfirmed: z.boolean() }),

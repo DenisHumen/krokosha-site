@@ -305,6 +305,15 @@ func TestWhoIsNotCounted(t *testing.T) {
 	if unknown := f.call(http.MethodPost, "/api/eggs/players", "203.0.113.34", ""); unknown.status != http.StatusNotFound {
 		t.Errorf("a made-up achievement: %d", unknown.status)
 	}
+	// «Do Not Track» and Global Privacy Control: the receipt (the discount needs it), and no count.
+	for i, header := range []string{"DNT", "Sec-GPC"} {
+		ip := fmt.Sprintf("203.0.113.%d", 40+i)
+		f.call(http.MethodPost, "/api/eggs/hello", ip, "", func(r *http.Request) { r.Header.Set(header, "1") })
+		got := f.call(http.MethodPost, "/api/eggs/sudo", ip, "", func(r *http.Request) { r.Header.Set(header, "1") })
+		if got.status != http.StatusOK || got.body["receipt"] == nil {
+			t.Errorf("%s: %d %v", header, got.status, got.body)
+		}
+	}
 	if f.daily("sudo") != 0 || f.daily(players) != 0 {
 		t.Errorf("counted: sudo %d, players %d", f.daily("sudo"), f.daily(players))
 	}

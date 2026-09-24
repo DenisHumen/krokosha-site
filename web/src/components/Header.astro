@@ -5,6 +5,7 @@
 import { localePath } from '../i18n/locales.ts';
 import type { Variant } from '../layouts/Base.astro';
 import type { SitePageData } from '../lib/page-data.ts';
+import Icon from './Icon.astro';
 import LangSwitcher from './LangSwitcher.astro';
 import ThemeToggle from './ThemeToggle.astro';
 
@@ -60,6 +61,16 @@ const home = localePath(lang);
     <div class="tools">
       <LangSwitcher data={data} page={page} />
       <ThemeToggle label={site.ui.theme_toggle} />
+      <a
+        class="round"
+        href={localePath(lang, 'account')}
+        aria-label={site.account.link}
+        title={site.account.link}
+        aria-current={page === 'account' ? 'page' : undefined}
+        data-track="account"
+      >
+        <Icon name="user" size={16} stroke={1.4} />
+      </a>
       {variant === 'home' && (
         <button
           class="round menu-button"
@@ -218,8 +229,10 @@ const home = localePath(lang);
     cursor: pointer;
   }
 
-  .round:hover {
+  .round:hover,
+  .round[aria-current] {
     border-color: var(--fg);
+    color: var(--fg);
   }
 
   .site-menu {

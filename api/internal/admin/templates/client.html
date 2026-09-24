@@ -95,10 +95,12 @@
             <div><dt>Скидка следующей заявки</dt><dd>{{discount $d.Offer}}</dd></div>
             {{if $d.HasNext}}<div><dt>До «{{$d.Next.Tier.Name.In "ru"}}»</dt><dd>{{if $d.Next.Orders}}{{plural $d.Next.Orders "заказ" "заказа" "заказов"}}{{end}}{{if and $d.Next.Orders $d.Next.Spent}} или {{end}}{{if $d.Next.Spent}}{{money $d.Next.Spent}}{{end}}</dd></div>{{end}}
             <div><dt>Пасхалки</dt><dd>{{len $d.Eggs}} из {{$d.EggsTotal}}{{if $d.History.EggsUsed}} · скидка за них использована{{end}}</dd></div>
+            <div><dt>Ачивки за заказы</dt><dd>{{len $d.Orders}} из {{$d.OrdersTotal}}</dd></div>
             {{if $c.OrdersCarried}}<div><dt>Из обезличенных заявок</dt><dd>{{plural $c.OrdersCarried "заказ" "заказа" "заказов"}} · {{money $c.SpentCarried}}</dd></div>{{end}}
           </dl>
-          {{if $d.Eggs}}
+          {{if or $d.Orders $d.Eggs}}
             <ul class="rows rows-plain">
+              {{range $d.Orders}}<li class="row"><span class="row-name">{{orderName .ID}}{{if .New}} <span class="tag tag-warn">клиент ещё не видел</span>{{end}}</span><span class="row-value mono">{{time .At}}</span></li>{{end}}
               {{range $d.Eggs}}<li class="row"><span class="row-name">{{eggName .ID}}</span><span class="row-value mono">{{time .At}}</span></li>{{end}}
             </ul>
           {{end}}

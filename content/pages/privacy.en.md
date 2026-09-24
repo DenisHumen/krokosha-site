@@ -6,7 +6,7 @@ status: draft   # DRAFT based on brief B5/B10 — legal review and a check again
 
 ## In short
 
-This site doesn't use cookies for analytics, doesn't use third-party trackers and doesn't sell data. Personal data appears only when you send a request through the form yourself.
+This site doesn't use cookies for analytics, doesn't use third-party trackers and doesn't sell data. Personal data appears only when you send a request through the form or sign in to the personal account yourself.
 
 ## Who processes the data
 
@@ -44,7 +44,34 @@ The request is available only to Denis and to people Denis has personally given 
 
 If the conversation continues — you reply to an email or write to the bot in Telegram — your messages and the files you attach are stored with the request. An email that cannot be matched to any request is kept for no longer than 30 days.
 
+If you are signed in to the personal account, the request appears there: you can see its status and the whole conversation, and reply.
+
 Requests and correspondence are kept for 24 months, then deleted or anonymized.
+
+## Personal account
+
+The account is optional: a request can be sent without it. It is created at the first sign-in — with a one-time code from an email or from the site's Telegram bot; there are no passwords.
+
+What is stored is what you entered or what signing in needs: your email address and/or your Telegram — the account number and username; name, company, the language of letters and the preferred way to reach you; the contacts and social networks you added yourself — Denis sees them to get in touch with you; the devices you signed in from — browser and system in general terms, a truncated IP address, the time of the last visit; the easter eggs you found and the achievements for orders; a personal discount, if one is set.
+
+The account's cookies are strictly necessary ones only:
+
+- `__Host-kc` — the sign-in session: up to 90 days, ending sooner if you have not visited for 30 days or signed out;
+- `__Host-kl` — for 15 minutes while you type a code: a code works only in the browser that asked for it.
+
+The codes and sign-in links themselves are not stored: the server keeps a random number they can be checked against.
+
+Discounts and the level of a regular client are calculated from your requests: the number of completed orders and their total (Denis enters it when an order is completed). The discount is fixed on a request when it is sent. Achievements for orders give no discounts.
+
+You can delete the account in the account itself: the account, contacts, devices and achievements are deleted at once. Requests stay for their storage period; they can be deleted sooner on request. An account nobody signed in to for the whole storage period of requests, with no requests left in it, is deleted by itself.
+
+## Easter eggs and achievements
+
+The site has hidden easter eggs. The ones you find are kept in your browser (localStorage): the list of finds, receipts of them signed by the server (the receipt of "every egg" gives a one-time discount on a request) and service notes — whether the browser was counted as a player, which request the discount went to, whether you signed in to the account. Until you find something, nothing is written to your browser.
+
+To show rarity the way Steam does — the share of players who found each egg — the server counts how many browsers found at least one egg and how many times each one was found. Only daily numbers are stored, without addresses or identifiers; against abuse, a hash of the address with the site's secret is used and lives no longer than an hour. With Do Not Track or Global Privacy Control enabled, finds are not counted (receipts are still issued); robots and automated browsers are not counted either.
+
+If you are signed in to the account, the eggs you find are kept there too — so they are available on your other devices.
 
 ## Advertising
 

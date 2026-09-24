@@ -14,6 +14,8 @@ type Loyalty struct {
 	Welcome  int           `yaml:"welcome"`  // % on the first request
 	Eggs     int           `yaml:"eggs"`     // % once, for every easter egg found
 	Tiers    []LoyaltyTier `yaml:"tiers"`
+	// BigOrder is the sum from which an order earns the «big project» achievement; 0 — never.
+	BigOrder float64 `yaml:"big_order"`
 }
 
 // LoyaltyTier is a level of a regular client, reached by Orders completed orders or by Spent in their
@@ -38,6 +40,9 @@ func (l Loyalty) Validate() error {
 	}
 	if l.Enabled && l.Currency == "" {
 		return errors.New("loyalty.currency is required")
+	}
+	if l.BigOrder < 0 {
+		return fmt.Errorf("loyalty.big_order: %v is not a sum", l.BigOrder)
 	}
 	seen := map[string]bool{}
 	for i, tier := range l.Tiers {

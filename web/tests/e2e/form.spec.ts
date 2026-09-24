@@ -83,16 +83,29 @@ test.describe('contact form', () => {
     const sent = await mockApi(page, (route) =>
       route.fulfill({
         status: 201,
-        json: { ok: true, id: 'K-0042', telegram_url: 'https://t.me/krokosha_bot?start=c_AbCdEf' },
+        json: {
+          ok: true,
+          id: 'K-0042',
+          telegram_url: 'https://t.me/krokosha_bot?start=c_AbCdEf',
+          discount: { percent: 10, reason: 'welcome' },
+        },
       }),
     );
     await page.goto('/');
     await fill(page);
+    // What the request is going to get, asked while the form is filled in.
+    await expect(page.locator('[data-offer]')).toHaveText(/−10%\s*off your first request/);
+    await expect(page.locator('[data-signed-in]')).toBeHidden();
     await page.getByRole('button', { name: 'Send request' }).click();
 
     const success = page.locator('#form-success');
     await expect(success).toBeVisible();
     await expect(success.getByRole('heading')).toHaveText('Request #K-0042 received');
+    await expect(success.locator('[data-field="discount"]')).toHaveText(
+      'A 10% discount is fixed on the request.',
+    );
+    // Not signed in: nothing to follow in an account.
+    await expect(success.locator('[data-field="account"]')).toBeHidden();
     await expect(success.getByRole('link', { name: 'Continue in Telegram' })).toHaveAttribute(
       'href',
       'https://t.me/krokosha_bot?start=c_AbCdEf',
@@ -112,6 +125,7 @@ test.describe('contact form', () => {
       consent: 'on',
       lang: 'en',
       website: '',
+      eggs: '',
     });
     // The puzzle was solved in the browser while the form was being filled in.
     const proof = JSON.parse(Buffer.from(fields['altcha'] ?? '', 'base64').toString()) as Record<
@@ -124,6 +138,50 @@ test.describe('contact form', () => {
       salt: SALT,
       signature: 'signed-by-the-server',
     });
+  });
+
+  test('claims the discount of every easter egg once, with its receipt', async ({ page }) => {
+    const receipt = 'all.tlv0aa.2s.c2lnbmVkLWJ5LXNlcnZlcg';
+    await page.addInitScript((all) => {
+      localStorage.setItem('krokosha:receipts', JSON.stringify({ all }));
+    }, receipt);
+    const asked: unknown[] = [];
+    await page.route('**/api/leads/offer', (route) => {
+      asked.push(route.request().postDataJSON());
+      return route.fulfill({
+        json: { ok: true, enabled: true, signed_in: true, percent: 20, reason: 'eggs' },
+      });
+    });
+    const sent = await mockApi(page, (route) =>
+      route.fulfill({
+        status: 201,
+        json: { ok: true, id: 'K-0043', discount: { percent: 20, reason: 'eggs' } },
+      }),
+    );
+    await page.goto('/ru/');
+    await page.locator('#form-name').fill('Ольга');
+    await expect(page.locator('[data-offer]')).toHaveText(/−20%\s*за все найденные пасхалки/);
+    await expect(page.locator('[data-signed-in]')).toHaveText(
+      'Вы вошли: заявка появится в личном кабинете.',
+    );
+    expect(asked).toEqual([{ eggs: receipt }]);
+    await page.locator('#form-contact').fill('olga@company.com');
+    await page.locator('#form-direction').selectOption('devops');
+    await page.locator('#form-description').fill('Нужен CI/CD для команды из пяти человек.');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Отправить заявку' }).click();
+
+    const success = page.locator('#form-success');
+    await expect(success.locator('[data-field="discount"]')).toHaveText(
+      'На заявку зафиксирована скидка 20%.',
+    );
+    await expect(success.getByRole('link', { name: 'Следить в кабинете' })).toHaveAttribute(
+      'href',
+      '/ru/account/#K-0043',
+    );
+    expect(sent[0]?.fields['eggs']).toBe(receipt);
+    // The panel of achievements will say where the discount went.
+    expect(await page.evaluate(() => localStorage.getItem('krokosha:eggs-spent'))).toBe('"K-0043"');
   });
 
   test('checks the fields before sending, in the language of the page', async ({ page }) => {
@@ -246,6 +304,7 @@ test.describe('contact form without JavaScript', () => {
       await expect(page.locator('[data-field="generic"]')).toBeVisible();
       await expect(page.locator('[data-field="numbered"]')).toBeHidden();
       await expect(page.locator('[data-field="telegram"]')).toBeHidden();
+      await expect(page.locator('[data-field="discount"]')).toBeHidden();
       expect(await page.locator('main, body').first().innerText()).not.toContain('%%');
       await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
     });

@@ -1,7 +1,7 @@
 -- The achievements of the easter eggs and how rare each one is — the share of players who have it,
--- the way Steam shows it (docs/architecture.md, 2026-09-24). A «player» is a browser that has
--- loaded the eggs; it counts itself once, and every egg it finds once (the page keeps a note in
--- localStorage). Nothing here can be traced to a visitor: counts only.
+-- the way Steam shows it (docs/architecture.md, 2026-09-24). A «player» is a browser that has found
+-- at least one egg; it counts itself once, with its first find, and every egg it finds once (the page
+-- keeps a note in localStorage). Nothing here can be traced to a visitor: counts only.
 
 -- Players and finds per day, in the site's time zone: the totals are sums of these rows, and the
 -- admin area draws the days.

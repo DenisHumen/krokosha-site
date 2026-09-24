@@ -177,6 +177,16 @@ func (s *Store) spend(ctx context.Context, tx *sql.Tx, lead *Lead) error {
 	return err
 }
 
+// OrderFacts is what the achievements of an account's orders are earned by: how many orders it
+// completed (those of anonymised requests included) and the largest sum of one.
+func (s *Store) OrderFacts(ctx context.Context, clientID int64) (orders int, biggest float64, err error) {
+	var largest sql.NullFloat64
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) + COALESCE((SELECT orders_carried FROM clients WHERE id = ?), 0), MAX(amount)
+		FROM leads WHERE kind = 'request' AND status = 'done' AND client_id = ?`, clientID, clientID).Scan(&orders, &largest)
+	return orders, largest.Float64, err
+}
+
 // History is what the loyalty rules know of an account: for its page and for the admin area.
 func (s *Store) History(ctx context.Context, clientID int64) (loyalty.History, loyalty.Personal, error) {
 	return historyOf(ctx, s.db, clientID, "", "", false)

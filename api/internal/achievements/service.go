@@ -290,14 +290,20 @@ func (s *Service) allow(r *http.Request, action string, limit int) bool {
 	return s.opts.Cache.Allow(r.Context(), "eggs-"+action+":"+hex.EncodeToString(h.Sum(nil)[:8]), limit, time.Hour)
 }
 
-// hello counts a browser that loaded the eggs for the first time: the players the shares are of.
+// optedOut: «Do Not Track» or Global Privacy Control — the browser gets its receipts (the discount
+// depends on them), and is counted nowhere.
+func optedOut(r *http.Request) bool {
+	return r.Header.Get("DNT") == "1" || r.Header.Get("Sec-GPC") == "1"
+}
+
+// hello counts a browser that found its first egg: the players the shares are of.
 func (s *Service) hello(w http.ResponseWriter, r *http.Request) {
 	switch s.who(r) {
 	case foreign:
 		server.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin request"})
 		return
 	case player:
-		if s.allow(r, "hello", helloPerHour) {
+		if !optedOut(r) && s.allow(r, "hello", helloPerHour) {
 			if err := s.count(r.Context(), players); err != nil {
 				s.opts.Log.Error("achievements: cannot count a player", "error", err)
 			}
@@ -348,7 +354,7 @@ func (s *Service) found(w http.ResponseWriter, r *http.Request) {
 		}
 		receipt = SignAll(s.opts.Secret, now, last.Sub(first))
 	}
-	if visitor == player {
+	if visitor == player && !optedOut(r) {
 		if err := s.count(r.Context(), id); err != nil && !errors.Is(err, context.Canceled) {
 			s.opts.Log.Error("achievements: cannot count a find", "achievement", id, "error", err)
 		}

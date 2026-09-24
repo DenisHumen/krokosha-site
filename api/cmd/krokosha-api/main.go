@@ -166,6 +166,15 @@ func run() error {
 	})
 	accountAPI := clients.NewHandler(accounts, form.Loyalty)
 	accountAPI.Register(srv.Mux())
+	// A request done, its sum entered, given to an account: the account gets what its orders earned,
+	// dated the moment it happened, and sees the banner the next time it opens its page.
+	leadStore.OnChange(func(leadID int64) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := accounts.AwardOrdersOfLead(ctx, leadID); err != nil {
+			log.Warn("account: cannot award the achievements of orders", "lead", leadID, "error", err)
+		}
+	})
 
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv

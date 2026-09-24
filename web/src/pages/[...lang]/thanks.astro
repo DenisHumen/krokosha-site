@@ -1,9 +1,9 @@
 ---
 // «Thank you» — where a visitor lands after sending the contact form WITHOUT JavaScript
 // (with it, the form shows the same message in place). The API serves this very page with the
-// %%…%% marks filled in: the number of the request and the «continue in Telegram» link
-// (api/internal/leads/http.go). Opened directly, the marks stay hidden and the page says a
-// plain «request received». Design: design/pages/thanks.dc.html.
+// %%…%% marks filled in: the number of the request, the «continue in Telegram» link and the
+// discount fixed on the request (api/internal/leads/http.go). Opened directly, the marks stay
+// hidden and the page says a plain «request received». Design: design/pages/thanks.dc.html.
 import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import { fill } from '../../i18n/localize.ts';
 import Base from '../../layouts/Base.astro';
@@ -57,6 +57,9 @@ const replyPromise =
       </h1>
       <p class="text" data-field="text">
         {message('success_text')} {replyPromise}
+      </p>
+      <p class="thanks-discount %%DISCOUNT_CLASS%%" data-field="discount">
+        {fill(message('discount_fixed'), { percent: '%%DISCOUNT%%' })}
       </p>
       <p class="thanks-telegram %%TELEGRAM_CLASS%%" data-field="telegram">
         <a class="pill pill-inverse telegram" href="%%TELEGRAM_URL%%" rel="noopener">
@@ -136,6 +139,14 @@ const replyPromise =
 
   .text {
     color: var(--fg-2);
+  }
+
+  .thanks-discount {
+    padding: 0.55rem 1rem;
+    border: 1px dashed var(--accent-line);
+    border-radius: var(--radius-m);
+    background: var(--accent-soft);
+    font-weight: 500;
   }
 
   .telegram {

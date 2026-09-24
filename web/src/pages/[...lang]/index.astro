@@ -1,4 +1,5 @@
 ---
+import Achievements from '../../components/Achievements.astro';
 import Contacts from '../../components/Contacts.astro';
 import Curtain from '../../components/Curtain.astro';
 import Hero from '../../components/Hero.astro';
@@ -26,6 +27,8 @@ const jsonLd = homeJsonLd({
 // What the easter eggs need (design/components/eggs/eggs.js): which are on, and their texts in the
 // language of the page. Read by scripts/home.ts; not executed, so the CSP has nothing to say.
 const telegram = data.profile.socials.find((social) => social.id === 'telegram')?.url;
+const { easter_eggs: flags } = data.site.flags;
+const panel = flags.enabled && flags['achievements'] !== false;
 const eggs = {
   flags: data.site.flags.easter_eggs,
   experience: data.profile.experience_years,
@@ -51,6 +54,7 @@ const eggs = {
   <Curtain data={data} />
   <Projects data={data} />
   <Contacts data={data} />
+  {panel && <Achievements data={data} />}
   <script is:inline type="application/json" id="kro-eggs" set:html={serializeJsonLd(eggs)}></script>
 </Base>
 

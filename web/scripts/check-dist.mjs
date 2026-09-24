@@ -189,6 +189,8 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
       '%%GENERIC_CLASS%%',
       '%%NUMBERED_CLASS%%',
       '%%TELEGRAM_CLASS%%',
+      '%%DISCOUNT_CLASS%%',
+      '%%DISCOUNT%%',
     ]) {
       if (!thanks.includes(mark)) fail(`${prefix}thanks/index.html`, `the mark ${mark} is missing`);
     }

@@ -50,7 +50,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/account/login", h.public(h.startLogin))
 	mux.HandleFunc("POST /api/account/login/code", h.public(h.verifyCode))
 	mux.HandleFunc("POST /api/account/login/link", h.public(h.verifyLink))
-	mux.HandleFunc("GET /api/account/me", h.private(h.me))
+	mux.HandleFunc("GET /api/account/me", h.whoever(h.me))
 	mux.HandleFunc("POST /api/account/logout", h.private(h.logout))
 	mux.HandleFunc("POST /api/account/profile", h.private(h.profile))
 	mux.HandleFunc("POST /api/account/contacts", h.private(h.addContact))
@@ -64,6 +64,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/account/leads/{number}/messages", h.private(h.leadMessage))
 	mux.HandleFunc("POST /api/account/inquiries", h.private(h.inquiry))
 	mux.HandleFunc("POST /api/account/eggs", h.private(h.eggs))
+	mux.HandleFunc("POST /api/account/achievements/seen", h.private(h.achievementsSeen))
 	mux.HandleFunc("POST /api/account/delete", h.private(h.deleteAccount))
 }
 
@@ -115,6 +116,17 @@ func (h *Handler) public(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (h *Handler) private(next http.HandlerFunc) http.HandlerFunc {
+	return h.signedIn(next, http.StatusUnauthorized)
+}
+
+// whoever is private for the one question the account's page asks on every visit — who is signed
+// in: nobody is an answer, not an error, so it comes with 200 and leaves the console of every
+// signed-out visitor clean.
+func (h *Handler) whoever(next http.HandlerFunc) http.HandlerFunc {
+	return h.signedIn(next, http.StatusOK)
+}
+
+func (h *Handler) signedIn(next http.HandlerFunc, signedOut int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !guard(w, r) {
 			return
@@ -125,7 +137,7 @@ func (h *Handler) private(next http.HandlerFunc) http.HandlerFunc {
 				h.s.opts.Log.Error("account: cannot check a session", "error", err)
 			}
 			clearCookie(w, SessionCookie)
-			fail(w, http.StatusUnauthorized, "signed_out")
+			fail(w, signedOut, "signed_out")
 			return
 		}
 		if r.Method == http.MethodPost && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
@@ -316,6 +328,20 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := sessionOf(r)
 	client := session.Client
+	// Whatever the orders have earned since — a request linked by a new address, say — is given now.
+	if err := h.s.AwardOrders(ctx, client.ID); err != nil {
+		h.s.opts.Log.Warn("account: cannot award the achievements of orders", "error", err)
+	}
+	orders, err := h.s.Orders(ctx, client.ID)
+	if err != nil {
+		h.internal(w, "cannot read the achievements of orders", err)
+		return
+	}
+	shares, err := h.s.OrderShares(ctx)
+	if err != nil {
+		h.internal(w, "cannot read the shares of the achievements", err)
+		return
+	}
 	contacts, err := h.s.Contacts(ctx, client.ID)
 	if err != nil {
 		h.internal(w, "cannot read the contacts", err)
@@ -378,6 +404,9 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		"contacts": nonNil(contacts),
 		"loyalty":  loyaltyJSON,
 		"eggs":     nonNil(eggs),
+		// The achievements of orders: what the account has (new — not shown to the client yet), how
+		// many of the accounts have each, and the sum a big order starts with.
+		"orders":   map[string]any{"earned": nonNil(orders), "shares": shares, "big_order": rules.BigOrder},
 		"sessions": nonNil(sessions),
 		"bot":      h.s.opts.BotUsername() != "",
 	})
@@ -697,6 +726,22 @@ func (h *Handler) eggs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "eggs": nonNil(found)})
+}
+
+// achievementsSeen: the page has shown the banners of these achievements; they are no longer new.
+func (h *Handler) achievementsSeen(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if !read(r, &body) || len(body.IDs) > len(OrderAchievements) {
+		fail(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if err := h.s.MarkShown(r.Context(), sessionOf(r).Client.ID, body.IDs); err != nil {
+		h.internal(w, "cannot mark achievements as seen", err)
+		return
+	}
+	server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // deleteAccount removes the account itself. The requests stay with the owner — they have their own
