@@ -149,6 +149,15 @@ func (b *Bot) renderCard(card *leads.Card) (string, Keyboard) {
 	return strings.Join(lines, "\n"), b.cardButtons(card)
 }
 
+// readingButtons are the buttons of a card for a person who may only read it (RoleNotify).
+func (b *Bot) readingButtons(card *leads.Card) Keyboard {
+	id := fmt.Sprint(card.Lead.ID)
+	if card.AnonymizedAt.Valid {
+		return Keyboard{{Button{Text: "🕘 История", Data: "l:history:" + id}}}
+	}
+	return Keyboard{{Button{Text: "📄 Полностью", Data: "l:full:" + id}, Button{Text: "🕘 История", Data: "l:history:" + id}}}
+}
+
 func (b *Bot) cardButtons(card *leads.Card) Keyboard {
 	id := fmt.Sprint(card.Lead.ID)
 	button := func(text, action string) Button { return Button{Text: text, Data: "l:" + action + ":" + id} }
@@ -279,14 +288,19 @@ func (b *Bot) announce(ctx context.Context, leadID int64) error {
 	}
 
 	text, buttons := b.renderCard(card)
+	reading := b.readingButtons(card)
 	now := b.opts.Now()
 	var failed error
 	for _, member := range recipients {
 		if delivered[member.TelegramID] {
 			continue
 		}
+		keyboard := buttons
+		if !member.CanAct() {
+			keyboard = reading
+		}
 		sent, err := b.opts.API.Send(ctx, Outgoing{
-			ChatID: member.TelegramID, Text: text, Buttons: buttons,
+			ChatID: member.TelegramID, Text: text, Buttons: keyboard,
 			Silent: member.MutedUntil.Valid && member.MutedUntil.Time.After(now), // /mute: the card comes, the sound does not
 		})
 		var refused *APIError
@@ -359,9 +373,23 @@ func (b *Bot) redrawCards(ctx context.Context, leadID int64) {
 		b.opts.Log.Error("telegram: cannot find the cards of a request", "lead", leads.Number(leadID), "error", err)
 		return
 	}
+	// Who may only read: their cards get the buttons of reading (the chat of a person is their id).
+	readers := map[int64]bool{}
+	if members, err := b.opts.Access.Members(ctx); err == nil {
+		for _, member := range members {
+			readers[member.TelegramID] = !member.CanAct()
+		}
+	} else {
+		b.opts.Log.Warn("telegram: cannot read the roles for redrawing cards", "error", err)
+	}
 	text, buttons := b.renderCard(card)
+	reading := b.readingButtons(card)
 	for _, message := range cards {
-		if err := b.opts.API.Edit(ctx, message.MessageID, Outgoing{ChatID: message.ChatID, Text: text, Buttons: buttons}); err != nil && ctx.Err() == nil {
+		keyboard := buttons
+		if readers[message.ChatID] {
+			keyboard = reading
+		}
+		if err := b.opts.API.Edit(ctx, message.MessageID, Outgoing{ChatID: message.ChatID, Text: text, Buttons: keyboard}); err != nil && ctx.Err() == nil {
 			b.opts.Log.Warn("telegram: cannot redraw a card", "lead", leads.Number(leadID), "error", err)
 		}
 	}

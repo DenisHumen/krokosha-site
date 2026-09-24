@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 	"fmt"
-	"html/template"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +22,8 @@ type TrafficReports interface {
 // SystemStatus is what the «system status» screen needs (sysstatus.Service).
 type SystemStatus interface {
 	Collect(ctx context.Context) *sysstatus.Status
+	// Vitals are the processor, the disk and the backup, for the header of every page.
+	Vitals() sysstatus.Vitals
 	RequestRebuild() error
 }
 
@@ -37,11 +39,19 @@ type statusShare struct {
 type trafficData struct {
 	Period   periodView
 	Traffic  *nginxlog.Traffic
-	Requests template.HTML
-	Bytes    template.HTML
+	Requests []stackBar // people above, bots below
+	Bytes    []visitBar
+	Axis     []string // labels under the chart of requests: five of them, evenly spread
 	Statuses []statusShare
 	BotShare float64
+	Error5xx float64 // share of 5xx, %
 	PolledAt time.Time
+}
+
+// stackBar is a column of two parts: Top above Bottom, both size classes of a fixed-height chart.
+type stackBar struct {
+	Title       string
+	Top, Bottom int
 }
 
 func (h *Handler) traffic(w http.ResponseWriter, r *http.Request) {
@@ -52,12 +62,6 @@ func (h *Handler) traffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	people, bots, sent := make([]int64, len(report.Timeline)), make([]int64, len(report.Timeline)), make([]int64, len(report.Timeline))
-	var starts []time.Time
-	for i, bucket := range report.Timeline {
-		starts = append(starts, bucket.Start)
-		people[i], bots[i], sent[i] = int64(bucket.Requests-bucket.Bots), int64(bucket.Bots), bucket.Bytes
-	}
 	label := func(i int) string {
 		text := bucketLabel(report.Timeline[i].Start, report.Hourly)
 		if !report.Hourly {
@@ -66,28 +70,39 @@ func (h *Handler) traffic(w http.ResponseWriter, r *http.Request) {
 		return text
 	}
 	data := trafficData{
-		Period:  period,
-		Traffic: report,
-		Requests: barChart(barChartSpec{
-			Summary: fmt.Sprintf("Запросы к серверу: всего %d, из них от ботов и программ %d", report.Totals.Requests, report.Totals.Bots),
-			Starts:  starts, Hourly: report.Hourly,
-			Series: []barSeries{{"chart-bar-people", people}, {"chart-bar-bots", bots}},
-			Title: func(i int) string {
-				b := report.Timeline[i]
-				return fmt.Sprintf("%s — %s, из них боты и программы: %d; не найдено: %d; ошибок сервера: %d",
-					label(i), plural(b.Requests, "запрос", "запроса", "запросов"), b.Bots, b.NotFound, b.Errors)
-			},
-			Axis: compactCount,
-		}),
-		Bytes: barChart(barChartSpec{
-			Summary: "Передано данных: всего " + formatBytes(report.Totals.Bytes),
-			Starts:  starts, Hourly: report.Hourly, Bytes: true,
-			Series: []barSeries{{"chart-bar-bytes", sent}},
-			Title:  func(i int) string { return label(i) + " — " + formatBytes(report.Timeline[i].Bytes) },
-			Axis:   formatBytes,
-		}),
+		Period:   period,
+		Traffic:  report,
 		BotShare: percentOf(report.Totals.Bots, report.Totals.Requests),
+		Error5xx: percentOf(report.Totals.Status[3], report.Totals.Requests),
 		PolledAt: h.opts.LogPolled(),
+	}
+	var most int
+	var mostBytes int64
+	for _, bucket := range report.Timeline {
+		most, mostBytes = max(most, bucket.Requests), max(mostBytes, bucket.Bytes)
+	}
+	for i, bucket := range report.Timeline {
+		bar := stackBar{Title: fmt.Sprintf("%s — %s, из них боты и программы: %d; не найдено: %d; ошибок сервера: %d",
+			label(i), plural(bucket.Requests, "запрос", "запроса", "запросов"), bucket.Bots, bucket.NotFound, bucket.Errors)}
+		if most > 0 {
+			bar.Top = int(math.Round(float64(bucket.Requests-bucket.Bots) * 100 / float64(most)))
+			bar.Bottom = int(math.Round(float64(bucket.Bots) * 100 / float64(most)))
+		}
+		data.Requests = append(data.Requests, bar)
+		sent := visitBar{Title: label(i) + " — " + formatBytes(bucket.Bytes), Text: formatBytes(bucket.Bytes)}
+		if mostBytes > 0 {
+			sent.Height = int(math.Round(float64(bucket.Bytes) * 78 / float64(mostBytes)))
+			sent.Peak = bucket.Bytes == mostBytes
+		}
+		if n := len(report.Timeline); n <= 14 || i%max(1, n/8) == 0 {
+			sent.Label = barLabel(bucket.Start, report.Hourly, n)
+		}
+		data.Bytes = append(data.Bytes, sent)
+	}
+	if n := len(report.Timeline); n > 0 {
+		for _, i := range []int{0, n / 4, n / 2, 3 * n / 4, n - 1} {
+			data.Axis = append(data.Axis, barLabel(report.Timeline[i].Start, report.Hourly, n))
+		}
 	}
 	if data.PolledAt.IsZero() {
 		data.PolledAt = report.ReadAt

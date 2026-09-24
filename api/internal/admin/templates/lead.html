@@ -2,204 +2,148 @@
   {{$d := .Data}}
   {{$lead := $d.Card.Lead}}
   {{$csrf := .Session.CSRFToken}}
-  <div class="page-head">
-    <h1>{{leadKind $lead.Kind}} #{{$lead.Number}} <span class="status status-{{$lead.Status}}">{{statusName $lead.Status}}</span>
-      {{if $lead.Discount.Percent}}<span class="tag tag-ok">−{{$lead.Discount.Percent}}%</span>{{end}}</h1>
-    <a class="button button-ghost" href="{{path "/leads"}}">← К списку</a>
-  </div>
+  {{$id := print $lead.ID}}
 
   {{if $d.Card.AnonymizedAt.Valid}}
     <p class="notice notice-warn">Заявка обезличена {{time $d.Card.AnonymizedAt.Time}}: срок хранения истёк — имя, контакт, текст, переписка и файлы удалены. Остались дата, статус, направление и источник: из них складывается статистика.</p>
   {{end}}
 
-  <div class="dashboard lead-layout">
-    {{/* Left (brief B10.6): who, what — and what can be done. On a phone: this, the conversation, the rest. */}}
-    <div class="stack lead-facts">
-      <section class="card">
-        <h2 class="card-title">Клиент</h2>
-        <div class="card-body">
-          <dl class="facts">
-            {{if $lead.Subject}}<div><dt>Тема</dt><dd>{{$lead.Subject}}</dd></div>{{end}}
-            {{if $lead.ParentID}}<div><dt>По заявке</dt><dd><a href="{{path "/leads/" (print $lead.ParentID)}}">#K-{{printf "%04d" $lead.ParentID}}</a></dd></div>{{end}}
-            <div><dt>Имя</dt><dd>{{$lead.Name}}</dd></div>
-            <div><dt>Личный кабинет</dt><dd>{{if $lead.ClientID}}<a href="{{path "/clients/" (print $lead.ClientID)}}">клиент #{{$lead.ClientID}}</a>{{else}}—{{end}}</dd></div>
-            <div><dt>Контакт ({{methodName $lead.ContactMethod}})</dt><dd>{{if $lead.ContactValue}}<a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a>{{else}}—{{end}}</dd></div>
-            {{if $d.ClientBotLink}}<div><dt>Ссылка в бот для клиента</dt><dd><code class="copyable">{{$d.ClientBotLink}}</code><br>{{if $d.Card.BotLinked}}Клиент её уже открыл: ответы идут в Telegram, пока он не напишет письмо.{{else}}Клиент её ещё не открывал. Перешлите ему — тогда ответы пойдут в Telegram.{{end}}</dd></div>{{end}}
-            <div><dt>Направление</dt><dd>{{$d.Direction}}</dd></div>
-            <div><dt>Бюджет</dt><dd>{{if $lead.Budget}}{{$lead.Budget}}{{else}}—{{end}}</dd></div>
-            <div><dt>Сроки</dt><dd>{{if $lead.Timeline}}{{$lead.Timeline}}{{else}}—{{end}}</dd></div>
-            <div><dt>Язык</dt><dd>{{language $lead.Lang}}</dd></div>
-            <div><dt>Получена</dt><dd>{{time $lead.CreatedAt}}</dd></div>
-            {{if $d.Card.Assignee}}<div><dt>Взял(а)</dt><dd>{{$d.Card.Assignee}}</dd></div>{{end}}
-            {{if $d.Card.FirstResponseAt.Valid}}<div><dt>Первый ответ</dt><dd>{{time $d.Card.FirstResponseAt.Time}}</dd></div>{{end}}
-            {{if $d.Card.RejectReason}}<div><dt>Причина отказа</dt><dd>{{$d.Card.RejectReason}}</dd></div>{{end}}
-          </dl>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">Скидка и сумма</h2>
-        <div class="card-body actions-stack">
-          <dl class="facts">
-            <div><dt>Скидка</dt><dd>{{discount $lead.Discount}}</dd></div>
-            {{if eq $lead.Discount.Reason "eggs"}}<div><dt>Пасхалки найдены за</dt><dd>{{elapsed $lead.EggsSpan}}{{if lt $lead.EggsSpan.Seconds 60.0}} <span class="tag tag-warn">подозрительно быстро: похоже, по исходникам</span>{{end}}</dd></div>{{end}}
-            <div><dt>Сумма заказа</dt><dd>{{if $lead.HasAmount}}{{money $lead.Amount}}{{else}}—{{end}}</dd></div>
-          </dl>
-          <form method="post" action="{{path "/leads/" (print $lead.ID) "/amount"}}">
-            <input type="hidden" name="csrf" value="{{$csrf}}" />
-            <label for="lead-amount">Сумма заказа <span class="muted">— завершённые заказы и их суммы дают клиенту уровень</span></label>
-            <span class="inline">
-              <input id="lead-amount" name="amount" inputmode="decimal" {{if $lead.HasAmount}}value="{{$lead.Amount}}"{{end}} placeholder="1500" />
-              <button class="button button-ghost" type="submit">Сохранить</button>
-            </span>
-          </form>
-          <form method="post" action="{{path "/leads/" (print $lead.ID) "/discount"}}">
-            <input type="hidden" name="csrf" value="{{$csrf}}" />
-            <label for="lead-discount">Скидка вручную <span class="muted">— заменит рассчитанную</span></label>
-            <span class="inline">
-              <input id="lead-discount" name="percent" type="number" min="0" max="100" step="1" value="{{$lead.Discount.Percent}}" required />
-              <label class="visually-hidden" for="lead-discount-note">Подпись для клиента</label>
-              <input id="lead-discount-note" name="note" maxlength="100" placeholder="подпись для клиента" />
-              <button class="button button-ghost" type="submit">Задать</button>
-            </span>
-          </form>
-          <form method="post" action="{{path "/leads/" (print $lead.ID) "/client"}}">
-            <input type="hidden" name="csrf" value="{{$csrf}}" />
-            <label for="lead-client">Клиент <span class="muted">— номер (#12) или адрес почты</span></label>
-            <span class="inline">
-              <input id="lead-client" name="client" {{if $lead.ClientID}}value="#{{$lead.ClientID}}"{{end}} maxlength="200" />
-              <button class="button button-ghost" type="submit">Привязать</button>
-              {{if $lead.ClientID}}<button class="button button-ghost" type="submit" name="detach" value="1">Отвязать</button>{{end}}
-            </span>
-          </form>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">Статус</h2>
-        <div class="card-body actions-stack">
-          {{range $d.Next}}
-            {{if ne . "rejected"}}
-              <form method="post" action="{{path "/leads/" (print $lead.ID) "/status"}}">
-                <input type="hidden" name="csrf" value="{{$csrf}}" />
-                <input type="hidden" name="status" value="{{.}}" />
-                <button class="button {{if and (eq $lead.Status "new") (eq . "in_progress")}}{{else}}button-ghost{{end}}" type="submit">
-                  {{if and (eq $lead.Status "new") (eq . "in_progress")}}Взять в работу
-                  {{else if eq . "spam"}}Это спам
-                  {{else if and (eq $lead.Status "spam") (eq . "new")}}Не спам — вернуть в новые
-                  {{else}}→ {{statusName .}}{{end}}
-                </button>
-              </form>
-            {{end}}
-          {{end}}
-          {{range $d.Next}}
-            {{if eq . "rejected"}}
-              {{if and $d.Rejects (not $d.ByPhone)}}
-                <form class="reject-form template-picker" id="reject" method="get" action="{{path "/leads/" (print $lead.ID)}}">
-                  <label for="reject-template">Отклонить — письмо из шаблона <span class="muted">({{language $lead.Lang}})</span></label>
-                  <span class="inline">
-                    <select id="reject-template" name="template">
-                      {{range $d.Rejects}}<option value="{{.ID}}">{{.Title}}</option>{{end}}
-                    </select>
-                    <button class="button button-ghost" type="submit" formaction="{{path "/leads/" (print $lead.ID)}}#reject">Подставить</button>
-                  </span>
+  <div class="split">
+    <div class="stack">
+      <section class="tile">
+        <div class="actions-between actions">
+          <a class="back" href="{{path "/leads"}}">← Все заявки</a>
+          <div class="actions">
+            {{range $d.Next}}
+              {{if ne . "rejected"}}
+                <form class="inline" method="post" action="{{path "/leads/" $id "/status"}}">
+                  <input type="hidden" name="csrf" value="{{$csrf}}" />
+                  <input type="hidden" name="status" value="{{.}}" />
+                  {{if and (eq $lead.Status "new") (eq . "in_progress")}}<button class="btn btn-light" type="submit">Взять в работу</button>
+                  {{else if eq . "done"}}<button class="btn btn-light" type="submit">Завершить</button>
+                  {{else if eq . "spam"}}<button class="btn btn-ghost" type="submit">Это спам</button>
+                  {{else if and (eq $lead.Status "spam") (eq . "new")}}<button class="btn" type="submit">Не спам — вернуть в новые</button>
+                  {{else}}<button class="btn btn-bright" type="submit">{{statusName .}}</button>{{end}}
                 </form>
               {{end}}
-              <form {{if or (not $d.Rejects) $d.ByPhone}}class="reject-form"{{end}} method="post" action="{{path "/leads/" (print $lead.ID) "/status"}}">
-                <input type="hidden" name="csrf" value="{{$csrf}}" />
-                <input type="hidden" name="status" value="rejected" />
-                <label for="reject-reason">{{if and $d.Rejects (not $d.ByPhone)}}Причина{{else}}Отклонить — причина{{end}}</label>
-                <input id="reject-reason" name="reason" list="reject-reasons" maxlength="255" placeholder="не мой профиль, нет времени…" />
-                <datalist id="reject-reasons">
-                  <option value="не мой профиль"></option><option value="нет свободного времени"></option><option value="бюджет не подходит"></option>
-                </datalist>
-                {{if not $d.ByPhone}}
-                  <label for="reject-letter">Письмо клиенту <span class="muted">— оставьте пустым, чтобы закрыть молча</span></label>
-                  <textarea id="reject-letter" name="letter" rows="{{if $d.Refusal}}8{{else}}4{{end}}" placeholder="Вежливый отказ: выберите шаблон выше или напишите свой">{{$d.Refusal}}</textarea>
-                {{end}}
-                <button class="button button-ghost" type="submit">Отклонить</button>
-              </form>
             {{end}}
-          {{end}}
-          {{if $lead.Verdict.Score}}
-            <p class="muted">Подозрение на спам: {{$lead.Verdict.Score}} из 100{{range $lead.Verdict.Reasons}}<br />— {{.}}{{end}}</p>
-          {{end}}
-        </div>
-      </section>
-    </div>
-
-    {{/* Right: the conversation and the notes, in the manner of a chat. */}}
-    <div class="stack lead-chat">
-      <section class="card">
-        <h2 class="card-title">Переписка и история</h2>
-        <div class="card-body">
-          <ol class="chat">
-            {{range $d.Card.Feed}}
-              {{if eq .Kind "event"}}
-                <li class="chat-event">
-                  <time>{{time .At}}</time>
-                  {{if eq .Action "created"}}заявка получена{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "assigned"}}{{.Author}} взял(а) в работу
-                  {{else if eq .Action "replied"}}{{.Author}} ответил(а) клиенту
-                  {{else if eq .Action "status"}}{{.Author}}: {{statusName .From}} → {{statusName .To}}{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "client_replied"}}клиент написал{{if ne .From .To}}: {{statusName .From}} → {{statusName .To}}{{end}}{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "auto_reply"}}автоматический ответ почты клиента{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "client_linked"}}клиент открыл бота{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "reminded"}}напоминание в Telegram: заявку никто не взял
-                  {{else if eq .Action "undelivered"}}<span class="chat-failed">письмо клиенту не доставлено</span>{{if .Body}} — {{.Body}}{{end}}
-                  {{else if eq .Action "amount"}}{{.Author}}: {{.Body}}
-                  {{else if eq .Action "discount"}}{{.Author}}: {{.Body}}
-                  {{else if eq .Action "client"}}{{.Author}}: {{.Body}}
-                  {{else}}{{.Author}}: {{.Action}}{{end}}
-                </li>
-              {{else}}
-                <li class="chat-message chat-{{.Direction}}">
-                  <p class="chat-meta">
-                    {{if eq .Direction "in"}}{{$lead.Name}} <span class="muted">· {{if eq .Channel "form"}}форма на сайте{{else if eq .Channel "site"}}личный кабинет{{else}}{{methodName .Channel}}{{end}}</span>
-                    {{else if eq .Direction "note"}}{{.Author}} <span class="muted">· заметка, клиент её не видит</span>
-                    {{else}}{{.Author}} <span class="muted">· {{if eq .Channel "phone"}}итог звонка{{else if eq .Channel "site"}}ответ в личном кабинете{{else}}ответ клиенту, {{methodName .Channel}}{{end}}</span>{{end}}
-                    <time>{{time .At}}</time>
-                  </p>
-                  <p class="chat-body">{{.Body}}</p>
-                  {{if .Files}}
-                    {{/* Downloads only: whatever is inside a file, the browser is told to save it, never to show it. */}}
-                    <ul class="chat-files">
-                      {{range .Files}}
-                        <li><a href="{{path "/leads/" (print .LeadID) "/files/" (print .ID)}}" download>{{.Filename}}</a> <span class="muted">{{.Kind}} · {{bytes .Size}}</span></li>
+            {{range $d.Next}}
+              {{if eq . "rejected"}}
+                <details class="drop" data-menu {{if $d.Refusal}}open{{end}}>
+                  <summary class="btn">Отклонить</summary>
+                  <div class="drop-panel" id="reject">
+                    {{if and $d.Rejects (not $d.ByPhone)}}
+                      <form class="form-row" method="get" action="{{path "/leads/" $id}}">
+                        <label class="visually-hidden" for="reject-template">Письмо из шаблона ({{language $lead.Lang}})</label>
+                        <select class="input input-s" id="reject-template" name="template">
+                          {{range $d.Rejects}}<option value="{{.ID}}"{{if eq .ID $d.Template}} selected{{end}}>{{.Title}}</option>{{end}}
+                        </select>
+                        <button class="btn" type="submit" formaction="{{path "/leads/" $id}}#reject">Подставить</button>
+                      </form>
+                    {{end}}
+                    <form class="form" method="post" action="{{path "/leads/" $id "/status"}}">
+                      <input type="hidden" name="csrf" value="{{$csrf}}" />
+                      <input type="hidden" name="status" value="rejected" />
+                      <label class="field" for="reject-reason">Причина <span class="field-hint">— видна только вам</span>
+                        <input class="input input-s" id="reject-reason" name="reason" list="reject-reasons" maxlength="255" placeholder="не мой профиль, нет времени…" />
+                      </label>
+                      <datalist id="reject-reasons">
+                        <option value="не мой профиль"></option><option value="нет свободного времени"></option><option value="бюджет не подходит"></option>
+                      </datalist>
+                      {{if not $d.ByPhone}}
+                        <label class="field" for="reject-letter">Письмо клиенту <span class="field-hint">— пустое: закрыть молча</span>
+                          <textarea class="input input-s" id="reject-letter" name="letter" rows="{{if $d.Refusal}}8{{else}}4{{end}}" placeholder="Вежливый отказ: шаблон выше или свой текст">{{$d.Refusal}}</textarea>
+                        </label>
                       {{end}}
-                    </ul>
-                  {{end}}
-                  {{if eq .Delivery "queued"}}<p class="chat-delivery muted">ждёт отправки</p>
-                  {{else if eq .Delivery "sent"}}<p class="chat-delivery muted">доставлено</p>
-                  {{else if eq .Delivery "failed"}}<p class="chat-delivery chat-failed">не доставлено — причина в истории заявки или на экране «Статус системы»</p>{{end}}
-                </li>
+                      <button class="btn btn-danger" type="submit">Отклонить заявку</button>
+                    </form>
+                  </div>
+                </details>
               {{end}}
             {{end}}
-          </ol>
+          </div>
         </div>
+        <div class="lead-title">
+          <span class="lead-number">#{{$lead.Number}}</span>
+          <span class="lead-name">{{if $lead.Subject}}{{$lead.Subject}}{{else}}{{$d.Direction}}{{end}}</span>
+        </div>
+        <div class="pills">
+          <span class="pill status-{{$lead.Status}}">{{statusName $lead.Status}}</span>
+          {{if eq $lead.Kind "inquiry"}}<span class="pill pill-muted">обращение</span>{{end}}
+          {{if $lead.Discount.Percent}}<span class="pill pill-ok">скидка {{discount $lead.Discount}}</span>{{end}}
+          {{if $lead.Verdict.Score}}<span class="pill pill-warn" title="{{range $i, $r := $lead.Verdict.Reasons}}{{if $i}}; {{end}}{{$r}}{{end}}">спам? {{$lead.Verdict.Score}}/100</span>{{end}}
+        </div>
+        {{with $d.Description}}
+          <span class="msg-meta">{{$lead.Name}} · {{if eq .Channel "form"}}форма на сайте{{else if eq .Channel "site"}}личный кабинет{{else}}{{methodName .Channel}}{{end}} · {{when .At}}</span>
+          <p class="prose">{{.Body}}</p>
+          {{if .Files}}
+            {{/* Downloads only: whatever is inside a file, the browser is told to save it, never to show it. */}}
+            <div class="msg-files">{{range .Files}}<a class="file" href="{{path "/leads/" (print .LeadID) "/files/" (print .ID)}}" download>{{.Filename}}</a> <span class="muted-2">{{.Kind}} · {{bytes .Size}}</span>{{end}}</div>
+          {{end}}
+        {{end}}
+        {{if $lead.Verdict.Score}}
+          <p class="text-xs">Подозрение на спам: {{$lead.Verdict.Score}} из 100{{range $lead.Verdict.Reasons}} · {{.}}{{end}}</p>
+        {{end}}
       </section>
 
-      {{if $d.CanReply}}
-        <section class="card" id="reply">
-          <h2 class="card-title">{{if $d.ByPhone}}Итог звонка{{else}}Ответ клиенту{{end}}</h2>
-          <div class="card-body">
-            {{if $d.Replies}}
-              <form class="template-picker" method="get" action="{{path "/leads/" (print $lead.ID)}}">
-                <label for="template">Шаблон <span class="muted">— на языке клиента ({{language $lead.Lang}})</span></label>
-                <span class="inline">
-                  <select id="template" name="template">
-                    {{range $d.Replies}}<option value="{{.ID}}">{{.Title}}</option>{{end}}
-                  </select>
-                  <button class="button button-ghost" type="submit" formaction="{{path "/leads/" (print $lead.ID)}}#reply">Подставить</button>
+      <section class="tile" id="reply">
+        <span class="label">Переписка</span>
+        <ol class="thread">
+          {{range $d.Thread}}
+            {{if eq .Kind "event"}}
+              <li class="msg msg-event">
+                <span class="msg-meta">{{when .At}}</span>
+                <span class="msg-body">
+                  {{- if eq .Action "created"}}заявка получена{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if eq .Action "assigned"}}{{.Author}} взял(а) в работу
+                  {{- else if eq .Action "replied"}}{{.Author}} ответил(а) клиенту
+                  {{- else if eq .Action "status"}}{{.Author}}: {{statusName .From}} → {{statusName .To}}{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if eq .Action "client_replied"}}клиент написал{{if ne .From .To}}: {{statusName .From}} → {{statusName .To}}{{end}}{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if eq .Action "auto_reply"}}автоматический ответ почты клиента{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if eq .Action "client_linked"}}клиент открыл бота{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if eq .Action "reminded"}}напоминание в Telegram: заявку никто не взял
+                  {{- else if eq .Action "undelivered"}}<span class="warn">письмо клиенту не доставлено</span>{{if .Body}} — {{.Body}}{{end}}
+                  {{- else if or (eq .Action "amount") (eq .Action "discount") (eq .Action "client")}}{{.Author}}: {{.Body}}
+                  {{- else}}{{.Author}}: {{.Action}}{{end -}}
                 </span>
-              </form>
+              </li>
+            {{else}}
+              <li class="msg{{if eq .Direction "out"}} msg-out{{else if eq .Direction "note"}} msg-out msg-note{{end}}">
+                <span class="msg-meta">
+                  {{- if eq .Direction "in"}}{{$lead.Name}} · {{if eq .Channel "form"}}форма на сайте{{else if eq .Channel "site"}}личный кабинет{{else}}{{methodName .Channel}}{{end}}
+                  {{- else if eq .Direction "note"}}{{.Author}} · заметка, клиент её не видит
+                  {{- else}}{{.Author}} · {{if eq .Channel "phone"}}итог звонка{{else if eq .Channel "site"}}ответ в личном кабинете{{else}}ответ клиенту, {{methodName .Channel}}{{end}}{{end}} · {{when .At}}</span>
+                <div class="msg-body">{{.Body}}</div>
+                {{if .Files}}
+                  <div class="msg-files">{{range .Files}}<a class="file" href="{{path "/leads/" (print .LeadID) "/files/" (print .ID)}}" download>{{.Filename}}</a> <span class="muted-2">{{.Kind}} · {{bytes .Size}}</span>{{end}}</div>
+                {{end}}
+                {{if eq .Delivery "queued"}}<span class="msg-state">ждёт отправки</span>
+                {{else if eq .Delivery "sent"}}<span class="msg-state">доставлено</span>
+                {{else if eq .Delivery "failed"}}<span class="msg-state warn">не доставлено — причина в истории заявки или на экране «Статус»</span>{{end}}
+              </li>
             {{end}}
-            <form method="post" action="{{path "/leads/" (print $lead.ID) "/reply"}}">
+          {{else}}
+            <li class="empty">Ответов ещё не было.</li>
+          {{end}}
+        </ol>
+
+        {{if $d.CanReply}}
+          <div class="composer">
+            {{if $d.Replies}}
+              <nav class="chips" aria-label="Шаблоны ответа на языке клиента ({{language $lead.Lang}})">
+                {{range $d.Replies}}<a class="chip" href="{{path "/leads/" $id}}?template={{.ID}}#reply"{{if eq .ID $d.Template}} aria-current="true"{{end}}>{{.Title}}</a>{{end}}
+                <a class="chip" href="{{path "/templates"}}">Все шаблоны →</a>
+              </nav>
+            {{end}}
+            <form class="form" method="post" action="{{path "/leads/" $id "/reply"}}">
               <input type="hidden" name="csrf" value="{{$csrf}}" />
-              <label for="reply-text">{{if $d.ByPhone}}Позвонил — итог:{{else}}Текст ответа{{end}}</label>
-              <textarea id="reply-text" name="text" rows="8" required>{{$d.Draft}}</textarea>
-              <button class="button" type="submit">{{if $d.ByPhone}}Записать{{else}}Отправить{{end}}</button>
-              <p class="muted">
+              <label class="visually-hidden" for="reply-text">{{if $d.ByPhone}}Итог звонка{{else}}Текст ответа{{end}}</label>
+              <textarea class="input" id="reply-text" name="text" rows="6" required placeholder="{{if $d.ByPhone}}Позвонил — итог разговора{{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram{{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете{{else}}Ответ уйдёт письмом{{end}}">{{$d.Draft}}</textarea>
+              <div class="actions-between actions">
+                <span class="label-s">Канал: {{if $d.ByPhone}}звонок{{else if eq $d.Card.ReplyVia "telegram"}}Telegram{{else if eq $d.Card.ReplyVia "site"}}личный кабинет{{else}}почта{{end}}</span>
+                <button class="btn btn-accent btn-m" type="submit">{{if $d.ByPhone}}Записать{{else}}Отправить →{{end}}</button>
+              </div>
+              <p class="text-xs">
                 {{if $d.ByPhone}}Клиент оставил телефон: ответ — это звонок, а сюда записывается его итог.
                 {{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете клиента, а клиенту придёт уведомление на почту или в Telegram аккаунта.
                 {{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram через бота{{if ne $lead.ContactMethod "telegram"}}: последнее сообщение клиент написал там{{end}}. Если клиент бота ещё не открывал, ответ подождёт, пока он перейдёт по ссылке «Продолжить в Telegram».
@@ -207,54 +151,139 @@
               </p>
             </form>
           </div>
-        </section>
-      {{end}}
-
-      <section class="card">
-        <h2 class="card-title">Заметка</h2>
-        <form class="card-body" method="post" action="{{path "/leads/" (print $lead.ID) "/note"}}">
-          <input type="hidden" name="csrf" value="{{$csrf}}" />
-          <label for="note-text">Внутренний комментарий <span class="muted">— клиент его не увидит</span></label>
-          <textarea id="note-text" name="text" rows="3" required></textarea>
-          <button class="button button-ghost" type="submit">Сохранить заметку</button>
-        </form>
+        {{end}}
       </section>
     </div>
 
-    <div class="stack lead-more">
-      <section class="card">
-        <h2 class="card-title">Визит, из которого пришла заявка</h2>
-        <div class="card-body">
-          {{if $d.VisitID}}
-            <dl class="facts">
-              <div><dt>Источник</dt><dd>{{source $lead.Session.Source}}{{if $lead.Session.ReferrerHost}} · {{$lead.Session.ReferrerHost}}{{end}}</dd></div>
-              {{if $lead.Session.UTMSource}}<div><dt>UTM</dt><dd>{{$lead.Session.UTMSource}}{{if $lead.Session.UTMMedium}} / {{$lead.Session.UTMMedium}}{{end}}{{if $lead.Session.UTMCampaign}} / {{$lead.Session.UTMCampaign}}{{end}}</dd></div>{{end}}
-              <div><dt>Устройство</dt><dd>{{device $lead.Session.Device}} · {{$lead.Session.Browser}} · {{$lead.Session.OS}}</dd></div>
-              <div><dt>Страна</dt><dd>{{country $lead.Session.Country}}</dd></div>
-              <div><dt>Сеть</dt><dd class="mono">{{$lead.IPPrefix}}</dd></div>
-              {{if $lead.Session.Sections}}<div><dt>Смотрел(а)</dt><dd>{{range $i, $s := $lead.Session.Sections}}{{if $i}} → {{end}}{{section $s}}{{end}}</dd></div>{{end}}
-              {{if $lead.Session.TimeOnSiteMs}}<div><dt>На сайте</dt><dd>{{duration $lead.Session.TimeOnSiteMs}}</dd></div>{{end}}
-            </dl>
-            <p><a class="button button-ghost" href="{{path "/visits/" $d.VisitID}}">Путь по сайту</a></p>
-          {{else}}
-            <dl class="facts">
-              <div><dt>Сеть</dt><dd class="mono">{{$lead.IPPrefix}}</dd></div>
-            </dl>
-            <p class="muted">Статистики визита нет: посетитель просил его не отслеживать либо у него выключен JavaScript.</p>
-          {{end}}
+    <div class="stack">
+      <section class="tile">
+        <span class="label">Детали</span>
+        <div class="lines">
+          {{if $lead.ParentID}}<div class="line"><span class="line-k">По заявке</span><a class="line-v" href="{{path "/leads/" (print $lead.ParentID)}}">#K-{{printf "%04d" $lead.ParentID}}</a></div>{{end}}
+          <div class="line"><span class="line-k">Направление</span><span class="line-v">{{$d.Direction}}</span></div>
+          <div class="line"><span class="line-k">Бюджет</span><span class="line-v">{{if $lead.Budget}}{{$lead.Budget}}{{else}}—{{end}}</span></div>
+          <div class="line"><span class="line-k">Сроки</span><span class="line-v">{{if $lead.Timeline}}{{$lead.Timeline}}{{else}}—{{end}}</span></div>
+          <div class="line"><span class="line-k">Контакт · {{methodName $lead.ContactMethod}}</span><span class="line-v">{{if $lead.ContactValue}}<a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a>{{else}}—{{end}}</span></div>
+          <div class="line"><span class="line-k">Источник</span><span class="line-v">{{source $lead.Session.Source}}{{if $lead.Session.UTMSource}} · utm: {{$lead.Session.UTMSource}}{{end}}</span></div>
+          <div class="line"><span class="line-k">Язык</span><span class="line-v">{{language $lead.Lang}}</span></div>
+          <div class="line"><span class="line-k">Получена</span><span class="line-v">{{time $lead.CreatedAt}}</span></div>
+          <div class="line"><span class="line-k">Взял(а)</span><span class="line-v">{{if $d.Card.Assignee}}{{$d.Card.Assignee}}{{else}}—{{end}}</span></div>
+          {{if $d.Card.FirstResponseAt.Valid}}<div class="line"><span class="line-k">Первый ответ</span><span class="line-v">{{time $d.Card.FirstResponseAt.Time}}</span></div>{{end}}
+          {{if $d.Card.RejectReason}}<div class="line"><span class="line-k">Причина отказа</span><span class="line-v">{{$d.Card.RejectReason}}</span></div>{{end}}
         </div>
       </section>
 
-      <section class="card">
-        <h2 class="card-title">Удаление данных</h2>
-        <form class="card-body" method="post" action="{{path "/leads/" (print $lead.ID) "/delete"}}">
+      {{if $d.Client}}
+        <section class="tile tile-accent">
+          <div class="tile-head"><span>Клиент #{{$d.Client.ID}}</span><a class="round-link" href="{{path "/clients/" (print $d.Client.ID)}}" aria-label="Карточка клиента">↗</a></div>
+          <div class="who">
+            <span class="num-m sans">{{if $d.Client.Name}}{{$d.Client.Name}}{{else}}{{$lead.Name}}{{end}}</span>
+            <span class="meta">{{with $d.Client.Telegram}}{{.}} · {{end}}{{plural $d.Client.Orders "заказ" "заказа" "заказов"}}{{if $d.Client.Spent}} · {{money $d.Client.Spent}}{{end}}</span>
+          </div>
+          <details class="more">
+            <summary>Сменить клиента</summary>
+            {{template "lead-client" $}}
+          </details>
+        </section>
+      {{else}}
+        <section class="tile">
+          <div class="tile-head"><span>Без личного кабинета</span></div>
+          <p class="text-s">Привяжите заявку к клиенту: номер (#12) или адрес почты. Заявки с адресом кабинета привязываются сами.</p>
+          {{template "lead-client" $}}
+        </section>
+      {{end}}
+
+      {{if $d.ClientBotLink}}
+        <section class="tile">
+          <span class="label">Ссылка в бот для клиента</span>
+          <code class="copy">{{$d.ClientBotLink}}</code>
+          <p class="text-s">{{if $d.Card.BotLinked}}Клиент её уже открыл: ответы идут в Telegram, пока он не напишет письмо.{{else}}Клиент её ещё не открывал. Перешлите ему — тогда ответы пойдут в Telegram.{{end}}</p>
+        </section>
+      {{end}}
+
+      <section class="tile">
+        <span class="label">Заметка</span>
+        <form class="form" method="post" action="{{path "/leads/" $id "/note"}}">
           <input type="hidden" name="csrf" value="{{$csrf}}" />
-          <p class="muted">По запросу клиента: удаляются заявка, переписка, файлы, заметки и история. В журнале останется только запись «#{{$lead.Number}} удалена». Отменить нельзя.</p>
-          <label for="delete-confirm">Введите номер заявки для подтверждения</label>
-          <input id="delete-confirm" name="confirm" autocomplete="off" placeholder="{{$lead.Number}}" required />
-          <button class="button button-danger" type="submit">Удалить данные клиента</button>
+          <label class="visually-hidden" for="note-text">Внутренний комментарий — клиент его не увидит</label>
+          <textarea class="input input-s" id="note-text" name="text" rows="3" required placeholder="Клиент её не увидит"></textarea>
+          <button class="btn" type="submit">Сохранить заметку</button>
         </form>
       </section>
+
+      <section class="tile">
+        <span class="label">Скидка и сумма</span>
+        <div class="lines">
+          <div class="line"><span class="line-k">Скидка</span><span class="line-v">{{discount $lead.Discount}}</span></div>
+          {{if eq $lead.Discount.Reason "eggs"}}<div class="line"><span class="line-k">Пасхалки за</span><span class="line-v">{{elapsed $lead.EggsSpan}}{{if lt $lead.EggsSpan.Seconds 60.0}} <span class="pill pill-warn">подозрительно быстро: похоже, по исходникам</span>{{end}}</span></div>{{end}}
+          <div class="line"><span class="line-k">Сумма заказа</span><span class="line-v">{{if $lead.HasAmount}}{{money $lead.Amount}}{{else}}—{{end}}</span></div>
+        </div>
+        <form class="form" method="post" action="{{path "/leads/" $id "/amount"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <label class="field" for="lead-amount">Сумма заказа <span class="field-hint">завершённые заказы и их суммы дают клиенту уровень</span></label>
+          <span class="form-row">
+            <input class="input input-s" id="lead-amount" name="amount" inputmode="decimal" {{if $lead.HasAmount}}value="{{$lead.Amount}}"{{end}} placeholder="1500" />
+            <button class="btn" type="submit">Сохранить</button>
+          </span>
+        </form>
+        <form class="form" method="post" action="{{path "/leads/" $id "/discount"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <label class="field" for="lead-discount">Скидка вручную <span class="field-hint">заменит рассчитанную</span></label>
+          <span class="form-row">
+            <input class="input input-s" id="lead-discount" name="percent" type="number" min="0" max="100" step="1" value="{{$lead.Discount.Percent}}" required />
+            <label class="visually-hidden" for="lead-discount-note">Подпись для клиента</label>
+            <input class="input input-s" id="lead-discount-note" name="note" maxlength="100" placeholder="подпись для клиента" />
+            <button class="btn" type="submit">Задать</button>
+          </span>
+        </form>
+      </section>
+
+      <section class="tile">
+        <span class="label">Визит, из которого пришла заявка</span>
+        <div class="lines">
+          {{if $d.VisitID}}
+            <div class="line"><span class="line-k">Источник</span><span class="line-v">{{source $lead.Session.Source}}{{if $lead.Session.ReferrerHost}} · {{$lead.Session.ReferrerHost}}{{end}}</span></div>
+            {{if $lead.Session.UTMSource}}<div class="line"><span class="line-k">UTM</span><span class="line-v">{{$lead.Session.UTMSource}}{{if $lead.Session.UTMMedium}} / {{$lead.Session.UTMMedium}}{{end}}{{if $lead.Session.UTMCampaign}} / {{$lead.Session.UTMCampaign}}{{end}}</span></div>{{end}}
+            <div class="line"><span class="line-k">Устройство</span><span class="line-v">{{device $lead.Session.Device}} · {{$lead.Session.Browser}} · {{$lead.Session.OS}}</span></div>
+            <div class="line"><span class="line-k">Страна</span><span class="line-v">{{country $lead.Session.Country}}</span></div>
+            <div class="line"><span class="line-k">Сеть</span><span class="line-v mono">{{$lead.IPPrefix}}</span></div>
+            {{if $lead.Session.Sections}}<div class="line line-top"><span class="line-k">Смотрел(а)</span><span class="line-v">{{range $i, $s := $lead.Session.Sections}}{{if $i}} → {{end}}{{section $s}}{{end}}</span></div>{{end}}
+            {{if $lead.Session.TimeOnSiteMs}}<div class="line"><span class="line-k">На сайте</span><span class="line-v">{{duration $lead.Session.TimeOnSiteMs}}</span></div>{{end}}
+          {{else}}
+            <div class="line"><span class="line-k">Сеть</span><span class="line-v mono">{{$lead.IPPrefix}}</span></div>
+          {{end}}
+        </div>
+        {{if $d.VisitID}}
+          <a class="btn" href="{{path "/visits/" $d.VisitID}}">Путь по сайту →</a>
+        {{else}}
+          <p class="text-xs">Статистики визита нет: посетитель просил его не отслеживать либо у него выключен JavaScript.</p>
+        {{end}}
+      </section>
+
+      <details class="tile more danger-zone">
+        <summary>Удалить данные клиента</summary>
+        <form class="form" method="post" action="{{path "/leads/" $id "/delete"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <p class="text-s">По запросу клиента: удаляются заявка, переписка, файлы, заметки и история. В журнале останется только запись «#{{$lead.Number}} удалена». Отменить нельзя.</p>
+          <label class="field" for="delete-confirm">Номер заявки для подтверждения
+            <input class="input input-s" id="delete-confirm" name="confirm" autocomplete="off" placeholder="{{$lead.Number}}" required />
+          </label>
+          <button class="btn btn-danger" type="submit">Удалить данные клиента</button>
+        </form>
+      </details>
     </div>
   </div>
+{{end}}
+
+{{define "lead-client"}}
+  {{$lead := .Data.Card.Lead}}
+  <form class="form" method="post" action="{{path "/leads/" (print $lead.ID) "/client"}}">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+    <label class="visually-hidden" for="lead-client">Клиент: номер (#12) или адрес почты</label>
+    <span class="form-row">
+      <input class="input input-s" id="lead-client" name="client" {{if $lead.ClientID}}value="#{{$lead.ClientID}}"{{end}} maxlength="200" placeholder="#12 или почта" />
+      <button class="btn" type="submit">Привязать</button>
+      {{if $lead.ClientID}}<button class="btn btn-ghost" type="submit" name="detach" value="1">Отвязать</button>{{end}}
+    </span>
+  </form>
 {{end}}

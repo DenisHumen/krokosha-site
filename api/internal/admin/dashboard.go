@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 )
 
 const (
@@ -34,7 +35,9 @@ const (
 type periodView struct {
 	Period analytics.Period
 	Route  string // the page the switcher belongs to: "/" or "/visits"
-	Title  string
+	Title  string // «14 сентября — 20 сентября 2026»
+	Short  string // «14–20 сен 2026»
+	Kind   string // «неделя»: what the heading calls the period
 	Query  string // the period being shown
 	Prev   string
 	Next   string // empty when the next period would lie in the future
@@ -71,6 +74,8 @@ func (h *Handler) period(r *http.Request, route string) periodView {
 		Route:  route,
 		Today:  today.Format(time.DateOnly),
 		Title:  periodTitle(period),
+		Short:  periodShort(period),
+		Kind:   periodKinds[period.Kind],
 		Query:  periodQuery(period),
 		Prev:   periodQuery(period.Shift(-1)),
 		From:   period.From.Format(time.DateOnly),
@@ -102,40 +107,101 @@ type feedLine struct {
 	Text    string `json:"text"`
 }
 
+// visitBar is a bar of the visits chart: its height is a size class (.h-N, the tallest is 78, so
+// that the number above it fits), its label is shown under few bars or under every n-th of many.
+type visitBar struct {
+	Value  int
+	Text   string // the number above the bar when it is not Value: «2,4 МБ»
+	Label  string
+	Title  string
+	Height int
+	Peak   bool
+}
+
 type overviewData struct {
 	Period   periodView
 	Overview *analytics.Overview
-	Timeline template.HTML
 	Active   int
 	Feed     []feedLine
 	IsToday  bool
-	HasBots  bool // the traffic reader has counted automated clients for this period
+	// HasBots: the traffic reader has counted automated clients for this period; Bots is how many.
+	HasBots bool
+	Bots    int64
+
+	Bars       []visitBar
+	ShowValues bool   // few bars: the number above each one
+	Peak       string // «пик: чт 19 сен»
+	Change     string // «+12,4% к прошлой неделе»; "" when the period before had no visits
+	// Requests of the period (without spam), how many of them are done, and how quickly the first
+	// answer came; nil without the store of requests.
+	Funnel     *leads.Funnel
+	Requests   int
+	Conversion float64 // requests per visitor of the period, %
+	Contacts   float64 // page views that reached the «contacts» section, %
+	// PrevView is the average time on a page in the period before; ViewBar compares with it.
+	PrevView int
+	ViewBar  float64
+	Devices  []analytics.Share
 }
 
 func (h *Handler) feedLine(at time.Time, visitor, path, kind, target string) feedLine {
 	return feedLine{Time: at.In(h.opts.Location).Format("15:04:05"), Visitor: visitor, Path: path, Text: describe(kind, target)}
 }
 
+// overviewFeed is how many lines of activity the page starts with; the tile shows the newest.
+const overviewFeed = 12
+
 func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	period := h.period(r, "/")
-	overview, err := h.opts.Reports.Overview(r.Context(), period.Period)
+	overview, err := h.opts.Reports.Overview(ctx, period.Period)
 	if err != nil {
 		h.fail(w, r, "cannot compute the overview", err)
 		return
 	}
-	recent, err := h.opts.Reports.Recent(r.Context(), feedLength)
+	recent, err := h.opts.Reports.Recent(ctx, overviewFeed)
 	if err != nil {
 		h.fail(w, r, "cannot read the recent activity", err)
 		return
 	}
-	bots := h.botClients(r.Context(), period.Period)
+	before, err := h.opts.Reports.Totals(ctx, period.Period.Shift(-1))
+	if err != nil {
+		h.fail(w, r, "cannot count the period before", err)
+		return
+	}
+	bots := h.botClients(ctx, period.Period)
 	data := overviewData{
 		Period:   period,
 		Overview: overview,
-		Timeline: timelineChart(overview, bots),
 		HasBots:  bots != nil,
-		Active:   h.opts.Active(r.Context(), activeWindow),
+		Active:   h.opts.Active(ctx, activeWindow),
 		IsToday:  period.Period.Days() == 1 && period.Period.From.Equal(h.opts.Reports.Today()),
+		PrevView: before.AvgViewMs,
+		Devices:  overview.Devices,
+	}
+	for _, count := range bots {
+		data.Bots += count
+	}
+	data.Bars, data.ShowValues, data.Peak = visitBars(overview, bots)
+	if before.Visits > 0 {
+		data.Change = fmt.Sprintf("%s%% %s", signedDecimal(float64(overview.Totals.Visits-before.Visits)*100/float64(before.Visits)), comparedWith[period.Period.Kind])
+	}
+	if before.AvgViewMs > 0 {
+		data.ViewBar = math.Min(100, float64(overview.Totals.AvgViewMs)*100/float64(before.AvgViewMs))
+	}
+	for _, section := range overview.Sections {
+		if section.Name == "contacts" {
+			data.Contacts = section.Reach
+		}
+	}
+	if h.opts.Leads != nil {
+		from, to := period.Period.From, period.Period.To.AddDate(0, 0, 1)
+		if data.Funnel, err = h.opts.Leads.Funnel(ctx, from, to); err != nil {
+			h.fail(w, r, "cannot count the requests of the period", err)
+			return
+		}
+		data.Requests = data.Funnel.Total - data.Funnel.Spam
+		data.Conversion = percentOf(data.Requests, overview.Totals.Visitors)
 	}
 	for _, item := range recent {
 		data.Feed = append(data.Feed, h.feedLine(item.At, item.Visitor, item.Path, item.Type, item.Target))
@@ -148,7 +214,80 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	rename(overview.Clicks, func(target string) string {
 		return strings.TrimPrefix(describe(analytics.TypeClick, target), "клик: ")
 	})
-	h.render(w, r, http.StatusOK, "overview", view{Title: "Обзор", Nav: "overview", Data: data})
+	h.render(w, r, http.StatusOK, "overview", view{Title: "Обзор · " + period.Kind, Nav: "overview", Data: data})
+}
+
+// comparedWith ends «+12,4% …»: what the period is compared with.
+var comparedWith = map[string]string{"day": "к прошлому дню", "week": "к прошлой неделе", "month": "к прошлому месяцу", "custom": "к прошлому периоду"}
+
+// visitBars turns the timeline into bars: people's visits (the bots of the server log go to the
+// tooltip), the tallest one marked as the peak.
+func visitBars(overview *analytics.Overview, bots []int64) (bars []visitBar, values bool, peak string) {
+	timeline := overview.Timeline
+	highest, top := 0, -1
+	for i, bucket := range timeline {
+		if total := bucket.Organic + bucket.Ads; total > highest {
+			highest, top = total, i
+		}
+	}
+	every := 1
+	switch count := len(timeline); {
+	case overview.Hourly:
+		every = 3
+	case count > 120:
+		every = 30
+	case count > 45:
+		every = 7
+	case count > 14:
+		every = 5
+	}
+	for i, bucket := range timeline {
+		total := bucket.Organic + bucket.Ads
+		bar := visitBar{Value: total, Title: bucketTitle(bucketLabel(bucket.Start, overview.Hourly), bucket, overview.Hourly), Peak: i == top}
+		if len(bots) == len(timeline) && bots[i] > 0 {
+			bar.Title += fmt.Sprintf("; ботов: %d", bots[i])
+		}
+		if highest > 0 {
+			bar.Height = int(math.Round(float64(total) * 78 / float64(highest)))
+		}
+		if i%every == 0 {
+			bar.Label = barLabel(bucket.Start, overview.Hourly, len(timeline))
+		}
+		bars = append(bars, bar)
+	}
+	if top >= 0 {
+		peak = "пик: " + barLabel(timeline[top].Start, overview.Hourly, 0)
+		if !overview.Hourly {
+			peak = "пик: " + weekdays[timeline[top].Start.Weekday()] + " " + fmt.Sprintf("%d %s", timeline[top].Start.Day(), shortMonths[timeline[top].Start.Month()])
+		}
+	}
+	return bars, len(timeline) <= 14, peak
+}
+
+// barLabel is what stands under a bar: «чт» for a week, «19» for a month, «14:00» for a day.
+func barLabel(start time.Time, hourly bool, buckets int) string {
+	switch {
+	case hourly:
+		return start.Format("15:04")
+	case buckets > 0 && buckets <= 7:
+		return weekdays[start.Weekday()]
+	case buckets > 0 && buckets <= 45:
+		return fmt.Sprint(start.Day())
+	default:
+		return start.Format("02.01")
+	}
+}
+
+// signedDecimal: «+12,4», «−3», «0».
+func signedDecimal(value float64) string {
+	switch {
+	case value > 0.05:
+		return "+" + decimal(value)
+	case value < -0.05:
+		return "−" + decimal(-value)
+	default:
+		return "0"
+	}
 }
 
 func rename(shares []analytics.Share, name func(string) string) {

@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
@@ -26,6 +28,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/loyalty"
 	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
@@ -78,6 +81,10 @@ type Options struct {
 	// false when there is no token (invitations can be prepared before there is a bot).
 	BotAccess *telegram.Access
 	BotStatus func() (telegram.Status, bool)
+	// BotRemindAfter: the bot reminds about a request nobody took after this long (0 — never);
+	// BotDigestAt is the time of its morning summary, "" — none.
+	BotRemindAfter time.Duration
+	BotDigestAt    string
 
 	// Inbox reads the service mailbox; nil — answers by mail are not read (no IMAP_ADDR).
 	// Mailbox is its address, KeepLettersDays how long a letter without a request waits.
@@ -96,6 +103,12 @@ type Options struct {
 	Achievements *achievements.Service
 	// Mailboxes of the site's own mail server (the «Почта» screen); nil — the screen is not there.
 	Mailboxes *mailboxes.Service
+	// The mail the site sends: its From, the submission server, and the queue of what goes out
+	// by mail and to Telegram (outbox.Recent, outbox.SentSince); nil — not shown.
+	MailFrom   string
+	SMTPAddr   string
+	Deliveries func(ctx context.Context, limit int) ([]outbox.Entry, error)
+	SentSince  func(ctx context.Context, channel string, since time.Time) (int, error)
 }
 
 // Handler serves the admin area.
@@ -103,6 +116,9 @@ type Handler struct {
 	opts      Options
 	templates map[string]*template.Template
 	static    http.Handler
+
+	headerMu sync.Mutex
+	header   headerCache // the slower numbers of the ticker (frame.go)
 }
 
 // New parses the embedded templates.
@@ -122,6 +138,9 @@ func New(opts Options) (*Handler, error) {
 	if opts.Loyalty == nil {
 		opts.Loyalty = func() config.Loyalty { return config.Loyalty{} }
 	}
+	if opts.Active == nil {
+		opts.Active = func(context.Context, time.Duration) int { return 0 }
+	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
 		"path": func(parts ...string) string { return opts.Prefix + strings.Join(parts, "") },
@@ -133,7 +152,20 @@ func New(opts Options) (*Handler, error) {
 			}
 			return template.URL(opts.Prefix + path + "?" + query) //nolint:gosec // query comes from url.Values.Encode
 		},
-		"time":       func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		"time": func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		// «23 сен 14:12», and the year when it is not this one
+		"when": func(t time.Time) string {
+			local := t.In(opts.Location)
+			text := fmt.Sprintf("%d %s", local.Day(), shortMonths[local.Month()])
+			if local.Year() != time.Now().In(opts.Location).Year() {
+				text += fmt.Sprintf(" %d", local.Year())
+			}
+			return text + local.Format(" 15:04")
+		},
+		"dayMonth": func(t time.Time) string {
+			local := t.In(opts.Location)
+			return fmt.Sprintf("%d %s", local.Day(), shortMonths[local.Month()])
+		},
 		"clock":      func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
 		"day":        func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
 		"duration":   func(ms any) string { return duration(toInt64(ms)) },
@@ -172,7 +204,31 @@ func New(opts Options) (*Handler, error) {
 		"eggName":     named(eggNames, "—"),
 		"orderName":   named(orderNames, "—"),
 		"percentOf":   func(part, whole float64) float64 { return 100 * part / max(whole, 1) },
-		"since":       func(t time.Time) string { return ago(time.Since(t)) },
+		"icon":        icon,
+		"step":        step,
+		"initials":    initials,
+		"botRole":     botRoleName,
+		"lasting":     lasting,
+		"spanOf":      spanOf,
+		"sub":         func(a, b any) int64 { return toInt64(a) - toInt64(b) },
+		// share: part of whole in percent, whatever numbers the report uses; 0 of nothing
+		"share": func(part, whole any) float64 {
+			if w := toNumber(whole); w > 0 {
+				return toNumber(part) * 100 / w
+			}
+			return 0
+		},
+		"shortDuration": shortDuration,
+		"minsec":        func(ms any) string { return minutesSeconds(toInt64(ms)) },
+		"average": func(total, count any) int64 { // total ÷ count, and 0 when there is nothing to divide by
+			if n := toInt64(count); n > 0 {
+				return toInt64(total) / n
+			}
+			return 0
+		},
+		"decimalPct": func(value float64) string { return decimal(value) + "%" },
+		"short":      named(shortNames, "—"),
+		"since":      func(t time.Time) string { return ago(time.Since(t)) },
 	}
 	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error",
 		"clients", "client", "mail", "achievements"} {
@@ -252,6 +308,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/bot/invite", h.private(h.botInvite))
 	mux.Handle("POST "+p+"/bot/invite/revoke", h.private(h.botInviteRevoke))
 	mux.Handle("POST "+p+"/bot/member", h.private(h.botMember))
+	mux.Handle("POST "+p+"/bot/add", h.private(h.botAdd))
+	mux.Handle("POST "+p+"/bot/role", h.private(h.botRole))
 	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
 	mux.Handle("GET "+p+"/status", h.private(h.status))
 	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
@@ -382,6 +440,13 @@ type view struct {
 	Flash     string // a message about what just happened
 	Error     string
 	Data      any
+
+	// The frame (frame.go): the icons of the rail, the numbers of the ticker, the avatar's letters,
+	// and the address of the site for «Открыть сайт».
+	Rail     []navItem
+	Ticker   [][]tick
+	Initials string
+	SiteURL  string
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
@@ -406,6 +471,14 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	}
 	if v.Flash == "" {
 		v.Flash = flashText[r.URL.Query().Get("ok")]
+	}
+	if v.Session != nil {
+		v.Rail = h.nav(v)
+		v.Ticker = h.ticker(r.Context(), v)
+		v.Initials = initials(v.Session.User.Login)
+		if h.opts.SiteHost != "" {
+			v.SiteURL = "https://" + h.opts.SiteHost + "/"
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
@@ -448,6 +521,8 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"mail-request":     "Запрос отправлен: почтовый сервер применит его через несколько секунд.",
 
 	"bot-invite-revoked": "Приглашение отозвано.",
+	"bot-added":          "Доступ выдан: бот начнёт присылать этому человеку заявки, как только тот напишет боту /start.",
+	"bot-role":           "Роль изменена.",
 	"bot-disabled":       "Доступ отключён: бот больше не отвечает этому человеку и не присылает ему заявки.",
 	"bot-enabled":        "Доступ возвращён.",
 }

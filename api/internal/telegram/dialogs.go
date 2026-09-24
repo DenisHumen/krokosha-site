@@ -84,6 +84,10 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 	if len(parts) > 3 {
 		argument = parts[3]
 	}
+	if !member.CanAct() && parts[1] != "full" && parts[1] != "history" && parts[1] != "card" {
+		answer(notifyOnly, true)
+		return
+	}
 	card, err := b.opts.Leads.Card(ctx, leadID)
 	if errors.Is(err, leads.ErrNotFound) {
 		answer("Заявки больше нет: данные клиента удалены.", true)
@@ -136,7 +140,7 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 		answer(number+": "+strings.ToLower(statusNames[status]), false)
 	case "card":
 		answer("", false)
-		b.sendCard(ctx, chatID, leadID)
+		b.sendCard(ctx, chatID, member, leadID)
 	case "full":
 		answer("", false)
 		b.sendFull(ctx, chatID, card)

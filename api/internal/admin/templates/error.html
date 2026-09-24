@@ -1,6 +1,8 @@
 {{define "content"}}
-  <div class="page-head">
-    <h1>{{.Title}}</h1>
+  <div class="lost">
+    <section class="tile">
+      <span class="headline">{{.Title}}</span>
+      <a class="btn btn-bright" href="{{path "/"}}">← К обзору</a>
+    </section>
   </div>
-  <p><a class="button button-ghost" href="{{path "/"}}">← К обзору</a></p>
 {{end}}

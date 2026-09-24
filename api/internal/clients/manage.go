@@ -113,6 +113,24 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]Row, int, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
+	out, err := s.rows(ctx, where, args, filter.Limit, filter.Offset)
+	return out, total, err
+}
+
+// Summary is one account the way the list shows it: for the card of a request.
+func (s *Service) Summary(ctx context.Context, id int64) (*Row, error) {
+	out, err := s.rows(ctx, "c.id = ?", []any{id}, 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, ErrNotFound
+	}
+	return &out[0], nil
+}
+
+// rows reads accounts with their requests; where is built from constants by the callers.
+func (s *Service) rows(ctx context.Context, where string, args []any, limit, offset int) ([]Row, error) {
 	//nolint:gosec // as above
 	rows, err := s.opts.DB.QueryContext(ctx, `
 		SELECT c.id, c.name, c.company, COALESCE(c.email, ''), COALESCE(c.telegram_username, ''), COALESCE(c.telegram_id, 0),
@@ -121,9 +139,9 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]Row, int, error) {
 		       COALESCE(SUM(l.kind = 'request' AND l.status = 'done'), 0), COALESCE(SUM(IF(l.kind = 'request' AND l.status = 'done', COALESCE(l.amount, 0), 0)), 0),
 		       GREATEST(COALESCE(MAX(l.updated_at), c.created_at), COALESCE(c.last_seen_at, c.created_at)) AS activity
 		FROM clients c LEFT JOIN leads l ON l.client_id = c.id AND l.status <> 'spam'
-		WHERE `+where+` GROUP BY c.id ORDER BY activity DESC, c.id DESC LIMIT ? OFFSET ?`, append(args, filter.Limit, filter.Offset)...)
+		WHERE `+where+` GROUP BY c.id ORDER BY activity DESC, c.id DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer rows.Close()
 	var out []Row
@@ -134,7 +152,7 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]Row, int, error) {
 		var carriedSpent float64
 		if err := rows.Scan(&row.ID, &row.Name, &row.Company, &row.Email, &row.Telegram, &telegramID, &row.CreatedAt, &row.LastSeenAt, &row.Disabled,
 			&row.Personal, &carriedOrders, &carriedSpent, &row.Requests, &row.Open, &row.Orders, &row.Spent, &row.LastActivity); err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		if row.Telegram != "" {
 			row.Telegram = "@" + row.Telegram
@@ -145,7 +163,36 @@ func (s *Service) List(ctx context.Context, filter Filter) ([]Row, int, error) {
 		row.Spent += carriedSpent
 		out = append(out, row)
 	}
-	return out, total, rows.Err()
+	return out, rows.Err()
+}
+
+// Totals are the numbers on top of the admin's list of clients.
+type Totals struct {
+	Clients  int
+	New      int // accounts made since the given moment
+	Repeat   int // accounts with two completed orders or more, the carried ones counted
+	Telegram int // accounts that sign in with Telegram
+	// Revenue is what the requests completed since the start of the year came to — every
+	// client's, with an account or without, as far as the owner entered the amounts.
+	Revenue float64
+}
+
+// Totals counts them: since is where «new» begins, year where the revenue does.
+func (s *Service) Totals(ctx context.Context, since, year time.Time) (Totals, error) {
+	var out Totals
+	err := s.opts.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(created_at >= ?), 0), COALESCE(SUM(orders >= 2), 0), COALESCE(SUM(telegram), 0)
+		FROM (SELECT c.created_at, c.telegram_id IS NOT NULL AS telegram,
+		             c.orders_carried + COALESCE(SUM(l.kind = 'request' AND l.status = 'done'), 0) AS orders
+		      FROM clients c LEFT JOIN leads l ON l.client_id = c.id GROUP BY c.id) AS accounts`, since.UTC()).
+		Scan(&out.Clients, &out.New, &out.Repeat, &out.Telegram)
+	if err != nil {
+		return out, err
+	}
+	err = s.opts.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(amount), 0) FROM leads WHERE kind = 'request' AND status = 'done' AND COALESCE(closed_at, updated_at) >= ?`, year.UTC()).
+		Scan(&out.Revenue)
+	return out, err
 }
 
 // Count returns how many accounts there are.

@@ -1,117 +1,148 @@
 {{define "content"}}
   {{$d := .Data}}
   {{$csrf := .Session.CSRFToken}}
-  <div class="page-head">
-    <h1>Telegram-бот</h1>
-  </div>
-
   {{with $d.NewInvite}}
     {{/* Shown once: the database keeps only a hash of the code. */}}
     <section class="notice notice-ok" role="status">
-      <p><strong>Приглашение для {{if eq .Role "owner"}}владельца{{else}}участника{{end}}</strong> — на одного человека, действует до {{time .Expires}}. Скопируйте сейчас: больше оно нигде не появится.</p>
-      {{if .Link}}<p>Ссылка: <code class="copyable">{{.Link}}</code></p>{{end}}
-      <p>Или написать боту: <code class="copyable">/start {{.Code}}</code></p>
+      <div class="stack">
+        <p><strong>Приглашение для {{if eq .Role "owner"}}владельца{{else if eq .Role "notify"}}наблюдателя (только уведомления){{else}}участника{{end}}</strong> — на одного человека, действует до {{time .Expires}}. Скопируйте сейчас: больше оно нигде не появится.</p>
+        {{if .Link}}<p>Ссылка: <code class="copy">{{.Link}}</code></p>{{end}}
+        <p>Или написать боту: <code class="copy">/start {{.Code}}</code></p>
+      </div>
     </section>
   {{end}}
 
-  <div class="dashboard">
-    <div class="dash-main">
-      <section class="card">
-        <h2 class="card-title">Кто имеет доступ</h2>
-        <div class="card-body">
-          <div class="table-scroll">
-            <table class="table">
-              <thead>
-                <tr><th>Имя</th><th>Роль</th><th>С какого дня</th><th>Кто пригласил</th><th></th></tr>
-              </thead>
-              <tbody>
-                {{range $d.Members}}
-                  <tr>
-                    <td>{{.Name}}{{if .Username}} <span class="muted">· @{{.Username}}</span>{{end}}{{if .DisabledAt.Valid}} <span class="tag tag-warn">доступ отключён</span>{{end}}</td>
-                    <td>{{if .Owner}}владелец{{else}}участник{{end}}</td>
-                    <td class="mono">{{time .CreatedAt}}</td>
-                    <td>{{.InvitedBy}}</td>
-                    <td class="right">
-                      <form method="post" action="{{path "/bot/member"}}">
-                        <input type="hidden" name="csrf" value="{{$csrf}}" />
-                        <input type="hidden" name="id" value="{{.ID}}" />
-                        {{if .DisabledAt.Valid}}
-                          <button class="button button-ghost" type="submit" name="action" value="enable">Вернуть доступ</button>
-                        {{else}}
-                          <button class="button button-ghost" type="submit" name="action" value="disable">Отключить</button>
-                        {{end}}
-                      </form>
-                    </td>
-                  </tr>
-                {{else}}
-                  <tr><td colspan="5" class="muted">Пока никого. Создайте приглашение для владельца и откройте его в Telegram.</td></tr>
-                {{end}}
-              </tbody>
-            </table>
+  <section class="tiles">
+    {{if $d.Configured}}
+      <div class="tile tile-accent tile-stat">
+        <div class="tile-head"><span>{{if $d.Status.Username}}@{{$d.Status.Username}}{{else}}Бот{{end}}</span><span>{{if and $d.Status.Username (not $d.Status.LastError)}}● онлайн{{else if $d.Status.Username}}● есть ошибки{{else}}○ подключается{{end}}</span></div>
+        <div class="num-row"><span class="num">{{if $d.Status.ConnectedAt.IsZero}}—{{else}}{{lasting $d.Status.ConnectedAt}}{{end}}</span><span class="num-sub">{{if $d.Status.ConnectedAt.IsZero}}ещё не подключён{{else}}онлайн с {{time $d.Status.ConnectedAt}}{{end}}</span></div>
+      </div>
+    {{else}}
+      <div class="tile tile-beige tile-stat">
+        <div class="tile-head"><span>Бот не настроен</span></div>
+        <p class="text-s">Создайте бота у @BotFather и добавьте токен: <code>sudo /opt/krokosha/repo/deploy/install.sh --telegram-token-file ФАЙЛ</code>. Заявки тем временем ждут в очереди.</p>
+      </div>
+    {{end}}
+    <div class="tile tile-stat">
+      <span class="label">Сообщений</span>
+      <div class="num-row"><span class="num">{{$d.Messages}}</span><span class="num-sub">/ неделя</span></div>
+    </div>
+    <div class="tile tile-stat">
+      <span class="label">Входов через бот</span>
+      <div class="num-row"><span class="num">{{if $d.HasAccounts}}{{$d.ByTelegram}}{{else}}—{{end}}</span><span class="num-sub">{{if $d.HasAccounts}}/ {{$d.Accounts}} кабинетов{{end}}</span></div>
+    </div>
+    <div class="tile tile-stat">
+      <span class="label">Напоминания</span>
+      <div class="num-row"><span class="num">{{if $d.RemindAfter}}{{shortDuration $d.RemindAfter}}{{else}}выкл{{end}}</span><span class="num-sub">{{if $d.RemindAfter}}без ответа{{end}}{{if $d.DigestAt}} · сводка {{$d.DigestAt}}{{end}}</span></div>
+    </div>
+
+    <section class="tile span-2">
+      <span class="label">Доступ к боту</span>
+      <div class="lines">
+        {{range $d.Members}}
+          <div class="line line-grid">
+            <span class="who">
+              <span class="who-name">{{.Name}}{{if .DisabledAt.Valid}} <span class="pill pill-warn">доступ отключён</span>{{end}}</span>
+              <span class="who-sub">{{if .Username}}@{{.Username}}{{else}}id {{.TelegramID}}{{end}} · с {{time .CreatedAt}}, пригласил(а) {{.InvitedBy}}</span>
+            </span>
+            <span class="pill pill-muted">{{botRole .Role}}</span>
+            <span class="muted">{{if .LastSeenAt.Valid}}{{since .LastSeenAt.Time}}{{else}}не писал(а){{end}}</span>
           </div>
-          <p class="muted">Человек привязывается по числовому идентификатору Telegram, а не по нику: ник можно сменить или отдать. Отключение действует сразу — бот перестаёт отвечать и присылать заявки.</p>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">Приглашения, которые ещё действуют</h2>
-        <div class="card-body">
-          <table class="table">
-            <tbody>
-              {{range $d.Invites}}
-                <tr>
-                  <td>{{if eq .Role "owner"}}владелец{{else}}участник{{end}}</td>
-                  <td class="muted">создал(а) {{.CreatedBy}}, {{time .CreatedAt}}</td>
-                  <td class="muted">до {{time .ExpiresAt}}</td>
-                  <td class="right">
-                    <form method="post" action="{{path "/bot/invite/revoke"}}">
-                      <input type="hidden" name="csrf" value="{{$csrf}}" />
-                      <input type="hidden" name="id" value="{{.ID}}" />
-                      <button class="button button-ghost" type="submit">Отозвать</button>
-                    </form>
-                  </td>
-                </tr>
+          <div class="actions actions-end">
+            <form class="form-row" method="post" action="{{path "/bot/role"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <input type="hidden" name="id" value="{{.ID}}" />
+              <label class="visually-hidden" for="role-{{.ID}}">Роль: {{.Name}}</label>
+              <select class="input input-s" id="role-{{.ID}}" name="role">
+                {{$current := .Role}}{{range $d.Roles}}<option value="{{.ID}}"{{if eq .ID $current}} selected{{end}}>{{.Name}}</option>{{end}}
+              </select>
+              <button class="btn btn-s" type="submit">Сменить роль</button>
+            </form>
+            <form class="inline" method="post" action="{{path "/bot/member"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <input type="hidden" name="id" value="{{.ID}}" />
+              {{if .DisabledAt.Valid}}
+                <button class="btn btn-s" type="submit" name="action" value="enable">Вернуть доступ</button>
               {{else}}
-                <tr><td class="muted">Нет.</td></tr>
+                <button class="btn btn-s btn-ghost" type="submit" name="action" value="disable">Отключить</button>
               {{end}}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+            </form>
+          </div>
+        {{else}}
+          <p class="empty">Пока никого. Создайте приглашение для владельца и откройте его в Telegram.</p>
+        {{end}}
+      </div>
+      <p class="text-xs">Человек привязывается по числовому идентификатору Telegram, а не по нику: ник можно сменить или отдать. Отключение и смена роли действуют сразу.</p>
+    </section>
 
-    <div class="dash-side stack">
-      <section class="card">
-        <h2 class="card-title">Состояние</h2>
-        <div class="card-body">
-          {{if not $d.Configured}}
-            <p><span class="dot dot-warn"></span>Бот не настроен.</p>
-            <p class="muted">Создайте бота у @BotFather и добавьте токен: <code>sudo /opt/krokosha/repo/deploy/install.sh --telegram-token-file ФАЙЛ</code> — установщик проверит токен и перезапустит сервис. Заявки тем временем ждут в очереди и придут в бот, как только он появится.</p>
-          {{else}}
-            <dl class="facts">
-              <div><dt>Бот</dt><dd>{{if $d.Status.Username}}<span class="dot dot-ok"></span>@{{$d.Status.Username}}{{else}}<span class="dot dot-warn"></span>подключается…{{end}}</dd></div>
-              <div><dt>Обновления</dt><dd>{{if eq $d.Status.Mode "polling"}}сайт сам спрашивает Telegram{{else}}Telegram вызывает сайт (webhook){{end}}</dd></div>
-              {{if not $d.Status.ConnectedAt.IsZero}}<div><dt>Подключён</dt><dd>{{time $d.Status.ConnectedAt}}</dd></div>{{end}}
-              <div><dt>Последнее обновление</dt><dd>{{if $d.Status.LastUpdateAt.IsZero}}после запуска ещё не было{{else}}{{ago $d.Status.LastUpdateAt}} назад{{end}}</dd></div>
-            </dl>
-            {{if $d.Status.LastError}}<p class="notice notice-error">{{time $d.Status.LastErrorAt}} — {{$d.Status.LastError}}</p>{{end}}
-          {{end}}
-        </div>
-      </section>
+    <section class="tile span-2">
+      <span class="label">Команды</span>
+      <div class="lines">
+        {{range $d.Commands}}<div class="line line-pair"><span class="link">/{{.Command}}</span><span class="line-name soft">{{.Description}}</span></div>{{end}}
+        <div class="line line-pair"><span class="link">/lead K-0042</span><span class="line-name soft">Карточка заявки по номеру</span></div>
+        <div class="line line-pair"><span class="link">/search</span><span class="line-name soft">Поиск по имени, контакту, тексту</span></div>
+        <div class="line line-pair"><span class="link">ответ свайпом</span><span class="line-name soft">На карточку или сообщение клиента — ответ клиенту</span></div>
+        <div class="line line-pair"><span class="link">/invite, /users</span><span class="line-name soft">Приглашения и доступ — для владельца</span></div>
+      </div>
+    </section>
 
-      <section class="card">
-        <h2 class="card-title">Новое приглашение</h2>
-        <form class="card-body" method="post" action="{{path "/bot/invite"}}">
-          <input type="hidden" name="csrf" value="{{$csrf}}" />
-          <label for="invite-role">Кого приглашаем</label>
-          <select id="invite-role" name="role">
-            <option value="member">участника — получает заявки и работает с ними</option>
-            <option value="owner">владельца — ещё и управляет доступом</option>
+    <section class="tile span-2">
+      <span class="label">Выдать доступ</span>
+      <form class="form" method="post" action="{{path "/bot/invite"}}">
+        <input type="hidden" name="csrf" value="{{$csrf}}" />
+        <label class="field" for="invite-role">Приглашение — одноразовый код на 24 часа
+          <select class="input input-s" id="invite-role" name="role">
+            {{range $d.Roles}}<option value="{{.ID}}">{{.Name}} — {{.Hint}}</option>{{end}}
           </select>
-          <button class="button" type="submit">Создать</button>
-          <p class="muted">Код одноразовый и живёт 24 часа. То же самое — командой <code>/invite</code> в боте или <code>sudo krokosha-cli bot invite</code> на сервере.</p>
+        </label>
+        <button class="btn btn-accent" type="submit">+ Создать приглашение</button>
+      </form>
+      <details class="more">
+        <summary>Или по Telegram ID, без приглашения</summary>
+        <form class="form" method="post" action="{{path "/bot/add"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <span class="form-row">
+            <label class="visually-hidden" for="add-id">Telegram ID</label>
+            <input class="input input-s" id="add-id" name="telegram_id" inputmode="numeric" placeholder="123456789" required />
+            <label class="visually-hidden" for="add-name">Имя</label>
+            <input class="input input-s" id="add-name" name="name" maxlength="64" placeholder="Имя для карточек" />
+          </span>
+          <span class="form-row">
+            <label class="visually-hidden" for="add-role">Роль</label>
+            <select class="input input-s" id="add-role" name="role">{{range $d.Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+            <button class="btn" type="submit">Выдать доступ</button>
+          </span>
+          <p class="text-xs">ID показывает, например, @userinfobot. Человек начнёт получать заявки, когда напишет боту /start.</p>
         </form>
-      </section>
-    </div>
-  </div>
+      </details>
+    </section>
+
+    <section class="tile span-2">
+      <span class="label">Приглашения и состояние</span>
+      <div class="lines">
+        {{range $d.Invites}}
+          <div class="line">
+            <span class="who"><span class="line-name">{{botRole .Role}}</span><span class="who-sub">создал(а) {{.CreatedBy}}, {{time .CreatedAt}} · до {{time .ExpiresAt}}</span></span>
+            <form class="inline" method="post" action="{{path "/bot/invite/revoke"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <input type="hidden" name="id" value="{{.ID}}" />
+              <button class="btn btn-s btn-ghost" type="submit">Отозвать</button>
+            </form>
+          </div>
+        {{else}}
+          <p class="empty">Действующих приглашений нет.</p>
+        {{end}}
+      </div>
+      {{if $d.Configured}}
+        <dl class="lines">
+          <div><dt>Обновления</dt><dd>{{if eq $d.Status.Mode "polling"}}сайт сам спрашивает Telegram{{else}}Telegram вызывает сайт (webhook){{end}}</dd></div>
+          <div><dt>Последнее обновление</dt><dd>{{if $d.Status.LastUpdateAt.IsZero}}после запуска ещё не было{{else}}{{ago $d.Status.LastUpdateAt}}{{end}}</dd></div>
+        </dl>
+        {{if $d.Status.LastError}}<p class="notice notice-error">{{time $d.Status.LastErrorAt}} — {{$d.Status.LastError}}</p>{{end}}
+      {{else}}
+        <p class="text-xs">То же самое — командой <code>/invite</code> в боте или <code>sudo krokosha-cli bot invite</code> на сервере. Установщик проверит токен (<code>--telegram-token-file</code>) и перезапустит сервис.</p>
+      {{end}}
+    </section>
+  </section>
 {{end}}

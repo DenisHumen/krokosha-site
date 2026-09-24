@@ -65,8 +65,8 @@ func TestRequestsListAndBoard(t *testing.T) {
 	}
 	for _, want := range []string{
 		"2 заявки", "#K-0001", "#K-0002", "Иван Петров", "Сети и оборудование", "DevOps", "mikrotik-kyiv", "Реклама",
-		`<span class="badge">2</span>`, // new requests, next to «Заявки» in the menu
-		`<span class="status status-new">Новая</span>`,
+		`<span class="tick-v">2 новые</span>`, // new requests, in the header
+		`<span class="pill status-new">Новая</span>`,
 		`href="` + prefix + `/leads/1"`,
 	} {
 		if !strings.Contains(list.body, want) {
@@ -148,7 +148,7 @@ func TestWorkingOnARequest(t *testing.T) {
 	}
 
 	// A ready-made answer is put into the form without any script, then sent.
-	picked := regexp.MustCompile(`<option value="(\d+)">Нужны детали</option>`).FindStringSubmatch(card.body)
+	picked := regexp.MustCompile(`href="` + prefix + `/leads/\d+\?template=(\d+)#reply">Нужны детали</a>`).FindStringSubmatch(card.body)
 	if picked == nil {
 		t.Fatal("no template to pick")
 	}
@@ -185,8 +185,8 @@ func TestWorkingOnARequest(t *testing.T) {
 	if refusal == nil {
 		t.Fatal("no refusal template to pick")
 	}
-	if draft = s.do(http.MethodGet, prefix+path+"?template="+refusal[1], nil, nil); !regexp.MustCompile(`(?s)<textarea id="reject-letter"[^>]*>Здравствуйте, Иван Петров!`).MatchString(draft.body) ||
-		regexp.MustCompile(`(?s)<textarea id="reply-text"[^>]*>Здравствуйте`).MatchString(draft.body) {
+	if draft = s.do(http.MethodGet, prefix+path+"?template="+refusal[1], nil, nil); !regexp.MustCompile(`(?s)<textarea[^>]* id="reject-letter"[^>]*>Здравствуйте, Иван Петров!`).MatchString(draft.body) ||
+		regexp.MustCompile(`(?s)<textarea[^>]* id="reply-text"[^>]*>Здравствуйте`).MatchString(draft.body) {
 		t.Error("the refusal template must fill the refusal letter, and only it")
 	}
 	if got := s.post(path+"/status", url.Values{"status": {leads.StatusRejected}, "reason": {"бюджет не подходит"}, "letter": {"К сожалению, в этот бюджет не уложиться."}}); got.status != http.StatusSeeOther {

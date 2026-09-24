@@ -134,6 +134,7 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		b.opts.Log.Error("telegram: cannot check access", "error", err)
 		return
 	}
+	b.seen(ctx, member, message.From)
 
 	switch command {
 	case "/start":
@@ -151,7 +152,7 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 	case "/leads":
 		b.leadsCommand(ctx, message.Chat.ID, member, "")
 	case "/lead":
-		b.leadCommand(ctx, message.Chat.ID, argument)
+		b.leadCommand(ctx, message.Chat.ID, member, argument)
 	case "/search":
 		b.searchCommand(ctx, message.Chat.ID, argument)
 	case "/stats":
@@ -162,6 +163,10 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Отменено."})
 	case "":
+		if !member.CanAct() {
+			b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: notifyOnly})
+			return
+		}
 		// A reply (a swipe) to a message about a request answers the client of that request.
 		if b.replyTo(ctx, message, member) {
 			return
@@ -250,7 +255,37 @@ func (b *Bot) redeem(ctx context.Context, message *Message, code string) {
 
 // --- members ----------------------------------------------------------------------------------------
 
+// notifyOnly is what a person with the role «notify» hears when they try to do something.
+const notifyOnly = "У вас доступ только к уведомлениям: карточки заявок приходят сюда, а отвечать клиентам и менять заявки могут участники и владелец."
+
+// seen notes that a person with access is here (the admin's «Бот» screen shows it).
+func (b *Bot) seen(ctx context.Context, member *Member, who *User) {
+	if who == nil {
+		return
+	}
+	if err := b.opts.Access.Seen(ctx, member.TelegramID, who.Username); err != nil {
+		b.opts.Log.Warn("telegram: cannot note that a member was here", "error", err)
+	}
+}
+
+// roleNames are the roles in the words of invitations: «приглашение для участника».
+var roleNames = map[string]string{RoleOwner: "владельца", RoleMember: "участника", RoleNotify: "наблюдателя (только уведомления)"}
+
 func (b *Bot) help(member *Member) string {
+	if !member.CanAct() {
+		return strings.Join([]string{
+			"Новые заявки с сайта приходят сюда карточками: кто клиент, что нужно, откуда пришёл. Карточка меняется сама, когда заявку берут в работу, отвечают клиенту или закрывают.",
+			"",
+			"У вас доступ только к уведомлениям: отвечать клиентам и менять заявки могут участники и владелец.",
+			"",
+			"/leads — открытые заявки: все, новые, ждут клиента",
+			"/lead K-0042 — карточка заявки по номеру",
+			"/search текст — поиск по имени, контакту, тексту, номеру",
+			"/stats — неделя в цифрах",
+			"/mute 2h — заявки приходят без звука; /mute off — вернуть звук",
+			"/help — эта справка",
+		}, "\n")
+	}
 	lines := []string{
 		"Новые заявки с сайта приходят сюда карточками с кнопками: взять в работу, ответить клиенту, оставить заметку, отклонить. Что бы ни сделали вы или коллеги — здесь или в админке, — карточка меняется у всех сразу.",
 		"",
@@ -266,7 +301,7 @@ func (b *Bot) help(member *Member) string {
 	}
 	if member.Owner() {
 		lines = append(lines,
-			"/invite — приглашение для нового участника (действует 24 часа, на одного человека); /invite owner — для ещё одного владельца",
+			"/invite — приглашение для нового участника (действует 24 часа, на одного человека); /invite owner — для ещё одного владельца; /invite notify — для того, кому нужны только уведомления",
 			"/users — кто имеет доступ; отключить или вернуть доступ")
 	}
 	return strings.Join(lines, "\n")
@@ -278,8 +313,8 @@ func (b *Bot) invite(ctx context.Context, message *Message, member *Member, argu
 		return
 	}
 	role := RoleMember
-	if strings.EqualFold(argument, RoleOwner) {
-		role = RoleOwner
+	if argument := strings.ToLower(argument); argument == RoleOwner || argument == RoleNotify {
+		role = argument
 	}
 	code, _, err := b.opts.Access.Invite(ctx, role, "bot:"+member.Actor())
 	if err != nil {
@@ -294,9 +329,9 @@ func (b *Bot) invite(ctx context.Context, message *Message, member *Member, argu
 // InviteText is what the maker of an invitation gets to pass on: the link, and the code for
 // those who would rather type.
 func (b *Bot) InviteText(role, code string) string {
-	roleName := "участника"
-	if role == RoleOwner {
-		roleName = "владельца"
+	roleName, ok := roleNames[role]
+	if !ok {
+		roleName = roleNames[RoleMember]
 	}
 	text := "Приглашение для " + roleName + " — на одного человека, действует 24 часа.\n\n"
 	if username := b.Username(); username != "" {
@@ -330,8 +365,11 @@ func (b *Bot) usersView(ctx context.Context) (string, Keyboard, error) {
 		if member.Username != "" {
 			line += " (@" + Escape(member.Username) + ")"
 		}
-		if member.Owner() {
+		switch member.Role {
+		case RoleOwner:
 			line += " — владелец"
+		case RoleNotify:
+			line += " — только уведомления"
 		}
 		id := strconv.FormatInt(member.ID, 10)
 		if member.DisabledAt.Valid {
@@ -359,6 +397,7 @@ func (b *Bot) callback(ctx context.Context, query *CallbackQuery) {
 		answer("Нет доступа.", true)
 		return
 	}
+	b.seen(ctx, member, &query.From)
 	parts := strings.Split(query.Data, ":")
 	switch {
 	case len(parts) == 3 && parts[0] == "u":

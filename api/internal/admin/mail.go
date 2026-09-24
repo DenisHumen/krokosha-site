@@ -3,9 +3,16 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
+	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
+	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
+	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
+	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
 
 // «Почта»: the mailboxes of the site's own mail server — a mailbox for a colleague with a password
@@ -22,6 +29,68 @@ type mailData struct {
 	// Issued is the password just made, shown once: nothing keeps it after this page.
 	Issued        string
 	IssuedAddress string
+
+	// The mail of the site itself: where letters come from and through what, how many went out
+	// this week, how reading the service mailbox goes, and the queue of deliveries.
+	From      string
+	SMTP      string
+	SentWeek  int
+	Mailbox   string
+	Inbox     *inbox.Status
+	ReplyTo   string // what the address of the answers to a request looks like
+	Queue     []queueRow
+	HasQueue  bool
+	QueueNote string
+}
+
+// queueRow is a delivery of the outbox in words.
+type queueRow struct {
+	outbox.Entry
+	What  string
+	State string
+	Tone  string // ok | warn | wait
+}
+
+func queueRowOf(entry outbox.Entry, location *time.Location) queueRow {
+	row := queueRow{Entry: entry, What: deliveryNames[entry.Kind]}
+	if row.What == "" {
+		row.What = entry.Kind
+	}
+	if entry.Kind == leads.TaskNotify && entry.Channel == outbox.ChannelTelegram {
+		row.What = "Карточка заявки — в бот"
+	}
+	if entry.LeadID > 0 {
+		row.What += " · #" + leads.Number(entry.LeadID)
+	}
+	clock := func(t time.Time) string { return t.In(location).Format("15:04") }
+	switch {
+	case entry.Status == "sent" && entry.SentAt.Valid:
+		row.State, row.Tone = "отправлено "+clock(entry.SentAt.Time), "ok"
+	case entry.Status == "sent":
+		row.State, row.Tone = "отправлено", "ok"
+	case entry.Status == "failed":
+		row.State, row.Tone = "не доставлено", "warn"
+	case entry.Attempts > 0:
+		row.State, row.Tone = "ошибка · повтор "+clock(entry.NextAttempt), "warn"
+	case entry.Status == "sending":
+		row.State, row.Tone = "отправляется", "wait"
+	default:
+		row.State, row.Tone = "в очереди", "wait"
+	}
+	return row
+}
+
+// deliveryNames say what a task of the outbox carries.
+var deliveryNames = map[string]string{
+	leads.TaskNotify:        "Новая заявка — вам",
+	leads.TaskAutoReply:     "Подтверждение клиенту",
+	leads.TaskReply:         "Ответ клиенту",
+	leads.TaskSiteReply:     "Ответ в кабинете — уведомление клиенту",
+	leads.TaskClientMessage: "Сообщение клиента — сотрудникам",
+	leads.TaskUndelivered:   "Письмо не дошло — сотрудникам",
+	clients.TaskLogin:       "Код входа в кабинет",
+	telegram.TaskStranger:   "Сообщение в бот без заявки — сотрудникам",
+	outbox.KindAlert:        "Предупреждение сервера",
 }
 
 func (h *Handler) mailPage(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +99,38 @@ func (h *Handler) mailPage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) showMail(w http.ResponseWriter, r *http.Request, status int, problem, issuedAddress, issued string) {
 	m := h.opts.Mailboxes
-	data := mailData{Installed: m.Installed(), Domain: m.Domain(), Host: "mail." + m.Domain(), Issued: issued, IssuedAddress: issuedAddress}
+	data := mailData{Installed: m.Installed(), Domain: m.Domain(), Host: "mail." + m.Domain(), Issued: issued, IssuedAddress: issuedAddress,
+		SMTP: h.opts.SMTPAddr, Mailbox: h.opts.Mailbox}
+	if from, err := mail.ParseAddress(h.opts.MailFrom); err == nil {
+		data.From = from.Address
+	}
+	if local, domain, ok := strings.Cut(h.opts.Mailbox, "@"); ok {
+		data.ReplyTo = local + "+0042.a8f3@" + domain
+	}
+	if h.opts.Inbox != nil {
+		state := h.opts.Inbox.Status(r.Context())
+		data.Inbox = &state
+	}
+	ctx := r.Context()
+	if h.opts.SentSince != nil {
+		sent, err := h.opts.SentSince(ctx, outbox.ChannelEmail, time.Now().AddDate(0, 0, -7))
+		if err != nil {
+			h.fail(w, r, "cannot count the letters sent", err)
+			return
+		}
+		data.SentWeek = sent
+	}
+	if h.opts.Deliveries != nil {
+		entries, err := h.opts.Deliveries(ctx, 12)
+		if err != nil {
+			h.fail(w, r, "cannot read the queue of deliveries", err)
+			return
+		}
+		data.HasQueue = true
+		for _, entry := range entries {
+			data.Queue = append(data.Queue, queueRowOf(entry, h.opts.Location))
+		}
+	}
 	if data.Installed {
 		var err error
 		if data.Mailboxes, err = m.List(); err != nil {

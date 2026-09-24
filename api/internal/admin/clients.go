@@ -30,9 +30,11 @@ type clientsData struct {
 	Total  int
 	Search string
 	Page   int
+	Pages  int
 	Prev   string
 	Next   string
 	Rules  config.Loyalty
+	Totals clients.Totals // accounts, new in 30 days, repeat clients, revenue of the year
 }
 
 type clientRow struct {
@@ -62,7 +64,12 @@ func (h *Handler) showClients(w http.ResponseWriter, r *http.Request, status int
 		}
 		data.Items = append(data.Items, item)
 	}
-	data.Total = total
+	data.Total, data.Pages = total, max(1, (total+clientsPerPage-1)/clientsPerPage)
+	now := time.Now().In(h.opts.Location)
+	if data.Totals, err = h.opts.Clients.Totals(r.Context(), now.AddDate(0, 0, -30), time.Date(now.Year(), 1, 1, 0, 0, 0, 0, h.opts.Location)); err != nil {
+		h.fail(w, r, "cannot count the clients", err)
+		return
+	}
 	link := func(page int) string {
 		values := url.Values{}
 		if data.Search != "" {

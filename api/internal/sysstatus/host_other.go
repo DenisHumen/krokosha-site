@@ -9,3 +9,6 @@ import "runtime"
 func readHost(string) Host {
 	return Host{CPUs: runtime.NumCPU()}
 }
+
+// readCPUTimes has no counters to read here.
+func readCPUTimes() (busy, total uint64, ok bool) { return 0, 0, false }

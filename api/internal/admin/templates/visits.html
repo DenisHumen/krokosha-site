@@ -1,45 +1,40 @@
-{{define "content"}}
-  <div class="page-head">
-    <h1>Визиты · {{.Data.Period.Title}}</h1>
+{{define "head"}}
+  <div class="head">
+    <h1>Визиты · {{.Data.Period.Kind}}</h1>
     {{template "period" .Data.Period}}
   </div>
+{{end}}
 
-  <section class="card">
-    <h2 class="card-title">{{plural .Data.Total "визит" "визита" "визитов"}}</h2>
-    <div class="card-body">
-      <div class="table-scroll">
-      <table class="table table-wide">
-        <thead>
-          <tr><th>Начало</th><th>Посетитель</th><th>Вход</th><th>Источник</th><th>Страниц</th><th>На экране</th><th>Прокрутка</th><th>Действия</th><th>Устройство</th></tr>
-        </thead>
-        <tbody>
-          {{range .Data.Visits}}
-            <tr>
-              <td class="mono"><a href="{{href (print "/visits/" .ID) $.Data.Period.Query}}">{{time .Started}}</a></td>
-              <td class="mono">{{.Visitor}}</td>
-              <td class="mono">{{.Entry}}</td>
-              <td>{{source .Source}}{{if .Referrer}} <span class="muted">· {{.Referrer}}</span>{{end}}{{if .Campaign}} <span class="muted">· {{.Campaign}}</span>{{end}}</td>
-              <td>{{.Pages}}</td>
-              <td>{{duration .ViewMs}}</td>
-              <td>{{.MaxScroll}}%</td>
-              <td>{{.Actions}}{{if .Converted}} <span class="tag tag-ok">контакт</span>{{end}}</td>
-              <td>{{device .Device}} <span class="muted">· {{.Browser}} · {{.OS}}</span></td>
-            </tr>
-          {{else}}
-            <tr><td colspan="9" class="muted">За этот период визитов нет.</td></tr>
-          {{end}}
-        </tbody>
-      </table>
-      </div>
-
-      {{if gt .Data.Pages 1}}
-        <p class="pager">
-          {{if .Data.Prev}}<a class="button button-ghost" href="{{href "/visits" (print .Data.Period.Query "&page=" .Data.Prev)}}">← Новее</a>{{end}}
-          <span class="muted">страница {{.Data.Page}} из {{.Data.Pages}}</span>
-          {{if .Data.Next}}<a class="button button-ghost" href="{{href "/visits" (print .Data.Period.Query "&page=" .Data.Next)}}">Старше →</a>{{end}}
-        </p>
+{{define "content"}}
+  {{$d := .Data}}
+  <section class="table" aria-label="Визиты">
+    <div class="table-in cols-visits-in">
+      <div class="table-title table-title-l"><span>{{plural $d.Total "визит" "визита" "визитов"}} · {{$d.Period.Short}}</span><span class="muted-2">посетитель — псевдоним на один день</span></div>
+      <div class="t-head cols-visits" aria-hidden="true"><span>Начало</span><span>Город</span><span>Вход</span><span>Стр.</span><span>Время</span><span>Прокрутка</span><span>Источник</span><span>Устройство</span></div>
+      {{range $d.Visits}}
+        <a class="t-row cols-visits" href="{{href (print "/visits/" .ID) $d.Period.Query}}">
+          <span class="muted" title="{{time .Started}}">{{when .Started}}</span>
+          <span class="ellipsis">{{if .City}}{{.City}}{{else}}{{country .Country}}{{end}}</span>
+          <span class="ellipsis"><span class="link">{{.Entry}}</span>{{if .Converted}} <span class="pill pill-ok">контакт</span>{{end}}{{if .Actions}} <span class="muted-2">· действий {{.Actions}}</span>{{end}}</span>
+          <span>{{.Pages}}</span>
+          <span>{{duration .ViewMs}}</span>
+          <span>{{.MaxScroll}}%</span>
+          <span class="who"><span class="soft">{{source .Source}}</span>{{if or .Referrer .Campaign}}<span class="cell-sub">{{.Referrer}}{{if and .Referrer .Campaign}} · {{end}}{{.Campaign}}</span>{{end}}</span>
+          <span class="who"><span>{{device .Device}}</span><span class="cell-sub">{{.Browser}} · {{.OS}}</span></span>
+        </a>
+      {{else}}
+        <p class="t-empty">За этот период визитов нет.</p>
       {{end}}
-      <p class="muted">Посетитель — псевдоним на один день: на следующий день тот же человек получит другой, и связать их нельзя.</p>
+      {{if gt $d.Pages 1}}
+        <div class="t-foot">
+          <span>Страница {{$d.Page}} / {{$d.Pages}}</span>
+          <span class="actions">
+            {{if $d.Prev}}<a class="btn btn-bright" href="{{href "/visits" (print $d.Period.Query "&page=" $d.Prev)}}">← Новее</a>{{end}}
+            {{if $d.Next}}<a class="btn btn-bright" href="{{href "/visits" (print $d.Period.Query "&page=" $d.Next)}}">Старше →</a>{{end}}
+          </span>
+        </div>
+      {{end}}
     </div>
   </section>
+  <p class="text-xs">Посетитель — псевдоним на один день: на следующий день тот же человек получит другой, и связать их нельзя. Адрес хранится усечённым.</p>
 {{end}}

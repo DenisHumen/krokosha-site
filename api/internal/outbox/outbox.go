@@ -337,3 +337,45 @@ func ReadStats(ctx context.Context, db *sql.DB, now time.Time) (Stats, error) {
 	stats.OldestPending, stats.LastError = oldest.Time, lastError.String
 	return stats, err
 }
+
+// Entry is a task the way the admin's «Почта» screen lists it.
+type Entry struct {
+	ID          int64
+	CreatedAt   time.Time
+	Channel     string
+	Kind        string
+	LeadID      int64 // 0 — the task is not about a request
+	Status      string
+	Attempts    int
+	NextAttempt time.Time
+	LastError   string
+	SentAt      sql.NullTime
+}
+
+// Recent lists the newest tasks, newest first.
+func Recent(ctx context.Context, db *sql.DB, limit int) ([]Entry, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, created_at, channel, kind, COALESCE(lead_id, 0), status, attempts, next_attempt_at, COALESCE(last_error, ''), sent_at
+		FROM outbox ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var entry Entry
+		if err := rows.Scan(&entry.ID, &entry.CreatedAt, &entry.Channel, &entry.Kind, &entry.LeadID, &entry.Status, &entry.Attempts,
+			&entry.NextAttempt, &entry.LastError, &entry.SentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, entry)
+	}
+	return out, rows.Err()
+}
+
+// SentSince counts the tasks of a channel delivered since a moment.
+func SentSince(ctx context.Context, db *sql.DB, channel string, since time.Time) (int, error) {
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox WHERE channel = ? AND status = 'sent' AND sent_at >= ?`, channel, since.UTC()).Scan(&count)
+	return count, err
+}
