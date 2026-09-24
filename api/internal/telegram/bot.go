@@ -160,11 +160,19 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 	case "/mute":
 		b.muteCommand(ctx, message.Chat.ID, member, argument)
 	case "/cancel":
+		if current, err := b.opts.Access.Dialog(ctx, member.TelegramID); err == nil {
+			b.dropFiles(current)
+		}
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Отменено."})
 	case "":
 		if !member.CanAct() {
 			b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: notifyOnly})
+			return
+		}
+		// A file goes with the answer being written (files.go).
+		if hasMedia(message) {
+			b.staffFile(ctx, message, member)
 			return
 		}
 		// A reply (a swipe) to a message about a request answers the client of that request.

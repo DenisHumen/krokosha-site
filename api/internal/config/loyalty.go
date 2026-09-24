@@ -16,6 +16,36 @@ type Loyalty struct {
 	Tiers    []LoyaltyTier `yaml:"tiers"`
 	// BigOrder is the sum from which an order earns the «big project» achievement; 0 — never.
 	BigOrder float64 `yaml:"big_order"`
+	// Priority: how the admin area paints the conversations of a client by their orders; the site
+	// never shows it. None in the content — the design's thresholds (DefaultPriority).
+	Priority LoyaltyPriority `yaml:"priority"`
+}
+
+// LoyaltyPriority is loyalty.priority: the completed orders, or their sum, that make a client a
+// regular one (Middle) and a key one (High) for the colour of their conversations in the admin area.
+// One completed order makes a client «low»; none — «new».
+type LoyaltyPriority struct {
+	Middle PriorityLevel `yaml:"middle"`
+	High   PriorityLevel `yaml:"high"`
+}
+
+// PriorityLevel is reached by Orders completed orders or by Spent in their sum, whichever comes
+// first; 0 turns a condition off.
+type PriorityLevel struct {
+	Orders int     `yaml:"orders"`
+	Spent  float64 `yaml:"spent"`
+}
+
+// DefaultPriority is the proposal of the design «компактный чат»: two orders or 3000 — a regular
+// client, four or 8000 — a key one.
+var DefaultPriority = LoyaltyPriority{Middle: PriorityLevel{Orders: 2, Spent: 3000}, High: PriorityLevel{Orders: 4, Spent: 8000}}
+
+// PriorityRules are the thresholds of the content, or the design's when it names none.
+func (l Loyalty) PriorityRules() LoyaltyPriority {
+	if l.Priority == (LoyaltyPriority{}) {
+		return DefaultPriority
+	}
+	return l.Priority
 }
 
 // LoyaltyTier is a level of a regular client, reached by Orders completed orders or by Spent in their
@@ -43,6 +73,17 @@ func (l Loyalty) Validate() error {
 	}
 	if l.BigOrder < 0 {
 		return fmt.Errorf("loyalty.big_order: %v is not a sum", l.BigOrder)
+	}
+	if p := l.Priority; p != (LoyaltyPriority{}) {
+		for name, level := range map[string]PriorityLevel{"middle": p.Middle, "high": p.High} {
+			if level.Orders < 0 || level.Spent < 0 || (level.Orders == 0 && level.Spent == 0) {
+				return fmt.Errorf("loyalty.priority.%s: needs orders or spent above zero", name)
+			}
+		}
+		if (p.High.Orders > 0 && p.Middle.Orders > 0 && p.High.Orders <= p.Middle.Orders) ||
+			(p.High.Spent > 0 && p.Middle.Spent > 0 && p.High.Spent <= p.Middle.Spent) {
+			return errors.New("loyalty.priority.high: asks more than middle")
+		}
 	}
 	seen := map[string]bool{}
 	for i, tier := range l.Tiers {

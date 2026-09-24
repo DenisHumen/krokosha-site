@@ -25,8 +25,12 @@ type Dialog struct {
 	Reason string `json:"reason,omitempty"` // why a request is being rejected
 	// Template: the answer was made from it — its files go with the text, and the card does not
 	// offer it again.
-	Template int64     `json:"template,omitempty"`
-	At       time.Time `json:"at"`
+	Template int64 `json:"template,omitempty"`
+	// Files the member sent for the answer (files.go), kept on the disk until «send» gives them to
+	// it; Album is the Telegram album the last of them came in.
+	Files []leads.Upload `json:"files,omitempty"`
+	Album string         `json:"album,omitempty"`
+	At    time.Time      `json:"at"`
 }
 
 // dialogLifetime: a text typed hours later is not an answer to a forgotten question.
@@ -164,7 +168,11 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 		if card.ReplyVia == leads.MethodPhone {
 			prompt, placeholder = "Клиент оставил телефон: сюда записывается итог звонка по "+number+".", "Позвонил — итог: …"
 		}
-		b.ask(ctx, member, &Dialog{Kind: dialogReply, LeadID: leadID}, chatID, prompt, placeholder)
+		next := &Dialog{Kind: dialogReply, LeadID: leadID}
+		if current, err := b.opts.Access.Dialog(ctx, member.TelegramID); err == nil && current != nil && current.Kind == dialogReply && current.LeadID == leadID {
+			next.Files = current.Files // a new text, the same files
+		}
+		b.ask(ctx, member, next, chatID, prompt, placeholder)
 	case "tpl":
 		answer("", false)
 		b.useTemplate(ctx, member, query, card, argument)
@@ -178,6 +186,9 @@ func (b *Bot) leadButton(ctx context.Context, query *CallbackQuery, member *Memb
 	case "silent":
 		b.rejectNow(ctx, member, card, "", answer, done, failed)
 	case "cancel":
+		if current, err := b.opts.Access.Dialog(ctx, member.TelegramID); err == nil {
+			b.dropFiles(current)
+		}
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		answer("Отменено.", false)
 		done("Отменено: " + number + ".")
@@ -414,6 +425,13 @@ func (b *Bot) preview(ctx context.Context, member *Member, chatID int64, card *l
 		}
 		text += "\n\n📎 С ответом уйдут файлы шаблона: " + strings.Join(names, ", ")
 	}
+	if len(dialog.Files) > 0 && card.ReplyVia != leads.MethodPhone {
+		names := make([]string, 0, len(dialog.Files))
+		for _, file := range dialog.Files {
+			names = append(names, Escape(file.Filename))
+		}
+		text += "\n\n📎 Ваши файлы: " + strings.Join(names, ", ")
+	}
 	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Text: text, Buttons: buttons})
 }
 
@@ -432,7 +450,7 @@ func (b *Bot) templateFiles(ctx context.Context, dialog *Dialog) []leads.Media {
 func (b *Bot) sendDraft(ctx context.Context, member *Member, card *leads.Card, answer func(string, bool), done func(string), failed func(error)) {
 	number := "#" + card.Lead.Number()
 	dialog, err := b.opts.Access.Dialog(ctx, member.TelegramID)
-	if err != nil || dialog == nil || dialog.LeadID != card.Lead.ID || strings.TrimSpace(dialog.Draft) == "" {
+	if err != nil || dialog == nil || dialog.LeadID != card.Lead.ID || (strings.TrimSpace(dialog.Draft) == "" && len(dialog.Files) == 0) {
 		answer("Черновик не найден — начните с кнопки на карточке.", true)
 		return
 	}
@@ -440,7 +458,7 @@ func (b *Bot) sendDraft(ctx context.Context, member *Member, card *leads.Card, a
 		b.rejectNow(ctx, member, card, dialog.Draft, answer, done, failed)
 		return
 	}
-	answerOf := leads.Answer{Text: dialog.Draft}
+	answerOf := leads.Answer{Text: dialog.Draft, Files: dialog.Files}
 	if dialog.Template != 0 {
 		answerOf.Templates = []int64{dialog.Template}
 		if card.ReplyVia != leads.MethodPhone {

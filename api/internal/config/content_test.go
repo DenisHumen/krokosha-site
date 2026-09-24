@@ -36,3 +36,35 @@ func TestSenderNameOfTheSite(t *testing.T) {
 		t.Errorf("content/site.yaml signs letters as %q", got)
 	}
 }
+
+// The thresholds of the admin area's priority: the design's when the content names none; no level
+// of nothing, and no key client who asks less than a regular one.
+func TestPriorityRules(t *testing.T) {
+	if got := (Loyalty{}).PriorityRules(); got != DefaultPriority {
+		t.Errorf("no thresholds in the content: %+v", got)
+	}
+	own := Loyalty{Priority: LoyaltyPriority{Middle: PriorityLevel{Orders: 1}, High: PriorityLevel{Orders: 3, Spent: 5000}}}
+	if err := own.Validate(); err != nil || own.PriorityRules() != own.Priority {
+		t.Errorf("thresholds of the content: %+v %v", own.PriorityRules(), err)
+	}
+	for name, bad := range map[string]LoyaltyPriority{
+		"high asks less than middle": {Middle: PriorityLevel{Orders: 3}, High: PriorityLevel{Orders: 2}},
+		"a level of nothing":         {Middle: PriorityLevel{Orders: 1}},
+		"a negative sum":             {Middle: PriorityLevel{Orders: 1, Spent: -5}, High: PriorityLevel{Orders: 4}},
+	} {
+		if err := (Loyalty{Priority: bad}).Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	dir, err := FindContentDir(".")
+	if err != nil {
+		t.Skip(err)
+	}
+	content, err := LoadContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := content.Site.Loyalty.PriorityRules(); got.Middle.Orders != 2 || got.High.Spent != 8000 {
+		t.Errorf("content/site.yaml → loyalty.priority: %+v", got)
+	}
+}

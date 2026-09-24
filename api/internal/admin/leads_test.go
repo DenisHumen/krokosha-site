@@ -617,7 +617,20 @@ func TestEveryKindOfConversationOpens(t *testing.T) {
 	inquiry := s.addLead(func(sub *leads.Submission) {
 		sub.Kind, sub.ClientID, sub.ParentID, sub.Subject, sub.Trusted = leads.KindInquiry, client, first.ID, "Вопрос по счёту", true
 	})
+	// Files and no words, from Telegram: the tile of the file, no made-up text.
+	s.leads.UseFiles(leads.NewFiles(t.TempDir()))
+	photo, err := leads.SaveFromClient(s.leads.Files(), "photo_2026-09-24.jpg", int64(len(jpegBytes)), bytes.NewReader(jpegBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.leads.ClientWrote(ctx, first.ID, leads.Incoming{Channel: leads.ChannelTelegram, Files: []leads.Upload{photo}}); err != nil {
+		t.Fatal(err)
+	}
 	s.signIn()
+	if page := s.do(http.MethodGet, fmt.Sprintf("%s/leads/%d", prefix, first.ID), nil, nil); !strings.Contains(page.body, "photo_2026-09-24.jpg") ||
+		strings.Contains(page.body, leads.FilesOnly) {
+		t.Error("a message of files alone: the file is not shown, or words are made up for it")
+	}
 
 	inline := regexp.MustCompile(`(?i)<[^>]*\s(?:style|on[a-z]+)=`)
 	for _, c := range []struct {

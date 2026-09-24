@@ -26,9 +26,12 @@ const (
 	AlbumMax = 10
 )
 
-// FileRef is a file of a sent message, as Telegram knows it.
+// FileRef is a file of a message, as Telegram knows it. The size and the name come with a file
+// somebody sent (a photo has no name).
 type FileRef struct {
-	FileID string `json:"file_id"`
+	FileID   string `json:"file_id"`
+	FileSize int64  `json:"file_size,omitempty"`
+	FileName string `json:"file_name,omitempty"`
 }
 
 // FileID is the id of the file a sent message carries, when it went out as the kind it was sent

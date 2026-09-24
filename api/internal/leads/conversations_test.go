@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
 )
 
 // The messenger's list: tabs, what the staff have not read, and the pulse that notices a client
@@ -120,9 +122,14 @@ func TestPriority(t *testing.T) {
 		spent  float64
 		want   int
 	}{{0, 0, 0}, {1, 100, 1}, {2, 0, 2}, {0, 3000, 2}, {3, 2999, 2}, {4, 0, 3}, {1, 8000, 3}} {
-		if got := Activity(c.orders, c.spent); got != c.want {
+		if got := Activity(config.DefaultPriority, c.orders, c.spent); got != c.want {
 			t.Errorf("activity of %d orders, $%.0f: %d, want %d", c.orders, c.spent, got, c.want)
 		}
+	}
+	// Thresholds of the content: one order is enough to be a regular client, ten to be a key one.
+	rules := config.LoyaltyPriority{Middle: config.PriorityLevel{Orders: 1}, High: config.PriorityLevel{Orders: 10, Spent: 50000}}
+	if Activity(rules, 1, 0) != PriorityMid || Activity(rules, 9, 49999) != PriorityMid || Activity(rules, 2, 50000) != PriorityHigh {
+		t.Error("the thresholds of the content are not the ones counted by")
 	}
 	// Halfway rounds up: a new client with a big budget is in the middle.
 	for _, c := range [][3]int{{0, 0, 0}, {0, 1, 1}, {0, 3, 2}, {3, 0, 2}, {3, 3, 3}, {1, 2, 2}} {
@@ -171,11 +178,51 @@ func TestABounceFailsOneAddress(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, messageID).Scan(&summary); err != nil || summary != "sent" {
 		t.Errorf("the answer reached one address: %q %v", summary, err)
 	}
-	// A report that names no address: the answer itself is marked, as before deliveries.
+	// A report that names no address, of a letter that went to two: which one, nobody knows —
+	// nothing is unsaid.
 	if err := store.UndeliveredTo(ctx, id, "reply-7@krokosha.test", "", "returned", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, messageID).Scan(&summary); err != nil || summary != "failed" {
-		t.Errorf("a report without an address: %q %v", summary, err)
+	if err := f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, messageID).Scan(&summary); err != nil || summary != "sent" {
+		t.Errorf("an unclear report: %q %v", summary, err)
+	}
+
+	// Mail and Telegram: the letter comes back, and the report names no address. The one address
+	// it went to failed — and the answer stays delivered, as Telegram took it.
+	other := f.seed(func(v map[string]string) { v["contact_value"] = "olena@company.com" })
+	if _, err := f.db.Exec(`INSERT INTO bot_clients (lead_id, telegram_id, linked_at) VALUES (?, 888, ?)`, other, f.now); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Minute)
+	both, err := store.ReplyWith(ctx, other, "denis", Answer{Text: "Почтой и в Telegram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byMessage, _ = store.Deliveries(ctx, other)
+	if len(byMessage[both]) != 2 {
+		t.Fatalf("deliveries by mail and Telegram: %+v", byMessage[both])
+	}
+	for _, d := range byMessage[both] {
+		id := ""
+		if d.Channel == ChannelEmail {
+			id = "reply-9@krokosha.test"
+		}
+		if err := store.MarkTarget(ctx, d.ID, "sent", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.UndeliveredTo(ctx, other, "reply-9@krokosha.test", "", "Host or domain name not found", nil); err != nil {
+		t.Fatal(err)
+	}
+	byMessage, _ = store.Deliveries(ctx, other)
+	states = nil
+	for _, d := range byMessage[both] {
+		states = append(states, d.Channel+":"+d.Status)
+	}
+	if got := strings.Join(states, " "); got != "email:failed telegram:sent" {
+		t.Errorf("a letter back, Telegram took it: %s", got)
+	}
+	if err := f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, both).Scan(&summary); err != nil || summary != "sent" {
+		t.Errorf("the answer reached the client in Telegram: %q %v", summary, err)
 	}
 }

@@ -2297,6 +2297,75 @@ a.tile {
   font-size: 11px;
 }
 
+/* «+ Файл»: the input itself is hidden, the label is the button (and takes its focus ring). */
+.chat .composer-file {
+  flex: none;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.chat .composer-file:focus-within {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* The files chosen for the message: a chip each, with the button that takes it back. */
+.composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-files li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  border-radius: 2px;
+  background: var(--c-tile-2);
+  font: 11px var(--font-mono);
+  color: var(--c-fg-2);
+}
+
+.composer-files .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-files .size {
+  flex: none;
+  color: var(--c-muted);
+}
+
+.chat .composer-files button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--c-muted);
+  font: 13px var(--font-mono);
+  cursor: pointer;
+}
+
+.chat .composer-files button:hover,
+.chat .composer-files button:focus-visible {
+  color: var(--c-fg);
+  background: var(--c-line);
+}
+
 .closed {
   display: flex;
   flex: none;

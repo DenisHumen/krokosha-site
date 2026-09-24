@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
 )
 
 // The «Заявки» screen of the admin area is a messenger (design «компактный чат»): a list of
@@ -210,7 +212,7 @@ func (s *Store) PulseOf(ctx context.Context, lead int64) (Pulse, error) {
 
 // Priority of a conversation, 0–3: how much the client has ordered, and how big this request is.
 // The line of the list and the chip of the conversation are painted by it, and the list may be
-// sorted by it. The thresholds are a proposal of the design («компактный чат»).
+// sorted by it. The thresholds of orders are in content/site.yaml → loyalty.priority.
 const (
 	PriorityNew = iota // a new client, a small or unknown budget
 	PriorityLow
@@ -218,13 +220,17 @@ const (
 	PriorityHigh
 )
 
-// Activity is what the client's orders say: 4 orders or $8000 — a key client; 2 or $3000 — a
-// regular one; 1 — ordered before; none — new.
-func Activity(orders int, spent float64) int {
+// Activity is what the client's orders say, by the thresholds of content/site.yaml → loyalty.priority
+// (the design's: 4 orders or 8000 — a key client; 2 or 3000 — a regular one); one order — ordered
+// before; none — new.
+func Activity(rules config.LoyaltyPriority, orders int, spent float64) int {
+	reached := func(level config.PriorityLevel) bool {
+		return (level.Orders > 0 && orders >= level.Orders) || (level.Spent > 0 && spent >= level.Spent)
+	}
 	switch {
-	case orders >= 4 || spent >= 8000:
+	case reached(rules.High):
 		return PriorityHigh
-	case orders >= 2 || spent >= 3000:
+	case reached(rules.Middle):
 		return PriorityMid
 	case orders >= 1:
 		return PriorityLow

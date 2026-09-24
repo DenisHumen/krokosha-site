@@ -664,7 +664,20 @@ const scriptTexts = JSON.stringify({
               <form class="composer" data-thread-reply novalidate>
                 <p class="done" role="status" data-done></p>
                 <p class="error" role="alert" data-error></p>
+                <ul class="composer-files" data-reply-chosen hidden></ul>
                 <div class="composer-row">
+                  <label class="btn btn-s composer-file" title={A.requests.attach_hint}>
+                    <span aria-hidden="true">+</span>
+                    {A.requests.attach}
+                    <input
+                      class="visually-hidden"
+                      type="file"
+                      name="files"
+                      multiple
+                      accept="image/jpeg,image/png,video/mp4,application/pdf,.docx,text/plain"
+                      data-reply-files
+                    />
+                  </label>
                   <label class="visually-hidden" for="reply-text">
                     {A.requests.write}
                   </label>

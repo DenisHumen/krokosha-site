@@ -201,8 +201,14 @@ async function mockApi(page: Page, signedIn = false): Promise<Api> {
     const path = new URL(request.url()).pathname;
     calls.push(`${request.method()} ${path}`);
     if (request.method() === 'POST') {
-      bodies.set(path, request.postDataJSON());
-      expect(request.headers()['content-type']).toBe('application/json');
+      if (path.startsWith('/api/account/upload/')) {
+        // A message with files: a form, with the token of the session like any change.
+        expect(request.headers()['content-type']).toMatch(/^multipart\/form-data; boundary=/);
+        bodies.set(path, request.postData() ?? '');
+      } else {
+        bodies.set(path, request.postDataJSON());
+        expect(request.headers()['content-type']).toBe('application/json');
+      }
       if (session && !path.startsWith('/api/account/login'))
         expect(request.headers()['x-csrf-token']).toBe(CSRF);
     }
@@ -557,6 +563,68 @@ test.describe('personal account', () => {
     await expect(
       thread.locator('[data-thread-facts]').getByRole('link', { name: '#K-0042' }),
     ).toHaveAttribute('href', '#K-0042');
+  });
+
+  test('sends files with a message and says which cannot go', async ({ page }) => {
+    const api = await mockApi(page, true);
+    await page.goto('/account/#K-0042');
+    const thread = page.locator('[data-thread]');
+    const field = thread.getByLabel('Your answer');
+    const input = thread.locator('[data-reply-files]');
+    const chips = thread.locator('[data-reply-chosen] li');
+    const path = '/api/account/upload/leads/K-0042/messages';
+    const pdf = Buffer.from('%PDF-1.7\n%%EOF\n');
+
+    // What cannot go is said at once, and nothing is sent.
+    await input.setInputFiles({
+      name: 'setup.exe',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('MZ'),
+    });
+    await expect(thread.locator('[data-error]')).toHaveText(
+      'setup.exe cannot be sent: photos, MP4 videos, PDF, DOCX and TXT are fine.',
+    );
+    await expect(thread.locator('[data-reply-chosen]')).toBeHidden();
+    // Chosen files show as chips; one is taken back.
+    await input.setInputFiles([
+      { name: 'rack.png', mimeType: 'image/png', buffer: PHOTO },
+      { name: 'plan.pdf', mimeType: 'application/pdf', buffer: pdf },
+    ]);
+    await expect(chips).toHaveCount(2);
+    await expect(thread.locator('[data-error]')).toBeEmpty();
+    await thread.getByRole('button', { name: 'Remove rack.png' }).click();
+    await expect(chips).toHaveCount(1);
+    // Files alone are a message too: Enter sends them, as a form to their own path.
+    await field.press('Enter');
+    await expect(thread.locator('[data-done]')).toHaveText('Sent');
+    const body = String(api.bodies.get(path));
+    expect(body).toContain('filename="plan.pdf"');
+    expect(body).not.toContain('rack.png');
+    await expect(chips).toHaveCount(0);
+
+    // What the API turns down comes back — the text and the files — with the name of the file.
+    await page.route(`**${path}`, (route) =>
+      route.fulfill({ json: { ok: false, error: 'file_type', file: 'plan.pdf' } }),
+    );
+    await input.setInputFiles({ name: 'plan.pdf', mimeType: 'application/pdf', buffer: pdf });
+    await field.fill('The plan');
+    await field.press('Enter');
+    await expect(thread.locator('[data-error]')).toHaveText(
+      'plan.pdf cannot be sent: photos, MP4 videos, PDF, DOCX and TXT are fine.',
+    );
+    await expect(field).toHaveValue('The plan');
+    await expect(chips).toHaveCount(1);
+    await page.unroute(`**${path}`);
+    // Six files are one too many.
+    await input.setInputFiles(
+      ['1', '2', '3', '4', '5'].map((name) => ({
+        name: `${name}.png`,
+        mimeType: 'image/png',
+        buffer: PHOTO,
+      })),
+    );
+    await expect(thread.locator('[data-error]')).toHaveText('No more than 5 files in a message.');
+    await expect(chips).toHaveCount(1);
   });
 
   test('a closed request offers an inquiry instead of the field to write', async ({ page }) => {
