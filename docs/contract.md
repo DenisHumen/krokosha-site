@@ -372,7 +372,7 @@
 |---|---|
 | `POST /api/account/login` `{ method: "email", email, lang }` или `{ method: "telegram", lang }` | шлёт код на почту (`{ ok, sent_to }` — адрес наполовину скрыт) или даёт ссылку в бота (`{ ok, bot_url }`); ставит cookie `__Host-kl` на 15 минут — код подходит только этому браузеру |
 | `POST /api/account/login/code` `{ code }` | вход по шести цифрам |
-| `POST /api/account/login/link` `{ token }` | вход по кнопке письма или бота: страница получает `#login=<token>` и сразу убирает его из адреса |
+| `POST /api/account/login/link` `{ token }` | вход по кнопке письма или бота: страница получает `#login=<token>` и сразу убирает его из адреса. Только вход: добавление почты или Telegram в кабинет завершается кодом в том же браузере, ссылки для него нет |
 | `POST /api/account/login/link` `{ token, peek: true }` **[v1.10]** | `{ ok, account }` — чей кабинет откроет ссылка (`o***a@company.com` или `Telegram @o***g`); ничего не тратит. Страница спрашивает посетителя и входит, только если он согласился: чужая ссылка тихо впустила бы браузер в чужой кабинет |
 | `GET /api/account/me` | `{ ok, csrf, client, contacts[], loyalty: { enabled, currency, orders, spent, offer, eggs_used, welcome_used, tier?, next?, personal? }, eggs[], orders: { earned: [{ id, at, new }], shares, big_order }, sessions[], bot }`; никто не вошёл — `200 { ok: false, error: "signed_out" }` |
 | `POST /api/account/logout` | выход |
@@ -382,7 +382,7 @@
 | `POST /api/account/inquiries` `{ subject, text, parent }` | новое обращение (`201 { ok, number }`) |
 | `POST /api/account/contacts` `{ kind, value }`, `…/contacts/remove` `{ id }` | контакты и соцсети; виды — `account.contacts.kinds` |
 | `POST /api/account/profile` `{ name, company, lang, preferred }` | профиль |
-| `POST /api/account/email` `{ email }`, `…/telegram` `{}`, `…/telegram/unlink` | сменить почту / привязать Telegram (дальше — код, как при входе, но **только код**: ссылки в таком письме и сообщении бота нет) / отвязать |
+| `POST /api/account/email` `{ email }`, `…/telegram` `{}`, `…/telegram/unlink` | сменить почту / привязать Telegram (дальше — только код, в этом же браузере; если адрес или Telegram входит в другой кабинет, тот присоединяется, и ответ на код — `{ ok, merged: true }`) / отвязать |
 | `POST /api/account/sessions/end` `{ id }` | завершить сеанс; `id: ""` — все, кроме этого |
 | `POST /api/account/eggs` `{ receipts }` | перенести находки браузера в кабинет |
 | `POST /api/account/achievements/seen` `{ ids }` | баннеры новых ачивок за заказы показаны |

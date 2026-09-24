@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/mail"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
 // signInByTelegram goes the whole way with the bot: asks for the link, «opens» it as a Telegram
@@ -149,5 +152,79 @@ func TestTwoAccountsOfOnePersonBecomeOne(t *testing.T) {
 	}
 	if _, err := f.service.Get(ctx, blockedID); err != nil {
 		t.Errorf("the blocked account is gone: %v", err)
+	}
+}
+
+// TestNoLinkAddsAWay: an address or a Telegram account is added to an account by its code only,
+// typed in the browser that asked. Anybody signed in may ask to add somebody else's address — the
+// letter goes to that address — and a link in it would work wherever it is clicked: the owner of the
+// address, talked into clicking, would hand it, their requests and their own account over.
+func TestNoLinkAddsAWay(t *testing.T) {
+	f := newFixture(t)
+	victim := f.browser("203.0.113.50")
+	victim.signInByEmail("victim@example.com")
+	victimID := idOf(t, victim.me())
+	f.submit(victim, "victim@example.com", nil)
+
+	attacker := f.browser("203.0.113.51")
+	attacker.signInByEmail("attacker@example.com")
+	if got := attacker.send(http.MethodPost, "/api/account/email", map[string]string{"email": "victim@example.com"}); got.status != http.StatusOK {
+		t.Fatalf("asking to add an address: %d %s", got.status, got.raw)
+	}
+	l := f.lastLogin()
+
+	// The letter has the code and says what the code does; it has no link.
+	var sent []mail.Message
+	mailer := &Mailer{Service: f.service, SiteHost: "krokosha.com", Deliver: func(_ context.Context, message mail.Message) error {
+		sent = append(sent, message)
+		return nil
+	}}
+	var task outbox.Task
+	_ = f.db.QueryRow(`SELECT id, kind, payload FROM outbox WHERE kind = ? ORDER BY id DESC LIMIT 1`, TaskLogin).Scan(&task.ID, &task.Kind, &task.Payload)
+	if err := mailer.Send(context.Background(), task); err != nil || len(sent) != 1 {
+		t.Fatalf("the letter: %v, %d sent", err, len(sent))
+	}
+	letter := sent[0]
+	for _, part := range []string{letter.Text, letter.HTML} {
+		if strings.Contains(part, "#login=") || !strings.Contains(part, f.service.code(l)) {
+			t.Errorf("a letter adding an address must have the code and no link:\n%s", part)
+		}
+		if !strings.Contains(part, loginTexts[l.lang]["joining"]) || !strings.Contains(part, loginTexts[l.lang]["ignore_add"]) {
+			t.Errorf("the letter does not say that the code joins another account:\n%s", part)
+		}
+	}
+
+	// Nor does a link made for it work, in the owner's browser or in the one that asked.
+	token := f.service.linkToken(l)
+	for _, b := range []*browser{victim, attacker, f.browser("203.0.113.52")} {
+		if got := b.send(http.MethodPost, "/api/account/login/link", map[string]string{"token": token}); got.status != http.StatusUnprocessableEntity {
+			t.Errorf("a link adding an address: %d %s", got.status, got.raw)
+		}
+	}
+	if id := idOf(t, victim.me()); id != victimID {
+		t.Errorf("the victim's account changed: %v, want %v", id, victimID)
+	}
+	if email := attacker.me()["client"].(map[string]any)["email"]; email != "attacker@example.com" {
+		t.Errorf("the attacker's address: %v", email)
+	}
+	var theirs int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM leads WHERE client_id = ?`, int64(victimID)).Scan(&theirs); err != nil || theirs != 1 {
+		t.Errorf("the victim's request: %d on their account (%v)", theirs, err)
+	}
+
+	// The bot gives the code of a Telegram account being linked without a link, and says whether
+	// the code joins another account.
+	owner := f.browser("203.0.113.53")
+	owner.signInByTelegram(901, "Олег", "oleg_net")
+	started := attacker.send(http.MethodPost, "/api/account/telegram", map[string]string{})
+	botURL, _ := started.body["bot_url"].(string)
+	code, err := f.service.TelegramStart(context.Background(), strings.TrimPrefix(botURL, "https://t.me/krokosha_bot?start="), 901, "Олег", "oleg_net")
+	if err != nil || code.LinkURL != "" || !code.Adding || !code.Joining || len(code.Code) != 6 {
+		t.Errorf("the bot's answer to a Telegram account being linked: %+v %v", code, err)
+	}
+	fresh := attacker.send(http.MethodPost, "/api/account/telegram", map[string]string{})
+	botURL, _ = fresh.body["bot_url"].(string)
+	if code, err := f.service.TelegramStart(context.Background(), strings.TrimPrefix(botURL, "https://t.me/krokosha_bot?start="), 902, "Ира", "ira_k"); err != nil || code.Joining {
+		t.Errorf("a Telegram account of nobody: %+v %v", code, err)
 	}
 }
