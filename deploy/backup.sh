@@ -35,11 +35,9 @@ report() {
   fi
   error=${error//\\/\\\\}
   error=${error//\"/\\\"}
-  install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$(dirname "$STATUS_FILE")" 2>/dev/null || true
   printf '{"started_at":"%s","finished_at":"%s","ok":%s,"name":"%s","bytes":%s,"copied_to":"%s","error":"%s"}\n' \
-    "$STARTED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$name" "${size:-0}" "${copied_to:-}" "$error" >"$STATUS_FILE.tmp"
-  chmod 0644 "$STATUS_FILE.tmp"
-  mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
+    "$STARTED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$name" "${size:-0}" "${copied_to:-}" "$error" |
+    write_as_site_user "$STATUS_FILE"
 }
 
 # However the script ends, the status screen learns about it: a backup that silently stopped
@@ -51,7 +49,7 @@ on_exit() {
   [[ $finished == yes ]] && return 0
   [[ -z $work || ! -d $work ]] || rm -rf "$work"
   snapshot=''
-  report false "backup.sh stopped${failed_at:+ at line $failed_at} (exit code $code); details: journalctl -u krokosha-backup.service"
+  report false "backup.sh stopped${failed_at:+ at line $failed_at} (exit code $code); details: journalctl -u krokosha-backup.service" || true
   # The owner hears about it — once a day, by mail and in Telegram.
   if [[ -x $KROKOSHA_ROOT/bin/krokosha-cli ]]; then
     printf 'backup.sh остановился%s, код выхода %s.\nПодробности: sudo journalctl -u krokosha-backup.service -n 50\n' "${failed_at:+ на строке $failed_at}" "$code" |

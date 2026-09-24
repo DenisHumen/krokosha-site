@@ -15,7 +15,11 @@
 # into $KROKOSHA_STATE/requests/mail — the action, the address, the hash of the password — and
 # krokosha-mailbox.path starts `krokosha-mailbox apply`, which checks every request again as if it
 # came from a stranger. What it did, and the list of addresses (never the hashes), go to
-# $KROKOSHA_STATE/mail, which the web service can read and not write.
+# $KROKOSHA_STATE/mail for the admin area.
+#
+# Both directories belong to the site user, who may put a link in the place of any name there. So
+# this script reads, removes and writes in them as that user (as_site): as root it would read
+# /etc/shadow into the log, or write over it, the moment a link pointed there.
 set -euo pipefail
 
 ENV_FILE=/etc/krokosha/env
@@ -43,13 +47,17 @@ from_stdin=no
 # --- the file of mailboxes -----------------------------------------------------------------------
 
 is_address() { [[ $1 =~ ^[a-z0-9][a-z0-9._-]*@${domain//./\\.}$ && $1 != *..* && ${#1} -le 200 ]]; }
-exists() { grep -q "^$1|" "$accounts"; }
+
+# Addresses are compared as strings, never as patterns: in «^lead.@…» the dot would match the «s»
+# of leads@, the site's own mailbox that nothing here may touch.
+exists() { address=$1 awk -F'|' '$1 == ENVIRON["address"] { found = 1 } END { exit !found }' "$accounts"; }
+others() { address=$1 awk -F'|' '$1 != ENVIRON["address"]' "$accounts"; } # every line but the address's
 
 # write_hash ADDRESS SCHEME_AND_HASH — replaces or adds the line of the address.
 write_hash() {
   local tmp
   tmp=$(mktemp "$accounts.XXXXXX")
-  grep -v "^$1|" "$accounts" >"$tmp" || true
+  others "$1" >"$tmp"
   printf '%s|%s\n' "$1" "$2" >>"$tmp"
   chmod 0600 "$tmp"
   mv -f "$tmp" "$accounts"
@@ -58,33 +66,32 @@ write_hash() {
 remove_line() {
   local tmp
   tmp=$(mktemp "$accounts.XXXXXX")
-  grep -v "^$1|" "$accounts" >"$tmp" || true
+  others "$1" >"$tmp"
   chmod 0600 "$tmp"
   mv -f "$tmp" "$accounts"
 }
 
-# publish: the list the admin area shows — addresses only. Written by rename into a directory that
-# belongs to root: the site user can read it and cannot put anything in its place.
+# as_site CMD… — runs a command as the site user, with nothing of root's environment.
+as_site() { setpriv --reuid="$site_user" --regid="$site_user" --clear-groups --reset-env -- "$@"; }
+
+# site_write FILE — stdin into FILE, atomically, as the site user.
+site_write() {
+  # shellcheck disable=SC2016 # the inner script expands its own arguments
+  as_site sh -c 'umask 027; mkdir -p "$(dirname "$1")" && tmp=$(mktemp "$1.XXXXXX") || exit 1
+    if cat >"$tmp" && mv -f "$tmp" "$1"; then exit 0; fi
+    rm -f "$tmp"; exit 1' sh "$1"
+}
+
+# publish: the list the admin area shows — addresses only.
 publish() {
-  install -d -m 0750 -o root -g "$site_user" "$status"
-  local tmp
-  tmp=$(mktemp "$status/.mailboxes.XXXXXX")
-  cut -d'|' -f1 "$accounts" | sort >"$tmp"
-  chgrp "$site_user" "$tmp"
-  chmod 0640 "$tmp"
-  mv -f "$tmp" "$status/mailboxes"
+  cut -d'|' -f1 -- "$accounts" | sort | site_write "$status/mailboxes"
 }
 
 # note ID ACTION ADDRESS ok|error MESSAGE — a line of the log the admin area reads; the last 50 stay.
 note() {
-  local tmp
-  tmp=$(mktemp "$status/.log.XXXXXX")
-  { tail -n 49 "$status/log" 2>/dev/null || true
+  { as_site tail -n 49 -- "$status/log" 2>/dev/null || true
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" "$5"
-  } >"$tmp"
-  chgrp "$site_user" "$tmp"
-  chmod 0640 "$tmp"
-  mv -f "$tmp" "$status/log"
+  } | site_write "$status/log"
 }
 
 # --- by hand ----------------------------------------------------------------------------------------
@@ -117,11 +124,11 @@ apply_one() { # FILE — never trusts it: the web service faces the internet
   local file=$1 name action='' target='' hash=''
   name=$(basename "$file" .req)
   if [[ -L $file || ! -f $file || ! $name =~ ^[0-9]{19}-[0-9a-f]{8}$ ]]; then
-    rm -f -- "$file"
+    as_site rm -f -- "$file"
     return
   fi
-  { IFS= read -r action; IFS= read -r target; IFS= read -r hash; } < <(head -c 1024 -- "$file") || true
-  rm -f -- "$file"
+  { IFS= read -r action; IFS= read -r target; IFS= read -r hash; } < <(as_site head -c 1024 -- "$file") || true
+  as_site rm -f -- "$file"
   target=${target,,}
   if ! is_address "$target"; then
     note "$name" "$action" "-" error "не адрес домена $domain"
@@ -185,7 +192,6 @@ case $command in
     echo "$address removed; its letters are still in $data/mail/data/$domain/${address%@*}" >&2
     ;;
   apply)
-    install -d -m 0750 -o root -g "$site_user" "$status"
     shopt -s nullglob
     for file in "$requests"/*.req; do
       apply_one "$file"

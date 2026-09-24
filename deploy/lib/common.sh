@@ -41,6 +41,19 @@ as_site_user() (
     "$@"
 )
 
+# write_as_site_user FILE — stdin into FILE, atomically, written by the site user. For the files
+# root leaves in that user's directories (the reports of status/): the user may put a link in the
+# place of any name there, and root writing by name would follow it — to /etc/shadow as well.
+write_as_site_user() {
+  # shellcheck disable=SC2016 # the inner script expands its own arguments
+  setpriv --reuid="$KROKOSHA_USER" --regid="$KROKOSHA_USER" --clear-groups --reset-env -- sh -c '
+    umask 022
+    mkdir -p "$(dirname "$1")" && tmp=$(mktemp "$1.XXXXXX") || exit 1
+    if cat >"$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$1"; then exit 0; fi
+    rm -f "$tmp"
+    exit 1' sh "$1"
+}
+
 # install_if_changed SRC DST [MODE] [OWNER:GROUP] — copies only when the content differs.
 # Returns 0 when the file was written, 1 when it was already up to date.
 install_if_changed() {

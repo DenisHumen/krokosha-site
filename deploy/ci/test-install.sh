@@ -311,6 +311,11 @@ status_page=$(admin_get "$ADMIN/status")
 check "the status screen names the live release" grep -q "$(basename "$(readlink -f /var/www/krokosha/current)")" <<<"$status_page"
 check "…and describes the certificate nginx serves" grep -q 'не доверенный' <<<"$status_page"
 check "the API may write rebuild requests, and only there" bash -c "systemctl show krokosha-api.service -p ReadWritePaths | grep -q /var/lib/krokosha/requests && systemctl show krokosha-api.service -p ProtectSystem | grep -q strict"
+# npm runs third-party code in the build: nothing it may write is run by root or built into a program.
+build_writes=$(systemctl show krokosha-sync.service -p ReadWritePaths --value)
+check "the build may write web/ of the repository, not the rest of it" bash -c "grep -qw /opt/krokosha/repo/web <<<'$build_writes' && ! grep -qE '(^| )/opt/krokosha/repo( |$)' <<<'$build_writes' && ! grep -qE '(^| )/var/lib/krokosha( |$)' <<<'$build_writes'"
+check "…nor read the files of requests" bash -c "systemctl show krokosha-sync.service -p InaccessiblePaths --value | grep -q /srv/krokosha/attachments"
+check "the API's environment is root's to read, not its own user's" test "$(stat -c %U "/proc/$(systemctl show krokosha-api.service -p MainPID --value)/environ")" = root
 before_rebuild=$(readlink -f /var/www/krokosha/current)
 check "the «rebuild now» button is accepted" test "$(admin_post /status/rebuild --data-urlencode "csrf=$(csrf)")" = 303
 site_was_rebuilt() { [[ $(readlink -f /var/www/krokosha/current) != "$before_rebuild" && ! -e /var/lib/krokosha/requests/rebuild ]]; }
@@ -664,6 +669,7 @@ check "mail programs find their settings on the site" grep -q "<hostname>mail.$D
 check "a second mailbox" bash -c "printf '%s\n' 'another long password' | krokosha-mailbox add Second@$DOMAIN --password-stdin 2>/dev/null && krokosha-mailbox list | grep -qx 'second@$DOMAIN'"
 check "…a short password is refused" bash -c "! printf 'short\n' | krokosha-mailbox add third@$DOMAIN --password-stdin 2>/dev/null"
 check "…and the site's own mailbox cannot be removed" bash -c "! krokosha-mailbox del leads@$DOMAIN 2>/dev/null"
+check "…not even as «lead.@»: addresses are strings, not patterns" bash -c "! krokosha-mailbox del lead.@$DOMAIN 2>/dev/null && krokosha-mailbox list | grep -qx 'leads@$DOMAIN'"
 check "the mail ports are open in the firewall" bash -c "ufw status | grep -qE '^25/tcp +ALLOW' && ufw status | grep -qE '^993/tcp +ALLOW'"
 
 echo "Firewall"
@@ -679,7 +685,13 @@ fi
 
 echo "Backups and the certificate watch"
 check "the nightly backup and the daily look at the certificates are scheduled" bash -c "systemctl is-enabled --quiet krokosha-backup.timer && systemctl is-enabled --quiet krokosha-certwatch.timer"
+# The site user may put a link in the place of any name in status/ — of the report, of the
+# temporary file root used to write it under a fixed name: root must not write where they point.
+runuser -u krokosha -- ln -sfn /etc/krokosha-ci-canary /var/lib/krokosha/status/backup.json.tmp
+runuser -u krokosha -- ln -sfn /etc/krokosha-ci-canary /var/lib/krokosha/status/backup.json
 check "a backup by hand" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+check "…writes its report as the site user, not through a link the site user put there" bash -c "[[ ! -e /etc/krokosha-ci-canary && ! -L /var/lib/krokosha/status/backup.json && \$(stat -c %U /var/lib/krokosha/status/backup.json) == krokosha ]]"
+rm -f /var/lib/krokosha/status/backup.json.tmp
 first_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
 check "…has the database, the settings, the mail and the files of requests" bash -c "gzip -t '$first_backup/mysql.sql.gz' && zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .leads.' && tar -tzf '$first_backup/config.tar.gz' | grep -qx config/env && test -s '$first_backup/mail/config/postfix-accounts.cf' && test -d '$first_backup/attachments' && test -s '$first_backup/MANIFEST'"
 check "…with the tables of the map but not their rows: they are built again every night" bash -c "zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .netmap_link.' && ! zcat '$first_backup/mysql.sql.gz' | grep -q 'INSERT INTO .netmap_'"
