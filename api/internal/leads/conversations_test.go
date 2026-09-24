@@ -2,6 +2,7 @@ package leads
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,7 @@ func TestConversationsCountWhatIsUnread(t *testing.T) {
 	if items, _ := store.Conversations(ctx, ConversationFilter{Query: Number(second)}); len(items) != 1 || items[0].ID != second {
 		t.Errorf("search by number: %+v", items)
 	}
-	if _, err := store.Conversation(ctx, 999); err != ErrNotFound {
+	if _, err := store.Conversation(ctx, 999); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a conversation that is not there: %v", err)
 	}
 }
