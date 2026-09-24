@@ -162,65 +162,6 @@ func (b *Bot) clientWrites(ctx context.Context, message *Message, command string
 
 // --- deliveries --------------------------------------------------------------------------------------
 
-// answerClient delivers an answer of the staff to a client who continued in Telegram.
-func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bool) error {
-	lead, err := b.opts.Leads.Get(ctx, leadID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return outbox.Permanent(errors.New("the request is gone (deleted on the client's demand?)"))
-	}
-	if err != nil {
-		return err
-	}
-	chatID, lang, err := b.clientChat(ctx, lead, site)
-	if err != nil {
-		return err
-	}
-	body, _, err := b.opts.Leads.Message(ctx, leadID, messageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return outbox.Permanent(errors.New("the answer is gone"))
-	}
-	if err != nil {
-		return err
-	}
-	// A long answer goes in parts rather than cut short: Telegram takes 4096 characters a message.
-	header := Escape(fmt.Sprintf(clientText(lang, "answer"), lead.Number())) + "\n\n"
-	parts := chunks(body, messageLimit-300)
-	var refused *APIError
-	for i, part := range parts {
-		message := Outgoing{ChatID: chatID, Text: Escape(part)}
-		if i == 0 {
-			message.Text = header + message.Text
-		}
-		if i == len(parts)-1 && lead.ClientID > 0 && b.opts.SiteURL != "" {
-			// A client with a personal account has the whole conversation there as well.
-			message.Buttons = Keyboard{{{Text: clientText(lang, "account"), URL: strings.TrimRight(b.opts.SiteURL, "/") + accountPath(lang) + "#" + lead.Number()}}}
-		}
-		_, err = b.opts.API.Send(ctx, message)
-		switch {
-		case err == nil:
-			continue
-		case errors.As(err, &refused) && refused.Gone():
-			if !site {
-				_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
-				b.blocked(ctx, lead, messageID)
-			}
-			return outbox.Permanent(err) // the client blocked the bot: no retry will help
-		case i > 0:
-			// A retry would send the first parts again; the staff see «not delivered» and decide.
-			if !site {
-				_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
-			}
-			return outbox.Permanent(fmt.Errorf("the answer went out in %d parts of %d: %w", i, len(parts), err))
-		default:
-			return err
-		}
-	}
-	if site {
-		return nil // the answer was in the account already; this was the notice of it
-	}
-	return b.opts.Leads.MarkDelivery(ctx, messageID, "sent", "")
-}
-
 // blocked tells everybody that an answer did not reach the client in Telegram: the client blocked
 // the bot or deleted the account — the answer has to go some other way.
 func (b *Bot) blocked(ctx context.Context, lead *leads.Lead, messageID int64) {

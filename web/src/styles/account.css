@@ -1842,8 +1842,61 @@ a.tile {
 }
 
 .msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 78%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msg-in .msg-files {
+  justify-content: flex-end;
+}
+
+.msg-photo {
   display: block;
-  margin-top: 4px;
+  width: 168px;
+  height: 126px;
+  border-radius: 3px;
+  background: var(--c-tile-2);
+  object-fit: cover;
+}
+
+.msg-video {
+  display: block;
+  width: min(360px, 100%);
+  max-height: 320px;
+  border-radius: 3px;
+  background: #000;
+}
+
+.msg-files li:has(.msg-video) {
+  flex-basis: 100%;
+}
+
+.msg-file {
+  display: inline-flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 12px;
+  border-radius: 3px;
+  background: var(--c-tile-2);
+  color: var(--c-fg);
+  font: 13px/1.4 var(--font-sans);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.msg-file:hover {
+  background: var(--c-line-3);
+}
+
+.msg-file-size {
+  flex: none;
+  font: 11px var(--font-mono);
+  color: var(--c-muted);
 }
 
 .reply {
@@ -2541,6 +2594,11 @@ a.tile {
   .msg-body,
   .msg-files {
     max-width: 92%;
+  }
+
+  .msg-photo {
+    width: 140px;
+    height: 105px;
   }
 
   .menu-panel {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	htmltemplate "html/template"
+	"io"
 	netmail "net/mail"
 	"strings"
 	texttemplate "text/template"
@@ -165,7 +166,11 @@ type view struct {
 	FileCount   int
 	Body        string // an answer to the client
 	Author      string
-	T           map[string]string // the texts of the client's language
+	// Left: the files of an answer too big for the letter, «tour.mp4 (48 MB)»; AccountURL is
+	// where they wait.
+	Left       string
+	AccountURL string
+	T          map[string]string // the texts of the client's language
 
 	// What letters to the client show — they go to an address anybody could have typed into
 	// the form, so they repeat nothing the visitor wrote freely (see greetingName).
@@ -443,6 +448,18 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 		v.Author = author
 	}
 	v.Title = "Re: " + strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["subject"])
+	attached, left, err := m.letterFiles(ctx, lead.ID, messageID)
+	if err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		names := make([]string, 0, len(left))
+		for _, file := range left {
+			names = append(names, fmt.Sprintf("%s (%s)", file.Filename, sizeIn(lang, file.Size)))
+		}
+		v.Left = strings.Join(names, ", ")
+		v.AccountURL = "https://" + m.SiteHost + accountPath(lang) + "#" + v.Number
+	}
 	text, html, err := render(replyText, replyHTML, v)
 	if err != nil {
 		return outbox.Permanent(err)
@@ -459,8 +476,9 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 		Text:      text,
 		HTML:      html,
 		MessageID: id, InReplyTo: references[len(references)-1], References: references,
-		ReplyTo: m.replyTo(lead),
-		Headers: map[string]string{"X-Krokosha-Lead": v.Number},
+		ReplyTo:     m.replyTo(lead),
+		Headers:     map[string]string{"X-Krokosha-Lead": v.Number},
+		Attachments: attached,
 	}
 	err = m.Deliver(ctx, message)
 	var permanent mail.PermanentError
@@ -472,6 +490,57 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 		return outbox.Permanent(err)
 	default:
 		return err
+	}
+}
+
+// MaxLetterFiles is how much of an answer's files goes into a letter: 15 MB, about 20 in the
+// base64 of mail — under the 25 MB this server sends (deploy/compose) and most mail services take.
+// What does not fit is named in the letter and waits in the personal account.
+const MaxLetterFiles = 15 << 20
+
+// letterFiles reads the files of an answer that go into its letter, in the order they were
+// chosen, and lists the ones that do not fit.
+func (m *Mailer) letterFiles(ctx context.Context, leadID, messageID int64) (attached []mail.Attachment, left []Attachment, err error) {
+	files, err := m.Store.MessageFiles(ctx, leadID, messageID)
+	if err != nil {
+		return nil, nil, err
+	}
+	budget := int64(MaxLetterFiles)
+	for _, file := range files {
+		if file.Size > budget {
+			left = append(left, file)
+			continue
+		}
+		_, content, err := m.Store.OpenAttachment(ctx, leadID, file.ID)
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil, outbox.Permanent(fmt.Errorf("the file %q of the answer is gone", file.Filename))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		data, err := io.ReadAll(io.LimitReader(content, budget+1))
+		_ = content.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		attached = append(attached, mail.Attachment{Filename: file.Filename, ContentType: ContentTypeOf(file.Kind), Content: data})
+		budget -= int64(len(data))
+	}
+	return attached, left, nil
+}
+
+// sizeIn writes a size in the units of a language: 1,2 МБ, 1.2 MB.
+func sizeIn(lang string, size int64) string {
+	if lang != "en" {
+		return FormatSize(size)
+	}
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(size)/(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%d KB", size>>10)
+	default:
+		return fmt.Sprintf("%d B", size)
 	}
 }
 
@@ -497,6 +566,9 @@ func (m *Mailer) siteReply(ctx context.Context, lead *Lead, messageID int64) (ma
 	v := m.view(lead, lang)
 	v.Body, v.Author = body, m.From.Name
 	v.Name = greetingName(account.Name)
+	if files, err := m.Store.MessageFiles(ctx, lead.ID, messageID); err == nil {
+		v.FileCount = len(files) // the files themselves are in the account, a click away
+	}
 	v.AdminURL = "https://" + m.SiteHost + accountPath(lang) + "#" + v.Number // the client's own page, not the admin's
 	v.Title = strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["site_subject"])
 	text, html, err := render(siteReplyText, siteReplyHTML, v)
@@ -557,6 +629,7 @@ func render(text *texttemplate.Template, html *htmltemplate.Template, v view) (s
 // texts of the automatic reply. The client reads them, so they follow the language of the page.
 var texts = map[string]map[string]string{
 	"en": {
+		"left": "Too big for an email", "left_where": "Download them in your personal account — sign in with this email address",
 		"discount":     "Discount",
 		"site_subject": "Reply to your request {id} — {host}", "site_intro": "There is a reply to your request",
 		"site_open": "Open in your account", "site_note": "The whole conversation is in your personal account on the site.",
@@ -567,6 +640,7 @@ var texts = map[string]map[string]string{
 		"auto":  "This is an automatic confirmation. If you did not send this request, simply ignore this email.",
 	},
 	"uk": {
+		"left": "Не вмістилися в лист", "left_where": "Завантажити їх можна в особистому кабінеті — вхід за цією адресою пошти",
 		"discount":     "Знижка",
 		"site_subject": "Відповідь щодо заявки {id} — {host}", "site_intro": "Є відповідь щодо вашої заявки",
 		"site_open": "Відкрити в кабінеті", "site_note": "Уся переписка — в особистому кабінеті на сайті.",
@@ -577,6 +651,7 @@ var texts = map[string]map[string]string{
 		"auto":  "Це автоматичне підтвердження. Якщо ви не надсилали заявку, просто проігноруйте цей лист.",
 	},
 	"ru": {
+		"left": "Не поместились в письмо", "left_where": "Скачать их можно в личном кабинете — вход по этому адресу почты",
 		"discount":     "Скидка",
 		"site_subject": "Ответ по заявке {id} — {host}", "site_intro": "Есть ответ по вашей заявке",
 		"site_open": "Открыть в кабинете", "site_note": "Вся переписка — в личном кабинете на сайте.",
@@ -748,6 +823,10 @@ var alertHTML = htmltemplate.Must(htmltemplate.New("alert.html").Parse(mailFrame
 // The plain text of letters to clients carries the same links as their HTML: a letter whose two
 // versions link to different things looks put together by a spammer's tool.
 var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
+{{- if .Left}}
+
+{{.T.left}}: {{.Left}}.
+{{.T.left_where}}: {{.AccountURL}}{{end}}
 
 --
 {{.Author}}
@@ -759,6 +838,9 @@ var siteReplyText = texttemplate.Must(texttemplate.New("site.txt").Parse(`{{.T.h
 {{.T.site_intro}} #{{.Number}}:
 
 {{.Body}}
+{{- if .FileCount}}
+
+{{.T.files}}: {{.FileCount}}{{end}}
 
 — {{.Author}}
 
@@ -773,6 +855,7 @@ var siteReplyHTML = htmltemplate.Must(htmltemplate.New("site.html").Parse(mailFr
 <p style="margin:0 0 12px;">{{.T.hello}}{{if .Name}}, {{.Name}}{{end}}!</p>
 <p style="margin:0 0 12px;">{{.T.site_intro}} <b>#{{.Number}}</b>:</p>
 <p style="margin:0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+{{if .FileCount}}<p style="margin:12px 0 0;">{{.T.files}}: {{.FileCount}}</p>{{end}}
 <p style="margin:12px 0 0;color:#6b6f7e;">— {{.Author}}</p>
 <p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.site_open}}</a></p>
 {{end}}
@@ -780,5 +863,6 @@ var siteReplyHTML = htmltemplate.Must(htmltemplate.New("site.html").Parse(mailFr
 
 var replyHTML = htmltemplate.Must(htmltemplate.New("reply.html").Parse(mailFrame + `
 {{define "body"}}<p style="margin:0;white-space:pre-wrap;">{{.Body}}</p>
+{{if .Left}}<p style="margin:16px 0 0;padding:10px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;">{{.T.left}}: {{.Left}}.<br>{{.T.left_where}}: <a href="{{.AccountURL}}" style="color:#5b45b0;">{{.AccountURL}}</a></p>{{end}}
 <p style="margin:20px 0 0;color:#6b6f7e;">— {{.Author}}</p>{{end}}
 {{define "foot"}}<a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a> · #{{.Number}}{{end}}`))

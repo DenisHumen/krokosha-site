@@ -285,8 +285,25 @@ func TestAnsweringAClientFromTheBot(t *testing.T) {
 		t.Fatalf("the offer: %q %v (calls: %d)", offer.Text(), labels, len(calls))
 	}
 
+	// The answers that fit the conversation come first, marked; no more than three of them.
+	stars, details := 0, ""
+	for i, label := range labels {
+		if strings.HasPrefix(label, "★ ") {
+			stars++
+			if i >= 3 {
+				t.Errorf("a marked answer below the others: %v", labels)
+			}
+		}
+		if strings.TrimPrefix(label, "★ ") == "Нужны детали" {
+			details = data[label]
+		}
+	}
+	if stars == 0 || stars > 3 || details == "" {
+		t.Fatalf("the answers offered: %v", labels)
+	}
+
 	// A template → a preview of what the client gets → send.
-	f.presses(denis, data["Нужны детали"])
+	f.presses(denis, details)
 	preview := lastCall(t, f.api.Sent(denis.ID))
 	labels, data = preview.Buttons()
 	if !strings.Contains(preview.Text(), "Предпросмотр ответа по <b>#K-0001</b>") || !strings.Contains(preview.Text(), "Здравствуйте, Иван &lt;b&gt;Петров&lt;/b&gt;!") ||

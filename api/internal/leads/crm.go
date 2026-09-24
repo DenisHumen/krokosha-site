@@ -812,6 +812,20 @@ func (s *Store) Message(ctx context.Context, leadID, messageID int64) (body, aut
 	return body, who.String, err
 }
 
+// SentParts is how many parts of an answer reached Telegram — the text in pieces, then the
+// albums: a retry after a failure sends only the rest.
+func (s *Store) SentParts(ctx context.Context, messageID int64) (int, error) {
+	var parts int
+	err := s.db.QueryRowContext(ctx, `SELECT sent_parts FROM lead_messages WHERE id = ?`, messageID).Scan(&parts)
+	return parts, err
+}
+
+// MarkSentParts records that the first parts of an answer are delivered.
+func (s *Store) MarkSentParts(ctx context.Context, messageID int64, parts int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET sent_parts = ? WHERE id = ? AND sent_parts < ?`, parts, messageID, parts)
+	return err
+}
+
 // MarkDelivery records what became of an answer: sent or failed.
 func (s *Store) MarkDelivery(ctx context.Context, messageID int64, delivery, emailMessageID string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET delivery = ?, email_message_id = COALESCE(NULLIF(?, ''), email_message_id) WHERE id = ?`,

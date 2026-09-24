@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"time"
 
@@ -37,13 +38,22 @@ type ClientSummary struct {
 
 // ClientEntry is a line of the conversation as the client sees it.
 type ClientEntry struct {
-	At        time.Time `json:"at"`
-	Kind      string    `json:"kind"`                // message | status
-	Direction string    `json:"direction,omitempty"` // in — the client's, out — the answer
-	Channel   string    `json:"channel,omitempty"`   // form | site | email | telegram | phone
-	Body      string    `json:"body,omitempty"`
-	Status    string    `json:"status,omitempty"` // for «status»: the new one
-	Files     []string  `json:"files,omitempty"`  // names only: files are handed out by the admin area alone
+	At        time.Time    `json:"at"`
+	Kind      string       `json:"kind"`                // message | status
+	Direction string       `json:"direction,omitempty"` // in — the client's, out — the answer
+	Channel   string       `json:"channel,omitempty"`   // form | site | email | telegram | phone
+	Body      string       `json:"body,omitempty"`
+	Status    string       `json:"status,omitempty"` // for «status»: the new one
+	Files     []ClientFile `json:"files,omitempty"`
+}
+
+// ClientFile is a file of the conversation as the client sees it; the account hands it out
+// (/api/account/leads/<K-0042>/files/<id>).
+type ClientFile struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"` // jpg | png | mp4 | pdf | docx | txt
+	Size int64  `json:"size"`
 }
 
 // ClientView is one request of the account, with its conversation.
@@ -192,10 +202,31 @@ func (s *Store) ClientView(ctx context.Context, clientID, id int64) (*ClientView
 	}
 	for _, file := range files {
 		if index, ok := messages[file.MessageID]; ok {
-			view.Feed[index].Files = append(view.Feed[index].Files, file.Filename)
+			view.Feed[index].Files = append(view.Feed[index].Files, ClientFile{ID: file.ID, Name: file.Filename, Kind: file.Kind, Size: file.Size})
 		}
 	}
 	return view, nil
+}
+
+// ClientFile opens a file of the conversation for the account the request belongs to; out tells
+// an answer's file from one the client sent. Somebody else's file, a file of spam or of an
+// anonymised request is ErrNotFound, exactly like one that does not exist.
+func (s *Store) ClientFile(ctx context.Context, clientID, leadID, fileID int64) (file *Attachment, out bool, content *os.File, err error) {
+	var direction string
+	err = s.db.QueryRowContext(ctx, `
+		SELECT m.direction FROM lead_attachments a
+		JOIN leads l ON l.id = a.lead_id
+		JOIN lead_messages m ON m.id = a.message_id AND m.lead_id = a.lead_id
+		WHERE a.id = ? AND a.lead_id = ? AND l.client_id = ? AND l.status <> 'spam' AND l.anonymized_at IS NULL`,
+		fileID, leadID, clientID).Scan(&direction)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, false, nil, err
+	}
+	file, content, err = s.OpenAttachment(ctx, leadID, fileID)
+	return file, direction == "out", content, err
 }
 
 // MarkSeen notes that the client opened a request: its answers are no longer new.

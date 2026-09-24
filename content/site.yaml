@@ -661,7 +661,7 @@ account:
     answer: { en: "Answer", uk: "Відповідь", ru: "Ответ" }
     status: { en: "Status", uk: "Статус", ru: "Статус" }
     call: { en: "A phone call", uk: "Дзвінок", ru: "Звонок" }
-    files: { en: "Files: {names}", uk: "Файли: {names}", ru: "Файлы: {names}" }
+    files: { en: "Files", uk: "Файли", ru: "Файлы" }
     write: { en: "Your answer", uk: "Ваша відповідь", ru: "Ваш ответ" }
     send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Sent", uk: "Надіслано", ru: "Отправлено" }

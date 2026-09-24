@@ -258,6 +258,42 @@ func TestACrashedDeliveryIsPickedUpAgain(t *testing.T) {
 	}
 }
 
+// patient is a sender that asks for more time and tells how much it was given.
+type patient struct {
+	ask      time.Duration
+	deadline time.Duration // what the delivery got, from the worker's clock
+	locked   time.Time
+	f        *fixture
+}
+
+func (p *patient) Timeout(context.Context, Task) time.Duration { return p.ask }
+
+func (p *patient) Send(ctx context.Context, _ Task) error {
+	deadline, _ := ctx.Deadline()
+	p.deadline = time.Until(deadline).Round(time.Minute)
+	return p.f.db.QueryRow(`SELECT locked_until FROM outbox WHERE dedupe_key = 'video'`).Scan(&p.locked)
+}
+
+func TestASlowDeliveryGetsTheTimeItAsksFor(t *testing.T) {
+	f := newFixture(t)
+	for _, tc := range []struct{ ask, deadline, lock time.Duration }{
+		{3 * time.Minute, 3 * time.Minute, 4 * time.Minute},
+		{time.Hour, maxSendTimeout, maxSendTimeout + time.Minute}, // no more than five minutes
+		{0, time.Minute, lockFor},                                 // 45 s: the usual
+	} {
+		sender := &patient{ask: tc.ask, f: f}
+		f.worker.Register(ChannelTelegram, sender)
+		if _, err := f.db.Exec(`DELETE FROM outbox`); err != nil {
+			t.Fatal(err)
+		}
+		f.enqueue(NewTask{Channel: ChannelTelegram, Kind: "lead.reply", DedupeKey: "video", Payload: struct{}{}})
+		f.deliver(1)
+		if sender.deadline != tc.deadline || !sender.locked.Equal(f.now.Add(tc.lock)) {
+			t.Errorf("asked for %v: %v to deliver, held until %v", tc.ask, sender.deadline, sender.locked.Sub(f.now))
+		}
+	}
+}
+
 func TestQueueingIsPartOfTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	tx, err := f.db.Begin()

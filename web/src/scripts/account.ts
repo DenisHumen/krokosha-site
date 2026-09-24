@@ -111,8 +111,16 @@ interface View extends Summary {
     channel?: string;
     body?: string;
     status?: string;
-    files?: string[];
+    files?: FileOf[];
   }[];
+}
+
+/** A file of the conversation: the account hands it out (/api/account/leads/<K-0042>/files/<id>). */
+interface FileOf {
+  id: number;
+  name: string;
+  kind: string;
+  size: number;
 }
 
 interface Answer {
@@ -221,6 +229,21 @@ export function initAccount(): void {
     );
   }
   const count = (forms: string[], n: number) => `${n} ${form(forms, n)}`.trim();
+  /** «16 kB», «4,2 МБ»: the units of the language, from the browser. */
+  const size = (bytes: number) => {
+    const [value, unit] =
+      bytes >= 1 << 20
+        ? [bytes / (1 << 20), 'megabyte']
+        : bytes >= 1024
+          ? [bytes / 1024, 'kilobyte']
+          : [bytes, 'byte'];
+    return new Intl.NumberFormat(lang, {
+      style: 'unit',
+      unit,
+      unitDisplay: 'short',
+      maximumFractionDigits: value < 10 ? 1 : 0,
+    }).format(value);
+  };
   const percent = (value: number) => (value > 0 ? `−${value}%` : '0%');
   const shareOf = (share: number) => {
     const format = new Intl.NumberFormat(lang, {
@@ -1060,9 +1083,12 @@ export function initAccount(): void {
               .filter(Boolean)
               .join(' · ');
             body.textContent = entry.body ?? '';
+            body.hidden = !entry.body; // an answer of files alone
             if (entry.files?.length) {
               const files = $(row, '[data-files]');
-              files.textContent = fill(A.requests.files, { names: entry.files.join(', ') });
+              files.replaceChildren(
+                ...entry.files.map((file) => fileItem(lead.number, file, !mine)),
+              );
               files.hidden = false;
             }
           }
@@ -1082,6 +1108,53 @@ export function initAccount(): void {
       renderRequests();
     }
     if (!wide.matches) window.scrollTo({ top: 0 });
+  }
+
+  /**
+   * A file in the conversation. The photos and videos of an answer are shown as they are; the
+   * rest — and whatever the client sent — are downloads, as the API hands them out.
+   */
+  function fileItem(number: string, file: FileOf, answer: boolean): HTMLLIElement {
+    const item = document.createElement('li');
+    const address = `/api/account/leads/${encodeURIComponent(number)}/files/${file.id}`;
+    if (answer && (file.kind === 'jpg' || file.kind === 'png')) {
+      const link = document.createElement('a');
+      link.href = address;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      const photo = document.createElement('img');
+      photo.className = 'msg-photo';
+      photo.src = address;
+      photo.alt = file.name;
+      photo.loading = 'lazy';
+      photo.decoding = 'async';
+      link.append(photo);
+      item.append(link);
+      return item;
+    }
+    if (answer && file.kind === 'mp4') {
+      const video = document.createElement('video');
+      video.className = 'msg-video';
+      video.src = address;
+      video.controls = true;
+      video.preload = 'metadata';
+      video.setAttribute('aria-label', file.name);
+      item.append(video);
+      return item;
+    }
+    const link = document.createElement('a');
+    link.className = 'msg-file';
+    link.href = address;
+    link.download = file.name;
+    const name = document.createElement('span');
+    name.className = 'msg-file-name';
+    name.textContent = file.name;
+    const weight = document.createElement('span');
+    weight.className = 'msg-file-size';
+    weight.textContent = size(file.size);
+    link.append(name, weight);
+    item.append(link);
+    return item;
   }
 
   function closeThread() {
