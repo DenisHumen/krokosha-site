@@ -1709,6 +1709,7 @@ a.tile {
   height: 28px;
   padding: 0 10px;
   font: 12px var(--font-sans);
+  appearance: none;
 }
 
 .req-cols,
@@ -1751,13 +1752,15 @@ a.tile {
   overflow: hidden;
 }
 
+/* A fixed width keeps the statuses in one column: a longer time (a date of another year, the mark
+   of an answer) spills to the left, into the free end of the status column. */
 .req-time {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: flex-end;
   gap: 5px;
-  min-width: 42px;
+  width: 42px;
   text-align: right;
 }
 
@@ -1770,6 +1773,11 @@ a.tile {
 
 .cab .req:hover {
   background: #222226;
+}
+
+/* The list scrolls: a ring outside the row would be cut off by its edges. */
+.cab .req:focus-visible {
+  outline-offset: -2px;
 }
 
 .req[aria-current='true'],

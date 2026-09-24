@@ -509,9 +509,25 @@ test.describe('personal account', () => {
     });
     await expect(field).toHaveValue('');
     await expect(field).toBeFocused();
-    // Nothing to send is not sent.
+    // An Enter in an empty field sends nothing; the button says what is missing.
+    const before = api.calls.length;
     await field.press('Enter');
+    await thread.getByRole('button', { name: /^Send/ }).click();
     await expect(thread.locator('[data-error]')).toHaveText('Write a few words');
+    expect(api.calls.slice(before).filter((call) => call.startsWith('POST'))).toEqual([]);
+    await field.pressSequentially('Or');
+    await expect(thread.locator('[data-error]')).toBeEmpty();
+    // What could not be sent comes back into the field, with the reason.
+    await page.route('**/api/account/leads/K-0042/messages', (route) =>
+      route.fulfill({ json: { ok: false, error: 'throttled' } }),
+    );
+    await field.pressSequentially(' a call tomorrow?');
+    await field.press('Enter');
+    await expect(thread.locator('[data-error]')).toHaveText(
+      'Too many attempts. Please try again in an hour.',
+    );
+    await expect(field).toHaveValue('Or a call tomorrow?');
+    await page.unroute('**/api/account/leads/K-0042/messages');
 
     // An inquiry about it, from the details: the form opens with the request chosen, and the new
     // inquiry opens itself, its text the first message.

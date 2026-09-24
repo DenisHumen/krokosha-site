@@ -1397,13 +1397,15 @@ export function initAccount(): void {
     fitField();
     drafts.set(shown, replyField.value);
     $(replyForm, '[data-done]').textContent = '';
+    $(replyForm, '[data-error]').textContent = '';
   });
 
-  // Enter sends, Shift+Enter starts a new line; a word still being composed (IME) is not sent.
+  // Enter sends, Shift+Enter starts a new line; a word still being composed (IME) is not sent, and
+  // an Enter in an empty field does nothing (the button says what is missing).
   replyField.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
-    replyForm.requestSubmit();
+    if (replyField.value.trim()) replyForm.requestSubmit();
   });
 
   let replying = false;
@@ -1418,8 +1420,13 @@ export function initAccount(): void {
       return;
     }
     const number = shown;
+    const draft = replyField.value;
     replying = true;
-    replyField.readOnly = true; // keeps the focus, unlike disabled
+    // The field empties at once, as in a messenger, and keeps the focus (a phone keeps its keyboard);
+    // what could not be sent comes back into it.
+    replyField.value = '';
+    fitField();
+    drafts.delete(number);
     void busy(replyForm, async () => {
       const { data } = await api(
         'POST',
@@ -1427,22 +1434,22 @@ export function initAccount(): void {
         { text },
       );
       if (!data.ok) {
-        problem.textContent = error(data.error);
+        const back = [draft, shown === number ? replyField.value : drafts.get(number)]
+          .filter(Boolean)
+          .join('\n');
+        drafts.set(number, back);
+        if (shown === number) {
+          replyField.value = back;
+          fitField();
+          problem.textContent = error(data.error);
+        }
         return;
       }
       problem.textContent = '';
-      drafts.delete(number);
-      if (shown === number) {
-        replyField.value = '';
-        fitField();
-      }
       // An answer can move the status (waiting for the client → in progress): the list follows.
       await Promise.all([open === number ? openThread(number) : null, loadRequests()]);
       if (shown === number) $(replyForm, '[data-done]').textContent = A.requests.sent;
-    }).finally(() => {
-      replying = false;
-      replyField.readOnly = false;
-    });
+    }).finally(() => (replying = false));
   });
 
   // --- a new inquiry --------------------------------------------------------------------------------
