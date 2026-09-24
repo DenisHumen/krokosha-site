@@ -616,7 +616,8 @@ rm -rf "$built"
 ok "$KROKOSHA_ROOT/bin/krokosha-cli, krokosha-api"
 
 for unit in krokosha-sync.service krokosha-sync.timer krokosha-rebuild.path \
-  krokosha-backup.service krokosha-backup.timer krokosha-certwatch.service krokosha-certwatch.timer \
+  krokosha-backup.service krokosha-backup.timer krokosha-backup-now.path krokosha-certwatch.service krokosha-certwatch.timer \
+  krokosha-fail2ban.service krokosha-fail2ban.timer \
   krokosha-geoipupdate.service krokosha-geoipupdate.timer krokosha-dbip.service krokosha-dbip.timer \
   krokosha-netmap.service krokosha-netmap.timer; do
   install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
@@ -1115,6 +1116,8 @@ step "Backups and the certificate watch"
 # Every day: a look at the certificates that are really served; what is about to expire is renewed
 # at once, and the owner is told when that fails (deploy/bin/krokosha-certwatch).
 systemctl enable --quiet --now krokosha-backup.timer krokosha-certwatch.timer
+# The «backup now» button of the admin area.
+systemctl enable --quiet --now krokosha-backup-now.path
 [[ -n $(env_get BACKUP_RSYNC_TO) ]] ||
   warn "backups stay on this disk ($DATA_DIR/backups): to copy every one elsewhere, set BACKUP_RSYNC_TO=user@host:/path in $KROKOSHA_ENV"
 ok "backup: $(systemctl show krokosha-backup.timer --property=NextElapseUSecRealtime --value); certificates: $(systemctl show krokosha-certwatch.timer --property=NextElapseUSecRealtime --value)"
@@ -1299,6 +1302,9 @@ if systemctl is-active --quiet fail2ban; then
 else
   warn "fail2ban is not running — check: journalctl -u fail2ban. The site itself is not affected"
 fi
+# The «system status» screen shows how many addresses the jails keep out: only root may ask.
+systemctl enable --quiet --now krokosha-fail2ban.timer
+systemctl start krokosha-fail2ban.service || warn "cannot count the bans: journalctl -u krokosha-fail2ban"
 
 # ---------------------------------------------------------------------------------------------
 step "Done"

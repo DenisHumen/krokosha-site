@@ -85,6 +85,14 @@
           {{- else}}выключена (GEOIP_DB=off)
           {{- end -}}
         </span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.Fail2ban}}{{if not .Known}} dot-off{{else if not .OK}} dot-error{{end}}{{end}}"></span> fail2ban</span><span class="line-v soft">
+          {{- with $s.Fail2ban}}
+            {{- if not .Known}}ещё не считали — счёт появится через несколько минут после установки
+            {{- else if not .OK}}{{.Error}}
+            {{- else}}{{plural .Banned "адрес" "адреса" "адресов"}} в бане{{range .Jails}} · {{.Name}}: {{.Banned}} сейчас, {{.Total}} всего{{end}} · {{ago .CheckedAt}}
+            {{- end}}
+          {{- end -}}
+        </span></div>
         {{if $s.Host.Supported}}
           <div class="line line-top"><span class="line-name"><span class="dot"></span> Нагрузка</span><span class="line-v soft mono">{{printf "%.2f / %.2f / %.2f" (index $s.Host.Load 0) (index $s.Host.Load 1) (index $s.Host.Load 2)}} за 1 / 5 / 15 мин</span></div>
           {{if $s.Host.SwapTotal}}{{with usage "Swap" $s.Host.SwapTotal $s.Host.SwapFree}}<div class="line"><span class="line-name"><span class="dot"></span> Swap</span><span class="line-v soft">{{pct .Percent}} · {{bytes .Used}} из {{bytes .Total}}</span></div>{{end}}{{end}}
@@ -93,16 +101,21 @@
       </div>
     </section>
 
-    <section class="tile tile-beige">
-      <div class="corner"><span class="round-link" aria-hidden="true">↻</span></div>
-      <span class="headline-s">Резервная<br />копия</span>
-      <span class="meta">
-        {{- with $s.Backup}}
-          {{- if not .Known}}ещё не делалась — первая будет ночью
-          {{- else if .OK}}последняя {{ago .FinishedAt}} · {{bytes .Bytes}}{{if .CopiedTo}} · копия: <span class="mono">{{.CopiedTo}}</span>{{else}} · только на этом диске{{end}}
-          {{- else}}не сделана: {{.Error}}{{end}}
-        {{- end -}}
-      </span>
+    <section class="tile tile-beige tile-stat">
+      <form class="corner" method="post" action="{{path "/status/backup"}}">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+        <button class="btn" type="submit" {{if $s.BackupRequested}}disabled{{end}}>{{if $s.BackupRequested}}Запрошена…{{else}}↻ Сделать сейчас{{end}}</button>
+      </form>
+      <div class="stack">
+        <span class="headline-s">Резервная<br />копия</span>
+        <span class="meta">
+          {{- with $s.Backup}}
+            {{- if not .Known}}ещё не делалась — первая будет ночью
+            {{- else if .OK}}последняя {{ago .FinishedAt}} · {{bytes .Bytes}}{{if .CopiedTo}} · копия: <span class="mono">{{.CopiedTo}}</span>{{else}} · только на этом диске{{end}}
+            {{- else}}не сделана: {{.Error}}{{end}}
+          {{- end -}}
+        </span>
+      </div>
     </section>
 
     <section class="tile span-2">

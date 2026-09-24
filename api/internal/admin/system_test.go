@@ -118,10 +118,29 @@ func TestStatusScreenAndRebuildButton(t *testing.T) {
 	if page.status != http.StatusOK {
 		t.Fatalf("status with the reports of the night: %d", page.status)
 	}
-	for _, want := range []string{"сайт: 61 день", "почта: не отвечает", "3,4 МБ", "только на этом диске"} {
+	if err := os.WriteFile(filepath.Join(s.state, "status", "fail2ban.json"),
+		[]byte(`{"checked_at":"2026-09-22T04:40:00Z","ok":true,"jails":[{"name":"sshd","banned":2,"total":40},{"name":"krokosha-admin","banned":1,"total":3}],"error":""}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page = s.do(http.MethodGet, prefix+"/status", nil, nil)
+	for _, want := range []string{"сайт: 61 день", "почта: не отвечает", "3,4 МБ", "только на этом диске", "3 адреса в бане · sshd: 2 сейчас, 40 всего · krokosha-admin: 1 сейчас, 3 всего"} {
 		if !strings.Contains(page.body, want) {
 			t.Errorf("the status screen lacks %q", want)
 		}
+	}
+
+	// «Backup now» leaves a request for krokosha-backup-now.path, and the button waits for it.
+	if got := s.do(http.MethodPost, prefix+"/status/backup", url.Values{"csrf": {s.csrf()}}, nil); got.status != http.StatusSeeOther || got.location != prefix+"/status?ok=backup" {
+		t.Fatalf("backup now: %d %s", got.status, got.location)
+	}
+	if _, err := os.Stat(filepath.Join(s.state, "requests", "backup")); err != nil {
+		t.Errorf("no request for a backup: %v", err)
+	}
+	if after := s.do(http.MethodGet, prefix+"/status?ok=backup", nil, nil); !strings.Contains(after.body, "Резервная копия запрошена") || !strings.Contains(after.body, "Запрошена…") {
+		t.Error("the page does not say the backup was asked for")
+	}
+	if got := s.do(http.MethodPost, prefix+"/status/backup", url.Values{"csrf": {"forged"}}, nil); got.status != http.StatusForbidden {
+		t.Errorf("backup without the CSRF token: %d", got.status)
 	}
 
 	request := filepath.Join(s.state, "requests", "rebuild")

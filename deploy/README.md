@@ -83,7 +83,7 @@ sudo /opt/krokosha/repo/deploy/restore.sh --from DIR  # восстановить
 sudo /opt/krokosha/repo/deploy/restore.sh --from /srv/krokosha/backups/latest
 ```
 
-Статус последней копии виден на экране «Статус системы»; если копия не сделалась, владелец получает письмо и сообщение в Telegram (один раз в сутки).
+Статус последней копии виден на экране «Статус системы»; если копия не сделалась, владелец получает письмо и сообщение в Telegram (один раз в сутки). Там же кнопка «Сделать сейчас»: как и «Пересобрать», веб-сервис только кладёт файл-запрос `/var/lib/krokosha/requests/backup`, а `krokosha-backup-now.path` запускает ту же ночную копию от root (не больше четырёх раз в час). `backup.sh` удаляет запрос первым делом — от имени пользователя сайта, как и всё, что root делает в его каталогах.
 
 ### Переезд на другой сервер
 
@@ -256,6 +256,8 @@ sudo fail2ban-client status krokosha-admin              # кто забанен
 sudo fail2ban-client set krokosha-admin unbanip АДРЕС   # снять бан (например, свой)
 ```
 
+Спрашивать fail2ban может только root, поэтому каждые 10 минут `krokosha-fail2ban.timer` → [`bin/krokosha-fail2ban-report`](bin/krokosha-fail2ban-report) записывает в `/var/lib/krokosha/status/fail2ban.json`, сколько адресов в бане в каждом jail — сейчас и с запуска fail2ban. Сами адреса никуда не пишутся. Экран «Статус системы» показывает этот счёт.
+
 ## Фаервол и то, что уже живёт на сервере
 
 Установщик трогает только своё (docs/architecture.md §5):
@@ -282,12 +284,12 @@ deploy/
 ├── docker/staging/     локальный стенд: контейнер-«VPS» и staging.sh
 ├── backup.sh           резервная копия: дамп базы, настройки, сертификаты, письма и файлы (жёсткие ссылки), ротация, rsync наружу
 ├── restore.sh          восстановление из копии на установленный сайт (в т. ч. на новом сервере)
-├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза, IndexNow; krokosha-certwatch; krokosha-mailbox;
+├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза, IndexNow; krokosha-certwatch; krokosha-fail2ban-report; krokosha-mailbox;
 │                       krokosha-dbip-update — база DB-IP City Lite раз в месяц
 ├── lib/                common.sh — общие функции: журнал, шаблоны, /etc/krokosha/env
 ├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
-├── systemd/            krokosha-api.service, krokosha-sync.service + .timer, krokosha-rebuild.path,
-│                       krokosha-backup, krokosha-certwatch, krokosha-geoipupdate, krokosha-dbip (.service + .timer)
+├── systemd/            krokosha-api.service, krokosha-sync.service + .timer, krokosha-rebuild.path, krokosha-backup-now.path,
+│                       krokosha-backup, krokosha-certwatch, krokosha-fail2ban, krokosha-geoipupdate, krokosha-dbip (.service + .timer)
 ├── logrotate/          ротация access-лога: 30 дней
 ├── fail2ban/           jail для sshd и для входа в админку (+ фильтр)
 ├── env/                .env.example — описание /etc/krokosha/env

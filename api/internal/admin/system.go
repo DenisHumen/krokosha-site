@@ -25,6 +25,7 @@ type SystemStatus interface {
 	// Vitals are the processor, the disk and the backup, for the header of every page.
 	Vitals() sysstatus.Vitals
 	RequestRebuild() error
+	RequestBackup() error
 }
 
 // --- server traffic ------------------------------------------------------------------------------
@@ -183,4 +184,16 @@ func (h *Handler) rebuild(w http.ResponseWriter, r *http.Request) {
 	}
 	h.opts.Auth.Audit(r.Context(), session.User.Login, "admin.rebuild", "", "", h.attemptMeta(r).IPPrefix)
 	http.Redirect(w, r, h.opts.Prefix+"/status?ok=rebuild", http.StatusSeeOther)
+}
+
+// backupNow is the «backup now» button: as with a rebuild, the web service only drops a request.
+func (h *Handler) backupNow(w http.ResponseWriter, r *http.Request) {
+	if err := h.opts.System.RequestBackup(); err != nil {
+		h.opts.Log.Error("cannot request a backup", "error", err)
+		h.render(w, r, http.StatusInternalServerError, "error", view{Title: "Ошибка", Nav: "status",
+			Error: "Не получилось передать запрос на резервную копию. На сервере: sudo systemctl start krokosha-backup.service"})
+		return
+	}
+	h.opts.Auth.Audit(r.Context(), sessionOf(r).User.Login, "admin.backup", "", "", h.attemptMeta(r).IPPrefix)
+	http.Redirect(w, r, h.opts.Prefix+"/status?ok=backup", http.StatusSeeOther)
 }

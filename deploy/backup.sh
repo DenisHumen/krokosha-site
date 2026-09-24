@@ -82,6 +82,11 @@ main() {
   keep_weekly=${keep_weekly:-4}
   [[ $keep_daily =~ ^[1-9][0-9]*$ && $keep_weekly =~ ^[0-9]+$ ]] || die "--keep-daily wants a number from 1, --keep-weekly a number from 0"
 
+  # The «backup now» button of the admin area left a request (krokosha-backup-now.path): it is
+  # answered now. Removed as the site user: the directory is theirs, and root touches nothing there
+  # by name. Before the lock, so that a request made during a backup does not start one more.
+  as_site_user rm -f -- "$KROKOSHA_STATE/requests/backup" 2>/dev/null || true
+
   # One backup at a time: the nightly one and one started by hand must not share a directory.
   exec 9>/run/krokosha-backup.lock
   flock --nonblock 9 || die "another backup is running"
