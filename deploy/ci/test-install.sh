@@ -277,7 +277,7 @@ check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADM
 # midnight the visit recorded above may belong to either day, so both are asked for.
 # (grep -q stops reading at the first match; curl's complaint about the closed pipe is noise.)
 both_days() { { admin_get "$ADMIN$1" && admin_get "$ADMIN$1?p=day&d=$(date -u +%F)"; } 2>/dev/null || true; }
-check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1[;<]' <(both_days /)
+check "the overview shows the visit recorded above" grep -q 'title="[0-9:]* — 1 визит, из них по рекламе: 1"' <(both_days /)
 check "the list of visits" grep -q 'google.com' <(both_days /visits)
 check "CSV export of page views" grep -q ',/uk/,uk,search,google.com,google,cpc,' <(both_days /export/pageviews.csv)
 check "CSV export of events" grep -q ',click,cta-telegram,' <(both_days /export/events.csv)
@@ -304,7 +304,7 @@ check "the admin area stays out of the traffic statistics" test "$(sql "SELECT C
 check "the scanner-like requests of this test are noticed" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE pattern = '.env'")" -ge 1
 check "networks of scanners are truncated" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
 check "the traffic screen" grep -q 'curl' <(both_days /traffic)
-check "the overview's timeline shows bots from the server log" grep -q 'chart-bar-bots' <(both_days /)
+check "the overview's timeline shows bots from the server log" grep -q 'Боты и программы (по логу сервера): [1-9]' <(both_days /)
 
 check "the build left its report" python3 -c "import json; r = json.load(open('/var/lib/krokosha/status/sync.json')); assert r['ok'] and r['step'] == 'done' and r['release'], r"
 status_page=$(admin_get "$ADMIN/status")
@@ -739,12 +739,17 @@ check "old backups go: --keep-daily 1 leaves one" bash -c "sleep 1; '$SOURCE/dep
 # The «backup now» button: the web service leaves a request, root makes the very nightly backup.
 sleep 1
 before_backup=$(readlink /srv/krokosha/backups/latest)
-check "the «backup now» button is accepted" test "$(admin_post /status/backup --data-urlencode "csrf=$(csrf)")" = 303
+# This test signed out long ago (and ran into the limit of sign-ins): the session kept for the checks
+# after the second run asks for it.
+geo_get() { "${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN$1"; }
+geo_csrf() { geo_get /account | sed -n 's/.*name="csrf" value="\([^"]*\)".*/\1/p' | head -n 1; }
+check "the «backup now» button is accepted" test "$("${CURL[@]}" --output /dev/null --write-out '%{http_code}' --cookie "$GEO_JAR" --user-agent "$BROWSER" \
+  --request POST "$ADMIN/status/backup" --data-urlencode "csrf=$(geo_csrf)")" = 303
 backup_was_made() { [[ $(readlink /srv/krokosha/backups/latest) != "$before_backup" && ! -e /var/lib/krokosha/requests/backup ]]; }
 check "…and a backup is made within two minutes, the request removed" wait_for 120 backup_was_made
 check "…in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.backup'")" = 1
 check "fail2ban's bans are counted for the status screen, as the site user" bash -c "systemctl is-enabled --quiet krokosha-fail2ban.timer && systemctl start krokosha-fail2ban.service && grep -q '\"name\":\"krokosha-admin\"' /var/lib/krokosha/status/fail2ban.json && [[ \$(stat -c %U /var/lib/krokosha/status/fail2ban.json) == krokosha ]]"
-check "…and shown there" grep -q 'krokosha-admin: ' <(admin_get "$ADMIN/status")
+check "…and shown there" grep -q 'krokosha-admin: ' <(geo_get /status)
 check "the certificate watch finds what the site and the mail server really serve" bash -c "'$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"name\":\"site\",\"host\":\"$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"name\":\"mail\",\"host\":\"mail.$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"ok\":true' /var/lib/krokosha/status/certwatch.json"
 # A certificate «about to expire» that nothing renews (this one is self-signed): the watch
 # fails, says so on the status screen, and the owner hears about it — once.
