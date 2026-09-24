@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -89,7 +90,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func recoverPanics(log *slog.Logger) middleware {
+func recoverPanics(log *slog.Logger, adminPath string) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
@@ -97,7 +98,7 @@ func recoverPanics(log *slog.Logger) middleware {
 					if err, ok := recovered.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 						panic(recovered)
 					}
-					log.Error("panic in handler", "panic", recovered, "path", r.URL.Path, "stack", string(debug.Stack()))
+					log.Error("panic in handler", "panic", recovered, "path", loggedPath(r.URL.Path, adminPath), "stack", string(debug.Stack()))
 					WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 				}
 			}()
@@ -126,8 +127,9 @@ func (r *statusRecorder) Flush() {
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // accessLog writes one debug line per request. Visitors' addresses and query strings are left
-// out on purpose: nginx keeps the request log, with its own retention (brief B6).
-func accessLog(log *slog.Logger) middleware {
+// out on purpose: nginx keeps the request log, with its own retention (brief B6). So are the
+// secrets some paths carry (loggedPath).
+func accessLog(log *slog.Logger, adminPath string) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
@@ -138,8 +140,25 @@ func accessLog(log *slog.Logger) middleware {
 				level = slog.LevelError
 			}
 			log.Log(r.Context(), level, "request",
-				"id", RequestID(r.Context()), "method", r.Method, "path", r.URL.Path,
+				"id", RequestID(r.Context()), "method", r.Method, "path", loggedPath(r.URL.Path, adminPath),
 				"status", recorder.status, "ms", time.Since(started).Milliseconds())
 		})
 	}
 }
+
+// loggedPath is a path without its secrets: the hidden prefix of the admin area and the secret of
+// Telegram's webhook (nginx keeps both out of its own log for the same reason). A journal gets
+// copied, sent along with a question, kept for years.
+func loggedPath(path, adminPath string) string {
+	switch {
+	case adminPath != "" && (path == adminPath || strings.HasPrefix(path, adminPath+"/")):
+		return "/<admin>" + strings.TrimPrefix(path, adminPath)
+	case strings.HasPrefix(path, TelegramWebhookPrefix) && len(path) > len(TelegramWebhookPrefix):
+		return TelegramWebhookPrefix + "<secret>"
+	}
+	return path
+}
+
+// TelegramWebhookPrefix is where nginx hands Telegram's calls over; a secret follows it
+// (telegram.WebhookPrefix).
+const TelegramWebhookPrefix = "/api/telegram/"

@@ -328,13 +328,29 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// spreadsheetSafe defuses cells that a spreadsheet would run as a formula. UTM values and link
-// targets are typed by strangers; an exported file is opened by the owner.
+// spreadsheetSafe defuses cells that a spreadsheet would run as a formula. UTM values, link
+// targets, names and descriptions are typed by strangers; an exported file is opened by the owner.
+// A spreadsheet may split the file at commas — or, as Excel does in Ukrainian and Russian settings,
+// at semicolons, and there a cell also starts after every «;» and every line break inside a field
+// (a quote in the middle of a line opens nothing). Wherever a cell may start, what would begin a
+// formula — after any spaces and quotes — gets a «'» in front of it.
 func spreadsheetSafe(cell string) string {
-	if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
-		return "'" + cell
+	var out strings.Builder
+	start := true // a cell may start here
+	for i := 0; i < len(cell); i++ {
+		c := cell[i]
+		if start && c != ' ' && c != '"' {
+			if strings.IndexByte("=+-@\t\r", c) >= 0 {
+				out.WriteByte('\'')
+			}
+			start = false
+		}
+		out.WriteByte(c)
+		if strings.IndexByte(";\n\r\t", c) >= 0 {
+			start = true
+		}
 	}
-	return cell
+	return out.String()
 }
 
 type limitedWriter struct {

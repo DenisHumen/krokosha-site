@@ -184,3 +184,19 @@ func TestClientIPTrustsTheProxyOnlyOnLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestLoggedPathHasNoSecrets(t *testing.T) {
+	for path, want := range map[string]string{
+		"/api/leads":                     "/api/leads",
+		"/_k7f3a9":                       "/<admin>",
+		"/_k7f3a9/leads/42":              "/<admin>/leads/42",
+		"/_k7f3a9x/leads":                "/_k7f3a9x/leads", // another path that merely starts alike
+		"/api/telegram/0123456789abcdef": "/api/telegram/<secret>",
+		"/api/telegram/":                 "/api/telegram/",
+		"/uk/account/":                   "/uk/account/",
+	} {
+		if got := loggedPath(path, "/_k7f3a9"); got != want {
+			t.Errorf("%s → %s, want %s", path, got, want)
+		}
+	}
+}

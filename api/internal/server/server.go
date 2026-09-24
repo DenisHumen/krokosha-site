@@ -42,10 +42,10 @@ func New(deps Deps) *Server {
 	})
 
 	handler := chain(s.mux,
-		recoverPanics(deps.Log),
+		recoverPanics(deps.Log, deps.Env.AdminPath),
 		requestContext,
 		securityHeaders,
-		accessLog(deps.Log),
+		accessLog(deps.Log, deps.Env.AdminPath),
 	)
 	s.http = &http.Server{
 		Addr:              deps.Env.Listen,

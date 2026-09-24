@@ -107,9 +107,10 @@ type Outgoing struct {
 	Silent      bool // no sound: the digest at night, a card for somebody who muted the bot
 }
 
-// Escape makes any text safe inside an HTML message: Telegram knows three special characters.
+// Escape makes any text safe inside an HTML message: in the text and in the value of an attribute
+// (href="…"). Those are the entities Telegram knows.
 func Escape(text string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;").Replace(text)
 }
 
 // APIError is Telegram saying no.

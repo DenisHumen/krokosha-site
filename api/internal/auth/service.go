@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -196,7 +197,18 @@ const (
 // Login checks login and password. With two-factor authentication on and no code given it
 // returns ErrCodeRequired and a ticket for CompleteLogin.
 func (s *Service) Login(ctx context.Context, a Attempt) (LoginResult, error) {
-	login := strings.ToLower(strings.TrimSpace(a.Login))
+	// A name that cannot be a login never reaches the database. MySQL compares by collation: it
+	// finds «ádmin», «ＡＤＭＩＮ» or «admin» with an invisible space as admin, each with a counter of
+	// tries of its own, and the limit per account would never add up; a name longer than the
+	// column of the audit log would leave no line there.
+	login, invalid := NormalizeLogin(a.Login)
+	if invalid != nil {
+		if !s.cache.Allow(ctx, "login:ip:"+a.IPPrefix, loginAttempts*4, loginWindow) {
+			return LoginResult{}, ErrThrottled
+		}
+		VerifyPassword(dummy(), a.Password) // same cost as a real check
+		return LoginResult{}, s.failed(ctx, "-", a, "not a login name: "+cutString(strconv.QuoteToASCII(a.Login), 200))
+	}
 
 	// Throttle before any work: per account, and per network so that one host cannot lock
 	// everybody out by cycling logins.
@@ -395,6 +407,14 @@ func (s *Service) Audit(ctx context.Context, actor, action, subject, details, ip
 	if err != nil {
 		s.log.Error("cannot write the audit log", "action", action, "error", err)
 	}
+}
+
+// cutString keeps at most n bytes of an ASCII string.
+func cutString(value string, n int) string {
+	if len(value) > n {
+		return value[:n] + "…"
+	}
+	return value
 }
 
 func nullIfEmpty(value string) any {

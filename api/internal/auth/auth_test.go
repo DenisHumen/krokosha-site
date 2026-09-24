@@ -253,6 +253,31 @@ func TestLoginIsThrottled(t *testing.T) {
 	}
 }
 
+// TestLoginNamesAreNotPatterns: MySQL compares text by collation, so «ádmin» or «ＡＤＭＩＮ» would
+// find the account «admin» — each with a counter of tries of its own. What cannot be a login is
+// refused before the database, even with the right password, and still leaves a line in the log.
+func TestLoginNamesAreNotPatterns(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for _, name := range []string{"dénis", "ＤＥＮＩＳ", "den\u200bis", "denis\u200b", "denis" + strings.Repeat("\u200b", 60), strings.Repeat("d", 65)} {
+		lookalike := attempt(goodPassword, "")
+		lookalike.Login = name
+		if _, err := f.Login(ctx, lookalike); !errors.Is(err, ErrBadCredentials) {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+	var logged int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'admin.login-failed' AND details LIKE 'not a login name:%'`).Scan(&logged); err != nil || logged != 6 {
+		t.Errorf("failed logins in the audit log: %d (%v)", logged, err)
+	}
+	// Upper case and spaces around are still the login itself.
+	upper := attempt(goodPassword, "")
+	upper.Login = "  DENIS "
+	if _, err := f.Login(ctx, upper); err != nil {
+		t.Errorf("the login in upper case: %v", err)
+	}
+}
+
 func TestTwoFactorAuthentication(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/server"
 )
 
 // How updates reach the bot (brief B10.3).
@@ -26,8 +28,9 @@ const (
 	ModePolling = "polling"
 )
 
-// WebhookPrefix is where nginx hands Telegram's calls over; the secret part follows it.
-const WebhookPrefix = "/api/telegram/"
+// WebhookPrefix is where nginx hands Telegram's calls over; the secret part follows it. The API's
+// log writes it without the secret (server.loggedPath).
+const WebhookPrefix = server.TelegramWebhookPrefix
 
 // Secrets derives the two secrets of the webhook from the secret of the installation: the end
 // of the address Telegram calls, and the header it proves itself with. Nothing to configure,
