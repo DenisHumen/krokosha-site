@@ -145,6 +145,12 @@ func (s *Store) price(ctx context.Context, tx *sql.Tx, lead *Lead) (loyalty.Offe
 	if err != nil {
 		return loyalty.Offer{}, nil, err
 	}
+	// A personal discount is the owner's gift to the person of the account: a request gets it, and
+	// spends it when it is «once», only if sent signed in. An account found by the typed address is
+	// not a sign-in — anybody may type anybody's address, and would burn the gift of its owner.
+	if !lead.Trusted {
+		personal = loyalty.Personal{}
+	}
 	claim := loyalty.Claim{}
 	var fingerprint []byte
 	if lead.EggsReceipt != "" {

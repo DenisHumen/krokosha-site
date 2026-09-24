@@ -714,6 +714,22 @@ func TestDiscountsOfAStranger(t *testing.T) {
 	if lead.Discount.Percent != 10 || lead.Discount.Reason != "tier" || lead.ClientID == 0 {
 		t.Errorf("the request of a known address: %+v", lead.Discount)
 	}
+
+	// Nor does the typed address get the client's personal discount, let alone spend it «once»:
+	// that is the owner's gift to the client, who gets it signed in.
+	var goldID int64
+	_ = f.db.QueryRow(`SELECT id FROM clients WHERE email = 'gold@example.com'`).Scan(&goldID)
+	if err := f.service.SetPersonal(context.Background(), goldID, Personal{Percent: 30, Note: "партнёр", Once: true}); err != nil {
+		t.Fatal(err)
+	}
+	typed = f.submit(f.browser("198.51.100.33"), "gold@example.com", nil)
+	lead, _ = f.leads.Get(context.Background(), mustNumber(t, typed["id"].(string)))
+	if lead.Discount.Reason == "personal" {
+		t.Errorf("a stranger got the personal discount of an address: %+v", lead.Discount)
+	}
+	if own := f.submit(gold, "gold@example.com", nil); func() bool { percent, reason := discountOf(own); return percent != 30 || reason != "personal" }() {
+		t.Errorf("the personal discount after a stranger typed the address: %v", own)
+	}
 }
 
 func TestLoginLetter(t *testing.T) {
