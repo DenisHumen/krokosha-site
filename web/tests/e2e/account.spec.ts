@@ -7,6 +7,12 @@ import { expect, test } from './fixtures.ts';
 
 const CSRF = 'the-token-of-the-session';
 
+// A photo of an answer, as the API hands it out: a PNG of one pixel.
+const PHOTO = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 const ME = {
   ok: true,
   csrf: CSRF,
@@ -95,7 +101,10 @@ const VIEW = {
       direction: 'out',
       channel: 'email',
       body: 'Hello! Could you send the plan of the office?',
-      files: ['offer.pdf'],
+      files: [
+        { id: 7, name: 'rack.png', kind: 'png', size: 16700 },
+        { id: 8, name: 'offer.pdf', kind: 'pdf', size: 120000 },
+      ],
     },
   ],
 };
@@ -158,6 +167,8 @@ async function mockApi(page: Page, signedIn = false): Promise<Api> {
         return route.fulfill({ json: { ok: true, leads } });
       case '/api/account/leads/K-0042':
         return route.fulfill({ json: { ok: true, lead: VIEW } });
+      case '/api/account/leads/K-0042/files/7':
+        return route.fulfill({ body: PHOTO, contentType: 'image/png' });
       case '/api/account/inquiries':
         leads.unshift(INQUIRY);
         return route.fulfill({ json: { ok: true, number: INQUIRY.number } });
@@ -291,13 +302,27 @@ test.describe('personal account', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Requests');
     await expect(thread.locator('[data-thread-status]')).toHaveText('Waiting for your answer');
     // The form's message is the description itself: it is not repeated in the conversation.
-    const feed = thread.locator('[data-thread-feed] li');
+    const feed = thread.locator('[data-thread-feed] > li');
     await expect(feed).toHaveCount(3);
     await expect(feed.nth(0)).toContainText('The request is received');
     await expect(feed.nth(1)).toContainText('Waiting for your answer');
     await expect(feed.nth(2)).toContainText('Answer · email');
     await expect(feed.nth(2)).toContainText('Could you send the plan of the office?');
-    await expect(feed.nth(2)).toContainText('Files: offer.pdf');
+    // The photo of the answer is in the conversation; the document is a download.
+    const files = feed.nth(2).getByRole('list', { name: 'Files' });
+    const photo = files.getByRole('img', { name: 'rack.png' });
+    await expect(photo).toBeVisible();
+    await expect
+      .poll(() => photo.evaluate((image: HTMLImageElement) => image.naturalWidth))
+      .toBe(1);
+    await expect(files.getByRole('link', { name: 'rack.png' })).toHaveAttribute(
+      'href',
+      '/api/account/leads/K-0042/files/7',
+    );
+    const document = files.getByRole('link', { name: /offer\.pdf/ });
+    await expect(document).toHaveAttribute('download', 'offer.pdf');
+    await expect(document).toHaveAttribute('href', '/api/account/leads/K-0042/files/8');
+    await expect(document).toContainText('117 kB');
     // Read now: the rail loses its «new».
     await expect(page.locator('[data-unread-dot]')).toBeHidden();
 

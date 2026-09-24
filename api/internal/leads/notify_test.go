@@ -1,7 +1,10 @@
 package leads
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -362,6 +365,84 @@ func TestLettersNameTheFiles(t *testing.T) {
 		if strings.Contains(strings.ToLower(text+html), "content-disposition: attachment") {
 			t.Error("a file travelled by mail")
 		}
+	}
+}
+
+// An answer with files: they go with the letter while they fit, the rest wait in the account.
+func TestAnAnswerCarriesItsFilesByMail(t *testing.T) {
+	f := newFixture(t)
+	smtp := mailtest.Start(t)
+	sender := &mail.Sender{Addr: smtp.Addr, Hello: "krokosha.xyz"}
+	store := NewStore(f.db, func() time.Time { return f.now })
+	store.UseFiles(f.files)
+	mailer := &Mailer{
+		Store: store, Deliver: sender.Send, SiteHost: "krokosha.xyz", AdminURL: "https://krokosha.xyz/_secret1/",
+		From:     netmail.Address{Name: "Denis Humen", Address: "denis@krokosha.xyz"},
+		NotifyTo: netmail.Address{Address: "owner@krokosha.xyz"},
+		Form:     formWithLabels, Location: time.UTC,
+	}
+	ctx := context.Background()
+	lead := f.seed(nil)
+	save := func(name string, content []byte) Upload {
+		upload, err := SaveOutgoing(f.files, name, int64(len(content)), bytes.NewReader(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return upload
+	}
+	video := append(mp4File("isom"), make([]byte, 16<<20)...)
+	answer, err := store.ReplyWith(ctx, lead, "denis", Answer{Text: "Смета и видео объекта.", Files: []Upload{save("Смета.pdf", pdfFile()), save("tour.mp4", video)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(TaskPayload{LeadID: lead, MessageID: answer})
+	if err := mailer.Send(ctx, outbox.Task{Channel: outbox.ChannelEmail, Kind: TaskReply, LeadID: lead, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	received := smtp.Messages()
+	message, err := received[len(received)-1].Message()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaType, params, _ := mime.ParseMediaType(message.Header.Get("Content-Type"))
+	if mediaType != "multipart/mixed" {
+		t.Fatalf("the letter is %s", mediaType)
+	}
+	reader := multipart.NewReader(message.Body, params["boundary"])
+	var text string
+	var files []string
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, disposition, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+			content, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, part))
+			files = append(files, fmt.Sprintf("%s %s %d", disposition["filename"], part.Header.Get("Content-Type"), len(content)))
+			continue
+		}
+		_, inner, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		alternatives := multipart.NewReader(part, inner["boundary"])
+		plain, err := alternatives.NextPart()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(plain)
+		text = string(body)
+	}
+	if len(files) != 1 || !strings.HasPrefix(files[0], "Смета.pdf application/pdf") || !strings.HasSuffix(files[0], fmt.Sprintf(" %d", len(pdfFile()))) {
+		t.Errorf("the files of the letter: %q", files)
+	}
+	if !strings.Contains(text, "Не поместились в письмо: tour.mp4 (16,0 МБ).") || !strings.Contains(text, fmt.Sprintf("https://krokosha.xyz/ru/account/#%s", Number(lead))) {
+		t.Errorf("the letter about the video that did not fit:\n%s", text)
+	}
+	var delivery string
+	_ = f.db.QueryRow(`SELECT delivery FROM lead_messages WHERE id = ?`, answer).Scan(&delivery)
+	if delivery != "sent" {
+		t.Errorf("the answer: %s", delivery)
 	}
 }
 

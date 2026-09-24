@@ -35,13 +35,6 @@ var momentNames = map[string]string{
 
 var kindNames = map[string]string{"reply": "Ответы", "reject": "Отказы"}
 
-// mediaTypes are the types the files of templates are shown with; documents are downloads.
-var mediaTypes = map[string]string{
-	leads.KindJPG: "image/jpeg", leads.KindPNG: "image/png", leads.KindMP4: "video/mp4",
-	leads.KindPDF: "application/pdf", leads.KindTXT: "text/plain; charset=utf-8",
-	leads.KindDOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
 type choice struct {
 	ID, Name string
 	Count    int
@@ -349,7 +342,7 @@ func (h *Handler) templateMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	defer content.Close()
 	header := w.Header()
-	header.Set("Content-Type", mediaTypes[file.Kind])
+	header.Set("Content-Type", leads.ContentTypeOf(file.Kind))
 	disposition := "attachment"
 	if leads.IsPhoto(file.Kind) || leads.IsVideo(file.Kind) {
 		disposition = "inline"

@@ -19,11 +19,14 @@ import (
 
 // Dialog is what the bot is waiting for from a person.
 type Dialog struct {
-	Kind   string    `json:"kind"` // note | reply | reject_reason | reject_letter
-	LeadID int64     `json:"lead"`
-	Draft  string    `json:"draft,omitempty"`  // a text waiting for «send»
-	Reason string    `json:"reason,omitempty"` // why a request is being rejected
-	At     time.Time `json:"at"`
+	Kind   string `json:"kind"` // note | reply | reject_reason | reject_letter
+	LeadID int64  `json:"lead"`
+	Draft  string `json:"draft,omitempty"`  // a text waiting for «send»
+	Reason string `json:"reason,omitempty"` // why a request is being rejected
+	// Template: the answer was made from it — its files go with the text, and the card does not
+	// offer it again.
+	Template int64     `json:"template,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // dialogLifetime: a text typed hours later is not an answer to a forgotten question.
@@ -200,20 +203,48 @@ func leadButtonData(action string, leadID int64, argument string) string {
 	return data
 }
 
-// templates returns the ready-made texts of a kind in the client's language.
-func (b *Bot) templates(ctx context.Context, kind string, lead *leads.Lead) []leads.Template {
+// templates returns the ready-made texts of a kind in the client's language: eight of them. Answers
+// come the way the card of the admin area orders them (leads.Rank) — what fits the conversation
+// first; top marks the three that fit best.
+func (b *Bot) templates(ctx context.Context, kind string, card *leads.Card) (out []leads.Template, top map[int64]bool) {
 	all, err := b.opts.Leads.Templates(ctx, kind)
 	if err != nil {
 		b.opts.Log.Error("telegram: cannot read the templates", "error", err)
-		return nil
+		return nil, nil
 	}
-	var out []leads.Template
+	top = map[int64]bool{}
+	if kind == "reply" {
+		sent, err := b.opts.Leads.UsedTemplates(ctx, card.Lead.ID)
+		if err != nil {
+			b.opts.Log.Warn("telegram: cannot tell the templates sent already", "error", err)
+		}
+		for _, suggestion := range leads.Rank(all, leads.SituationOf(card, sent, b.opts.Now())) {
+			if len(out) == 8 {
+				break
+			}
+			out = append(out, suggestion.Template)
+			top[suggestion.Template.ID] = suggestion.Top
+		}
+		return out, top
+	}
 	for _, item := range all {
-		if item.Lang == lead.Lang && len(out) < 8 {
+		if item.Lang == card.Lead.Lang && len(out) < 8 {
 			out = append(out, item)
 		}
 	}
-	return out
+	return out, top
+}
+
+// templateLabel is the button of a template: «★ Стоимость · 📎2».
+func templateLabel(item leads.Template, top bool) string {
+	label := item.Title
+	if top {
+		label = "★ " + label
+	}
+	if len(item.Media) > 0 {
+		label += " · 📎" + strconv.Itoa(len(item.Media))
+	}
+	return label
 }
 
 // --- reading --------------------------------------------------------------------------------------
@@ -315,8 +346,9 @@ func (b *Bot) offerReply(ctx context.Context, member *Member, chatID int64, card
 		return
 	}
 	var buttons Keyboard
-	for _, item := range b.templates(ctx, "reply", lead) {
-		buttons = append(buttons, []Button{{Text: item.Title, Data: leadButtonData("tpl", lead.ID, strconv.FormatInt(item.ID, 10))}})
+	templates, top := b.templates(ctx, "reply", card)
+	for _, item := range templates {
+		buttons = append(buttons, []Button{{Text: templateLabel(item, top[item.ID]), Data: leadButtonData("tpl", lead.ID, strconv.FormatInt(item.ID, 10))}})
 	}
 	buttons = append(buttons, []Button{{Text: "✍️ Свой текст", Data: leadButtonData("own", lead.ID, "")}, {Text: "Отмена", Data: leadButtonData("cancel", lead.ID, "")}})
 	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Buttons: buttons,
@@ -325,11 +357,15 @@ func (b *Bot) offerReply(ctx context.Context, member *Member, chatID int64, card
 
 func (b *Bot) useTemplate(ctx context.Context, member *Member, query *CallbackQuery, card *leads.Card, rawID string) {
 	for _, kind := range []string{"reply", "reject"} {
-		for _, item := range b.templates(ctx, kind, card.Lead) {
+		templates, _ := b.templates(ctx, kind, card)
+		for _, item := range templates {
 			if strconv.FormatInt(item.ID, 10) != rawID {
 				continue
 			}
 			dialog := &Dialog{Kind: dialogReply, LeadID: card.Lead.ID, Draft: leads.FillTemplate(item.Body, card.Lead, leads.LinksFor(b.opts.SiteURL, card.Lead))}
+			if kind == "reply" {
+				dialog.Template = item.ID
+			}
 			if kind == "reject" {
 				previous, _ := b.opts.Access.Dialog(ctx, member.TelegramID)
 				if previous == nil || previous.Kind != dialogRejectLetter || previous.LeadID != card.Lead.ID {
@@ -365,7 +401,27 @@ func (b *Bot) preview(ctx context.Context, member *Member, chatID int64, card *l
 	}
 	buttons = append(buttons, []Button{{Text: "Отмена", Data: leadButtonData("cancel", lead.ID, "")}})
 	draft, _ := cut(dialog.Draft, messageLimit-600)
-	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Text: title + "\n\n" + Escape(draft), Buttons: buttons})
+	text := title + "\n\n" + Escape(draft)
+	if files := b.templateFiles(ctx, dialog); len(files) > 0 && card.ReplyVia != leads.MethodPhone {
+		names := make([]string, 0, len(files))
+		for _, file := range files {
+			names = append(names, Escape(file.Filename))
+		}
+		text += "\n\n📎 С ответом уйдут файлы шаблона: " + strings.Join(names, ", ")
+	}
+	b.sayAbout(ctx, lead.ID, Outgoing{ChatID: chatID, Text: text, Buttons: buttons})
+}
+
+// templateFiles are the files of the template an answer was made from; none if it has gone.
+func (b *Bot) templateFiles(ctx context.Context, dialog *Dialog) []leads.Media {
+	if dialog.Template == 0 || dialog.Kind != dialogReply {
+		return nil
+	}
+	item, err := b.opts.Leads.Template(ctx, dialog.Template)
+	if err != nil {
+		return nil
+	}
+	return item.Media
 }
 
 func (b *Bot) sendDraft(ctx context.Context, member *Member, card *leads.Card, answer func(string, bool), done func(string), failed func(error)) {
@@ -379,7 +435,16 @@ func (b *Bot) sendDraft(ctx context.Context, member *Member, card *leads.Card, a
 		b.rejectNow(ctx, member, card, dialog.Draft, answer, done, failed)
 		return
 	}
-	if _, err := b.opts.Leads.Reply(ctx, card.Lead.ID, member.Actor(), dialog.Draft); err != nil {
+	answerOf := leads.Answer{Text: dialog.Draft}
+	if dialog.Template != 0 {
+		answerOf.Templates = []int64{dialog.Template}
+		if card.ReplyVia != leads.MethodPhone {
+			for _, file := range b.templateFiles(ctx, dialog) {
+				answerOf.Media = append(answerOf.Media, file.ID)
+			}
+		}
+	}
+	if _, err := b.opts.Leads.ReplyWith(ctx, card.Lead.ID, member.Actor(), answerOf); err != nil {
 		failed(err)
 		return
 	}
@@ -447,7 +512,8 @@ func (b *Bot) offerLetter(ctx context.Context, member *Member, chatID int64, car
 	}
 	buttons := Keyboard{}
 	if card.ReplyVia != leads.MethodPhone {
-		for _, item := range b.templates(ctx, "reject", lead) {
+		templates, _ := b.templates(ctx, "reject", card)
+		for _, item := range templates {
 			buttons = append(buttons, []Button{{Text: "✉️ " + item.Title, Data: leadButtonData("tpl", lead.ID, strconv.FormatInt(item.ID, 10))}})
 		}
 	}

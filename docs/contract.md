@@ -1,6 +1,6 @@
 # Контракт дизайн ↔ бэкенд
 
-**Версия 1.9** (2026-09-24). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]** / **[v1.9]**.
+**Версия 1.10** (2026-09-24). Основа — часть C брифа ([brief/MASTER_PROMPT.md](brief/MASTER_PROMPT.md)). Всё, что добавлено сверх брифа, помечено **[v1.1]** / **[v1.2]** / **[v1.3]** / **[v1.4]** / **[v1.5]** / **[v1.6]** / **[v1.7]** / **[v1.8]** / **[v1.9]** / **[v1.10]**.
 
 Контракт меняется только через PR, который правит этот файл и одновременно `mock/`. Ни дизайн, ни бэкенд не меняют формат данных молча.
 
@@ -15,6 +15,7 @@
 | 1.7 | **Замер пути с сервера сайта** (§8): `map.trace.*`, `map.errors.trace_failed`, `GET /api/net/trace`, разметка `data-route-trace`, `data-trace-result`, `data-show` |
 | 1.8 | **Ачивки пасхалок** (§2.4, §4): найденная пасхалка — баннер как в Steam со звуком. `eggs.achievements.<id>.{name, text}`; `eggs.all` и `eggs.croc5` убраны — их тексты теперь в ачивках `all` и `croc5` |
 | 1.9 | **Редкость ачивок, скидки, личный кабинет** (§2.4, §4, §7, §9): находки учитываются сервером и возвращаются подписанными квитанциями, редкость — доля игроков, как в Steam; панель ачивок; скидки заявки (первая, за все пасхалки, уровни, персональная); `/account/` — заявки и обращения, статусы, переписка, достижения за заказы. В `site.json`: `eggs.rarity`, `eggs.panel.*`, `loyalty`, `account`, `contacts.form.messages.discount_*`, `signed_in`, `track` |
+| 1.10 | **Файлы в переписке кабинета** (§9): `feed[].files` — объекты `{ id, name, kind, size }` вместо имён; файл отдаёт `GET /api/account/leads/<K-0042>/files/<id>`. `account.requests.files` — подпись списка файлов («Файлы»), без `{names}` |
 
 ---
 
@@ -375,7 +376,8 @@
 | `GET /api/account/me` | `{ ok, csrf, client, contacts[], loyalty: { enabled, currency, orders, spent, offer, eggs_used, welcome_used, tier?, next?, personal? }, eggs[], orders: { earned: [{ id, at, new }], shares, big_order }, sessions[], bot }`; никто не вошёл — `200 { ok: false, error: "signed_out" }` |
 | `POST /api/account/logout` | выход |
 | `GET /api/account/leads` | заявки и обращения: `[{ number, kind, status, created, updated, direction, subject?, excerpt, amount?, parent?, unread, discount }]` |
-| `GET /api/account/leads/<K-0042>` | заявка с перепиской: `description`, `budget?`, `timeline?`, `contact`, `method`, `can_write`, `feed: [{ at, kind: message\|status, direction?, channel?, body?, status?, files? }]`; помечает прочитанной |
+| `GET /api/account/leads/<K-0042>` | заявка с перепиской: `description`, `budget?`, `timeline?`, `contact`, `method`, `can_write`, `feed: [{ at, kind: message\|status, direction?, channel?, body?, status?, files?: [{ id, name, kind, size }] }]`; помечает прочитанной. `kind` файла — `jpg\|png\|mp4\|pdf\|docx\|txt`, определён по содержимому |
+| `GET /api/account/leads/<K-0042>/files/<id>` | **[v1.10]** файл переписки — только владельцу заявки (чужой, спам, обезличенная — `404`). Фото и видео ответа — `inline` с точным типом (для `<img>`, `<video>`), остальное и всё, что прислал сам клиент, — `attachment`, `application/octet-stream`. Всегда `nosniff` и `CSP: sandbox`; запрос только со страниц сайта (`Sec-Fetch-Site: same-origin`) |
 | `POST /api/account/leads/<K-0042>/messages` `{ text }` | ответ в заявке |
 | `POST /api/account/inquiries` `{ subject, text, parent }` | новое обращение (`201 { ok, number }`) |
 | `POST /api/account/contacts` `{ kind, value }`, `…/contacts/remove` `{ id }` | контакты и соцсети; виды — `account.contacts.kinds` |

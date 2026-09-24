@@ -191,6 +191,14 @@ func (r Retention) RunOnce(ctx context.Context) (RetentionReport, error) {
 			return report, err
 		}
 	}
+	// What Telegram calls a file is kept while the file is: once no request and no template has
+	// that content, nothing points at it any more.
+	if _, err := r.Store.db.ExecContext(ctx, `
+		DELETE FROM telegram_uploads
+		WHERE NOT EXISTS (SELECT 1 FROM lead_attachments a WHERE a.sha256 = telegram_uploads.sha256)
+		  AND NOT EXISTS (SELECT 1 FROM template_media m WHERE m.sha256 = telegram_uploads.sha256)`); err != nil {
+		return report, err
+	}
 	return report, nil
 }
 

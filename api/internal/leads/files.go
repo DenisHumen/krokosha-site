@@ -131,6 +131,25 @@ var mediaKinds = map[string]string{
 	".pdf": KindPDF, ".docx": KindDOCX, ".txt": KindTXT,
 }
 
+// ContentTypeOf is the media type a file of a kind is sent with: to a mail program, to a browser.
+func ContentTypeOf(kind string) string {
+	switch kind {
+	case KindJPG:
+		return "image/jpeg"
+	case KindPNG:
+		return "image/png"
+	case KindMP4:
+		return "video/mp4"
+	case KindPDF:
+		return "application/pdf"
+	case KindTXT:
+		return "text/plain; charset=utf-8"
+	case KindDOCX:
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	}
+	return "application/octet-stream"
+}
+
 // MaxBytesOf is the limit of a file of a kind that goes to a client.
 func MaxBytesOf(kind string) int64 {
 	switch kind {

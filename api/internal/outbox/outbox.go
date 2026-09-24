@@ -47,6 +47,13 @@ type Sender interface {
 	Send(ctx context.Context, task Task) error
 }
 
+// Patient is a Sender some of whose tasks take longer than a message: an answer with videos goes
+// to Telegram in minutes on a slow line. The worker waits that long, up to five minutes, and holds
+// the task for as long — the other tasks wait meanwhile, so it is asked only for big files.
+type Patient interface {
+	Timeout(ctx context.Context, task Task) time.Duration
+}
+
 // SenderFunc adapts a function to Sender.
 type SenderFunc func(ctx context.Context, task Task) error
 
@@ -105,6 +112,7 @@ const (
 	pollEvery      = 5 * time.Second
 	batchSize      = 10
 	sendTimeout    = 45 * time.Second
+	maxSendTimeout = 5 * time.Minute  // what a Patient sender may ask for: an album of videos
 	lockFor        = 2 * time.Minute  // a delivery taking longer than this is considered dead
 	unconfiguredIn = 10 * time.Minute // look again whether a channel got its sender
 )
@@ -261,9 +269,13 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 		return
 	}
 
+	timeout := sendTimeout
+	if patient, ok := sender.(Patient); ok {
+		timeout = max(timeout, min(patient.Timeout(ctx, task), maxSendTimeout))
+	}
 	// Claim it. Should another worker ever run beside this one, only one of them gets the row.
 	result, err := w.db.ExecContext(ctx, `UPDATE outbox SET status = 'sending', locked_until = ? WHERE id = ? AND status = 'pending'`,
-		now.Add(lockFor), task.ID)
+		now.Add(max(lockFor, timeout+time.Minute)), task.ID)
 	if err != nil {
 		w.log.Error("outbox: cannot claim a task", "task", task.ID, "error", err)
 		return
@@ -272,7 +284,7 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 		return
 	}
 
-	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	err = sender.Send(sendCtx, task)
 	cancel()
 

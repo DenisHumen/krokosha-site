@@ -527,7 +527,7 @@
       "answer": "Answer",
       "status": "Status",
       "call": "A phone call",
-      "files": "Files: {names}",
+      "files": "Files",
       "write": "Your answer",
       "send": "Send",
       "sent": "Sent",

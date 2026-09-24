@@ -3,11 +3,14 @@
 package tgtest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +24,19 @@ const Token = "123456:TEST-token-that-must-never-be-logged"
 type Call struct {
 	Method string
 	Params map[string]any
+	Files  []File // uploaded with it (multipart/form-data)
 }
+
+// File is a file the bot uploaded.
+type File struct {
+	Field, Name string
+	Size        int
+	SHA256      string // hex, of the content
+}
+
+// FileID is what the pretend API calls an uploaded file: the same content always gets the same id,
+// so a test sees whether the bot sent a file again by its id.
+func (f File) FileID(kind string) string { return "file-" + f.SHA256[:12] + "-" + kind }
 
 // Text returns the «text» of a call (messages and edits have one).
 func (c Call) Text() string {
@@ -94,11 +109,16 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	method := strings.TrimPrefix(r.URL.Path, prefix)
 	var params map[string]any
-	body, _ := io.ReadAll(r.Body)
-	_ = json.Unmarshal(body, &params)
+	var files []File
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		params, files = readForm(w, r)
+	} else {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &params)
+	}
 
 	s.mu.Lock()
-	s.calls = append(s.calls, Call{Method: method, Params: params})
+	s.calls = append(s.calls, Call{Method: method, Params: params, Files: files})
 	refusal := s.failures[method]
 	if refusal != nil && refusal.times != 0 {
 		if refusal.times > 0 {
@@ -127,10 +147,87 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		result = map[string]any{"id": 123456, "is_bot": true, "first_name": "Krokosha", "username": "krokosha_test_bot"}
 	case "sendMessage":
 		result = map[string]any{"message_id": messageID, "date": time.Now().Unix(), "chat": map[string]any{"id": params["chat_id"], "type": "private"}, "text": params["text"]}
+	case "sendPhoto", "sendVideo", "sendDocument":
+		kind := strings.ToLower(strings.TrimPrefix(method, "send"))
+		result = sentFile(messageID, params, kind, fileID(params[kind], kind, files))
+	case "sendMediaGroup":
+		items, _ := params["media"].([]any)
+		list := make([]any, 0, len(items))
+		for i, item := range items {
+			media, _ := item.(map[string]any)
+			kind, _ := media["type"].(string)
+			list = append(list, sentFile(messageID*100+int64(i), params, kind, fileID(media["media"], kind, files)))
+		}
+		result = list
 	case "getUpdates":
 		result = s.takeUpdates(r, params)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": result})
+}
+
+// readForm reads a multipart call the way Telegram does: chat_id is a number, media is JSON.
+func readForm(w http.ResponseWriter, r *http.Request) (map[string]any, []File) {
+	params := map[string]any{}
+	// What Telegram takes at most, with room to spare.
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<20)
+	if err := r.ParseMultipartForm(64 << 20); err != nil { //nolint:gosec // capped by MaxBytesReader above
+		return params, nil
+	}
+	for name, values := range r.MultipartForm.Value {
+		value := values[0]
+		switch name {
+		case "chat_id":
+			number, _ := strconv.ParseFloat(value, 64)
+			params[name] = number
+		case "media":
+			var list []any
+			_ = json.Unmarshal([]byte(value), &list)
+			params[name] = list
+		default:
+			params[name] = value
+		}
+	}
+	var files []File
+	for field, headers := range r.MultipartForm.File {
+		for _, header := range headers {
+			content, err := header.Open()
+			if err != nil {
+				continue
+			}
+			sum := sha256.New()
+			size, _ := io.Copy(sum, content)
+			_ = content.Close()
+			files = append(files, File{Field: field, Name: header.Filename, Size: int(size), SHA256: hex.EncodeToString(sum.Sum(nil))})
+		}
+	}
+	return params, files
+}
+
+// fileID names the file of a send: an upload by its content, a known file by the id it was sent by.
+func fileID(ref any, kind string, files []File) string {
+	id, _ := ref.(string)
+	field := strings.TrimPrefix(id, "attach://")
+	if id == "" {
+		field = kind // a single upload: the field is named after the kind
+	}
+	for _, file := range files {
+		if file.Field == field {
+			return file.FileID(kind)
+		}
+	}
+	return id
+}
+
+// sentFile is the message Telegram returns for a sent file.
+func sentFile(messageID int64, params map[string]any, kind, id string) map[string]any {
+	message := map[string]any{"message_id": messageID, "date": time.Now().Unix(), "chat": map[string]any{"id": params["chat_id"], "type": "private"}}
+	switch kind {
+	case "photo":
+		message["photo"] = []any{map[string]any{"file_id": id + "-small"}, map[string]any{"file_id": id}}
+	default:
+		message[kind] = map[string]any{"file_id": id}
+	}
+	return message
 }
 
 // takeUpdates behaves like long polling: it answers at once when there is something, otherwise

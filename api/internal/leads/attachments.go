@@ -17,6 +17,7 @@ type Attachment struct {
 	Filename  string // the sender's name for it, cleaned; still untrusted text
 	Kind      string
 	Size      int64
+	SHA256    []byte // of the content: Telegram is not sent the same file twice
 	StoredAs  string
 }
 
@@ -24,11 +25,11 @@ type Attachment struct {
 // without rows, so this is something to log, not something to show as a failure.
 var ErrFilesLeft = errors.New("some files of the deleted request are still on disk; the daily sweep will remove them")
 
-const attachmentColumns = `id, lead_id, COALESCE(message_id, 0), created_at, filename, kind, size, stored_as`
+const attachmentColumns = `id, lead_id, COALESCE(message_id, 0), created_at, filename, kind, size, sha256, stored_as`
 
 func scanAttachment(row interface{ Scan(...any) error }) (Attachment, error) {
 	var file Attachment
-	err := row.Scan(&file.ID, &file.LeadID, &file.MessageID, &file.CreatedAt, &file.Filename, &file.Kind, &file.Size, &file.StoredAs)
+	err := row.Scan(&file.ID, &file.LeadID, &file.MessageID, &file.CreatedAt, &file.Filename, &file.Kind, &file.Size, &file.SHA256, &file.StoredAs)
 	return file, err
 }
 

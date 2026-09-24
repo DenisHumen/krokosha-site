@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -490,6 +491,91 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	}
 	if f.tasks(leads.TaskClientMessage) != 2 {
 		t.Errorf("the staff is not told: %d tasks", f.tasks(leads.TaskClientMessage))
+	}
+}
+
+// fetch asks for a file the way the account's page does: an image, a link — no JSON either way.
+func (b *browser) fetch(path string, edit ...func(*http.Request)) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Host = "krokosha.com"
+	request.RemoteAddr = "127.0.0.1:40000"
+	request.Header.Set("X-Real-IP", b.ip)
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	for name, value := range b.cookies {
+		request.AddCookie(&http.Cookie{Name: name, Value: value})
+	}
+	for _, change := range edit {
+		change(request)
+	}
+	recorder := httptest.NewRecorder()
+	b.f.handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestFilesOfTheConversation(t *testing.T) {
+	f := newFixture(t)
+	files := leads.NewFiles(t.TempDir())
+	f.leads.UseFiles(files)
+	b := f.browser("203.0.113.12")
+	b.signInByEmail("maria@example.com")
+	number := f.submit(b, "maria@example.com", nil)["id"].(string)
+	id := mustNumber(t, number)
+	ctx := context.Background()
+
+	jpg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, bytes.Repeat([]byte{7}, 500)...)
+	pdf := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
+	save := func(name string, content []byte) leads.Upload {
+		upload, err := leads.SaveOutgoing(files, name, int64(len(content)), bytes.NewReader(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return upload
+	}
+	if _, err := f.leads.ReplyWith(ctx, id, "denis", leads.Answer{Text: "Фото стойки и смета.", Files: []leads.Upload{save("стойка.jpg", jpg), save("Смета.pdf", pdf)}}); err != nil {
+		t.Fatal(err)
+	}
+	feed := b.send(http.MethodGet, "/api/account/leads/"+number, nil).body["lead"].(map[string]any)["feed"].([]any)
+	var shown []map[string]any
+	for _, item := range feed {
+		list, _ := item.(map[string]any)["files"].([]any)
+		for _, file := range list {
+			shown = append(shown, file.(map[string]any))
+		}
+	}
+	if len(shown) != 2 || shown[0]["name"] != "стойка.jpg" || shown[0]["kind"] != "jpg" || shown[0]["size"] != float64(len(jpg)) || shown[1]["kind"] != "pdf" {
+		t.Fatalf("the files of the answer: %v", shown)
+	}
+	address := func(file map[string]any) string {
+		return fmt.Sprintf("/api/account/leads/%s/files/%v", number, file["id"])
+	}
+
+	// The photo of an answer is shown in the page, as what it is; the document is a download.
+	photo := b.fetch(address(shown[0]))
+	if photo.Code != http.StatusOK || photo.Header().Get("Content-Type") != "image/jpeg" || photo.Body.String() != string(jpg) ||
+		!strings.HasPrefix(photo.Header().Get("Content-Disposition"), "inline; filename*=utf-8''") ||
+		photo.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(photo.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Errorf("the photo: %d %v", photo.Code, photo.Header())
+	}
+	document := b.fetch(address(shown[1]))
+	if document.Code != http.StatusOK || document.Header().Get("Content-Type") != "application/octet-stream" ||
+		!strings.HasPrefix(document.Header().Get("Content-Disposition"), "attachment;") || document.Body.String() != string(pdf) {
+		t.Errorf("the document: %d %v", document.Code, document.Header())
+	}
+
+	// Nobody else gets them: another account, a page of another site, nobody signed in.
+	stranger := f.browser("203.0.113.13")
+	stranger.signInByEmail("oleg@example.com")
+	if got := stranger.fetch(address(shown[0])); got.Code != http.StatusNotFound {
+		t.Errorf("another account: %d", got.Code)
+	}
+	if got := b.fetch(address(shown[0]), func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }); got.Code != http.StatusForbidden {
+		t.Errorf("from another site: %d", got.Code)
+	}
+	if got := f.browser("203.0.113.14").fetch(address(shown[0])); got.Code != http.StatusUnauthorized {
+		t.Errorf("signed out: %d", got.Code)
+	}
+	if got := b.fetch(fmt.Sprintf("/api/account/leads/%s/files/%v", leads.Number(id+1), shown[0]["id"])); got.Code != http.StatusNotFound {
+		t.Errorf("through another request's address: %d", got.Code)
 	}
 }
 

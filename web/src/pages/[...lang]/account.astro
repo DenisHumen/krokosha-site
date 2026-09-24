@@ -1103,10 +1103,8 @@ const scriptTexts = JSON.stringify({
   <template id="tpl-msg">
     <li class="msg">
       <span class="msg-meta" data-meta></span>
-      <p class="msg-body">
-        <span data-body></span>
-        <span class="msg-files" data-files hidden></span>
-      </p>
+      <p class="msg-body" data-body></p>
+      <ul class="msg-files" data-files aria-label={A.requests.files} hidden></ul>
     </li>
   </template>
   <template id="tpl-contact">
