@@ -132,6 +132,9 @@ check "unknown page is a 404" test "$(status "https://$DOMAIN/nope/")" = 404
 check "404 under /uk/ is in Ukrainian" grep -q '<html lang="uk"' <(body "https://$DOMAIN/uk/nope/")
 check "404 under /ru/ is in Russian" grep -q '<html lang="ru"' <(body "https://$DOMAIN/ru/nope/")
 check "robots.txt" grep -q "^Sitemap: https://$DOMAIN/sitemap.xml" <(body "https://$DOMAIN/robots.txt")
+# Google Search asks for the icon the home page links; browsers and crawlers ask for /favicon.ico.
+check "the icon for Google Search is a PNG" test "$(header "https://$DOMAIN/favicon-96.png" content-type)" = image/png
+check "favicon.ico is served" test "$(header "https://$DOMAIN/favicon.ico" content-type)" = image/x-icon
 # Let's Encrypt checks every name of the certificate over plain HTTP — mail.<domain> included,
 # at issue and at every renewal. A name that port 80 does not answer fails the whole certificate.
 acme_probe=/var/www/krokosha/acme/.well-known/acme-challenge/ci-probe
