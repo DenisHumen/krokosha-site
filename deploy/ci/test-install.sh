@@ -463,6 +463,15 @@ check "nobody else gets it" test "$(status "$ADMIN/leads/$file_lead/files/$file_
 check "files are never reachable as pages of the site" test "$(status "https://$DOMAIN/attachments/")" = 404
 check "deleting the client's data" test "$(admin_post "/leads/$file_lead/delete" --data-urlencode "csrf=$(csrf)" --data-urlencode "confirm=K-$(printf '%04d' "$file_lead")")" = 303
 check "…removes the files too" test "$(find /srv/krokosha/attachments -type f | wc -l)" = 0
+# Quick answers: the files of a template come through a location of their own (…/upload/), the
+# only one in the admin area that takes more than a small form.
+template_id=$(sql "SELECT id FROM reply_templates WHERE kind = 'reply' AND lang = 'ru' AND title = 'Примеры работ'")
+check "a template takes a file bigger than a form, through nginx" \
+  test "$(admin_post "/upload/templates/$template_id/media" --form "csrf=$(csrf)" --form "files=@$megabyte;filename=notes.txt")" = 303
+check "…kept next to the files of requests, for the service's eyes only" \
+  test "$(find /srv/krokosha/attachments/templates -type f -perm 600 | wc -l) $(sql "SELECT CONCAT(kind, ' ', size) FROM template_media WHERE template_id = $template_id")" = "1 txt 1048576"
+check "the rest of the admin area still takes small forms only" \
+  test "$(admin_post /leads/1/note --form "csrf=$(csrf)" --form "text=<$megabyte")" = 413
 sed -i 's/^\( *attachments:\) true /\1 false/' /opt/krokosha/repo/content/site.yaml
 check "the content is as it was" test -z "$(runuser -u krokosha -- git -C /opt/krokosha/repo status --porcelain)"
 rm -f "$pdf" "$program" "$megabyte" "$toobig" "$downloaded"

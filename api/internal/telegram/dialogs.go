@@ -329,7 +329,7 @@ func (b *Bot) useTemplate(ctx context.Context, member *Member, query *CallbackQu
 			if strconv.FormatInt(item.ID, 10) != rawID {
 				continue
 			}
-			dialog := &Dialog{Kind: dialogReply, LeadID: card.Lead.ID, Draft: leads.FillTemplate(item.Body, card.Lead)}
+			dialog := &Dialog{Kind: dialogReply, LeadID: card.Lead.ID, Draft: leads.FillTemplate(item.Body, card.Lead, leads.LinksFor(b.opts.SiteURL, card.Lead))}
 			if kind == "reject" {
 				previous, _ := b.opts.Access.Dialog(ctx, member.TelegramID)
 				if previous == nil || previous.Kind != dialogRejectLetter || previous.LeadID != card.Lead.ID {

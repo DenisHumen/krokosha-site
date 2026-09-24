@@ -1,47 +1,52 @@
 {{define "content"}}
-  {{$csrf := .Session.CSRFToken}}
-  <p class="notice">В тексте <span class="mono">{name}</span> заменяется именем клиента, <span class="mono">{id}</span> — номером заявки. В карточке заявки предлагаются шаблоны на языке клиента.</p>
-  {{range .Data}}
-    {{$kind := .Kind}}
-    <section class="stack" aria-label="{{.Name}}">
-      <div class="head"><h2 class="label">{{.Name}}</h2><a class="back" href="{{path "/leads"}}">← К заявкам</a></div>
-      <div class="tiles tiles-3 tiles-free">
-        {{range .Langs}}
-          {{$lang := .Lang}}
-          <section class="tile">
-            <span class="label">{{.Name}}</span>
-            {{range .Items}}
-              <form class="form" method="post" action="{{path "/templates"}}">
-                <input type="hidden" name="csrf" value="{{$csrf}}" />
-                <input type="hidden" name="id" value="{{.ID}}" />
-                <input type="hidden" name="kind" value="{{$kind}}" />
-                <input type="hidden" name="lang" value="{{$lang}}" />
-                <label class="visually-hidden" for="title-{{.ID}}">Название</label>
-                <input class="input input-s" id="title-{{.ID}}" name="title" value="{{.Title}}" maxlength="100" required />
-                <label class="visually-hidden" for="body-{{.ID}}">Текст</label>
-                <textarea class="input input-s" id="body-{{.ID}}" name="body" rows="5" required>{{.Body}}</textarea>
-                <span class="actions">
-                  <button class="btn" type="submit">Сохранить</button>
-                  <button class="btn btn-ghost btn-danger" type="submit" name="delete" value="1">Удалить</button>
-                </span>
-              </form>
-            {{end}}
-            <details class="more">
-              <summary>Новый шаблон</summary>
-              <form class="form" method="post" action="{{path "/templates"}}">
-                <input type="hidden" name="csrf" value="{{$csrf}}" />
-                <input type="hidden" name="kind" value="{{$kind}}" />
-                <input type="hidden" name="lang" value="{{$lang}}" />
-                <label class="visually-hidden" for="new-title-{{$kind}}-{{$lang}}">Название</label>
-                <input class="input input-s" id="new-title-{{$kind}}-{{$lang}}" name="title" maxlength="100" required placeholder="Название" />
-                <label class="visually-hidden" for="new-body-{{$kind}}-{{$lang}}">Текст</label>
-                <textarea class="input input-s" id="new-body-{{$kind}}-{{$lang}}" name="body" rows="5" required placeholder="Текст"></textarea>
-                <button class="btn btn-accent" type="submit">Добавить</button>
-              </form>
-            </details>
-          </section>
+  {{$d := .Data}}
+  <div class="tile-bar">
+    <nav class="tile-bar-group" aria-label="Вид">
+      {{range $d.Kinds}}<a class="btn{{if not .Current}} btn-ghost{{end}}" href="{{href "/templates" .Query}}" {{if .Current}}aria-current="true"{{end}}>{{.Name}}<span class="count">{{.Count}}</span></a>{{end}}
+    </nav>
+    <nav class="tile-bar-group" aria-label="Язык">
+      {{range $d.Langs}}<a class="btn{{if not .Current}} btn-ghost{{end}}" href="{{href "/templates" .Query}}" {{if .Current}}aria-current="true"{{end}}>{{.Name}}<span class="count">{{.Count}}</span></a>{{end}}
+    </nav>
+    <div class="tile-bar-group">
+      <form class="form-row" method="get" action="{{path "/templates"}}" role="search">
+        <input type="hidden" name="kind" value="{{$d.Kind}}" />
+        <input type="hidden" name="lang" value="{{$d.Lang}}" />
+        <label class="visually-hidden" for="templates-search">Поиск по шаблонам</label>
+        <input class="search" id="templates-search" type="search" name="q" value="{{$d.Search}}" placeholder="Слово из названия, текста или ключевых слов" />
+      </form>
+      <a class="btn btn-accent" href="{{path "/templates/new"}}?kind={{$d.Kind}}&amp;lang={{$d.Lang}}">+ Шаблон</a>
+    </div>
+  </div>
+
+  <p class="notice">
+    {{if eq $d.Kind "reply"}}Карточка заявки сама поднимает наверх три шаблона, которые лучше всего подходят разговору: по словам клиента — они в «ключевых словах» каждого шаблона, — по моменту и по направлению заявки. Остальные — в списке под ними; их тексты складываются в один ответ, а фото, видео и документы шаблона уходят клиенту вместе с текстом.
+    {{else}}Отказы предлагаются, когда заявку отклоняют: письмо уходит клиенту до смены статуса.{{end}}
+    В тексте <span class="mono">{name}</span> — имя клиента, <span class="mono">{id}</span> — номер заявки, <span class="mono">{site}</span> — сайт на языке клиента, <span class="mono">{account}</span> — заявка в личном кабинете.
+  </p>
+
+  {{if $d.Groups}}
+    <ul class="tpl-grid" aria-label="Шаблоны">
+      {{range $d.Groups}}
+        {{$group := .Name}}
+        {{range .Items}}
+          <li>
+            <a class="tile tpl-card" href="{{path "/templates/" (print .ID)}}">
+              <span class="label">{{$group}}</span>
+              <span class="tpl-title">{{.Title}}</span>
+              <span class="tpl-body">{{.Body}}</span>
+              <span class="pills">
+                {{if ne .Moment "any"}}<span class="pill pill-muted">{{momentName .Moment}}</span>{{end}}
+                {{if .Directions}}<span class="pill pill-muted">направлений: {{len .Directions}}</span>{{end}}
+                {{if .Media}}<span class="pill pill-light">{{mediaCount .Media}}</span>{{end}}
+                {{if .UsedCount}}<span class="pill pill-ghost">отправлен {{.UsedCount}} · {{dayMonth .UsedAt}}</span>{{end}}
+              </span>
+              {{if .Keywords}}<span class="tpl-words">{{range $i, $w := .Keywords}}{{if $i}}, {{end}}{{$w}}{{end}}</span>{{end}}
+            </a>
+          </li>
         {{end}}
-      </div>
-    </section>
+      {{end}}
+    </ul>
+  {{else}}
+    <section class="tile"><p class="empty">{{if $d.Search}}Ничего не нашлось по «{{$d.Search}}».{{else}}Шаблонов на этом языке нет.{{end}}</p></section>
   {{end}}
 {{end}}

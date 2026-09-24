@@ -176,8 +176,16 @@ func New(opts Options) (*Handler, error) {
 		"meter":      meter,
 		"usage":      usage,
 		"statusName": named(statusNames, "—"),
-		"methodName": named(methodNames, "—"),
-		"direction":  func(id string) string { return h.directionName(id) },
+		// Quick answers (quick.go).
+		"categoryName": named(categoryNames, "Другое"),
+		"momentName":   named(momentNames, "в любой момент"),
+		"reasons":      reasonLine,
+		"sent":         wasSent,
+		"mediaCount":   mediaCount,
+		"isPhoto":      leads.IsPhoto,
+		"isVideo":      leads.IsVideo,
+		"methodName":   named(methodNames, "—"),
+		"direction":    func(id string) string { return h.directionName(id) },
 		"safeURL": func(link string) template.URL { // links built by this package from validated contacts
 			return template.URL(link) //nolint:gosec // see leadCard: mailto:, https://t.me/, tel: of a validated value
 		},
@@ -230,7 +238,7 @@ func New(opts Options) (*Handler, error) {
 		"short":      named(shortNames, "—"),
 		"since":      func(t time.Time) string { return ago(time.Since(t)) },
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error",
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "template", "bot", "account", "error",
 		"clients", "client", "mail", "achievements"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -304,6 +312,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/inbox/{id}/discard", h.private(h.inboxDiscard))
 	mux.Handle("GET "+p+"/templates", h.private(h.templatesPage))
 	mux.Handle("POST "+p+"/templates", h.private(h.templateSave))
+	mux.Handle("GET "+p+"/templates/new", h.private(h.templateNew))
+	mux.Handle("GET "+p+"/templates/{id}", h.private(h.templateEdit))
+	mux.Handle("POST "+p+"/templates/{id}/media/{media}/remove", h.private(h.templateMediaRemove))
+	mux.Handle("GET "+p+"/templates/media/{media}", h.private(h.templateMedia))
+	// Forms with files go under /upload/: nginx lets bigger bodies through there alone.
+	mux.Handle("POST "+p+"/upload/templates/{id}/media", h.upload(uploadLimit, h.templateMediaAdd))
+	mux.Handle("POST "+p+"/upload/leads/{id}/reply", h.upload(uploadLimit, h.leadReply))
 	mux.Handle("GET "+p+"/bot", h.private(h.botPage))
 	mux.Handle("POST "+p+"/bot/invite", h.private(h.botInvite))
 	mux.Handle("POST "+p+"/bot/invite/revoke", h.private(h.botInviteRevoke))
@@ -340,7 +355,7 @@ func (h *Handler) headers(next http.Handler) http.Handler {
 		header.Set("Cache-Control", "no-store")
 		// No inline scripts or styles anywhere in the admin area; charts are server-rendered SVG.
 		header.Set("Content-Security-Policy",
-			"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "+
+			"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; "+
 				"connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
@@ -364,7 +379,18 @@ func (h *Handler) sameOrigin(next http.Handler) http.Handler {
 }
 
 // private wraps a page that needs a session; unsafe methods also need the CSRF token.
-func (h *Handler) private(next http.HandlerFunc) http.Handler {
+func (h *Handler) private(next http.HandlerFunc) http.Handler { return h.guarded(formLimit, next) }
+
+// upload is private for a form with files (quick answers): a body up to limit, whose files wait
+// in temporary files — the service has a /tmp of its own — until the page is done.
+func (h *Handler) upload(limit int64, next http.HandlerFunc) http.Handler {
+	return h.guarded(limit, next)
+}
+
+// formLimit: a form without files is a few kilobytes.
+const formLimit = 64 << 10
+
+func (h *Handler) guarded(limit int64, next http.HandlerFunc) http.Handler {
 	return h.headers(h.sameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
@@ -386,7 +412,26 @@ func (h *Handler) private(next http.HandlerFunc) http.Handler {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			if limit > formLimit {
+				err := r.ParseMultipartForm(1 << 20) // the body is capped by MaxBytesReader above
+				if r.MultipartForm != nil {
+					defer func() { _ = r.MultipartForm.RemoveAll() }()
+				}
+				var tooLarge *http.MaxBytesError
+				switch {
+				case errors.Is(err, http.ErrNotMultipart):
+					err = r.ParseForm()
+				case errors.As(err, &tooLarge):
+					h.render(w, r.WithContext(context.WithValue(r.Context(), keySession, session)), http.StatusRequestEntityTooLarge, "error",
+						view{Title: "Слишком много", Error: fmt.Sprintf("Файлы вместе больше %d МБ — отправьте их по частям.", limit>>20)})
+					return
+				}
+				if err != nil {
+					http.Error(w, "the form cannot be read", http.StatusBadRequest)
+					return
+				}
+			}
 			if subtle.ConstantTimeCompare([]byte(r.PostFormValue("csrf")), []byte(session.CSRFToken)) != 1 {
 				http.Error(w, "the form has expired, reload the page", http.StatusForbidden)
 				return
@@ -506,6 +551,8 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"letter-discarded": "Письмо удалено.",
 	"template-saved":   "Шаблон сохранён.",
 	"template-deleted": "Шаблон удалён.",
+	"media-added":      "Файлы добавлены к шаблону: они уйдут клиенту вместе с текстом.",
+	"media-removed":    "Файл убран из шаблона. Отправленным раньше ответам он остался.",
 	"lead-discount":    "Скидка заявки изменена.",
 	"lead-amount":      "Сумма заказа сохранена: она учитывается в уровне клиента.",
 	"lead-client":      "Клиент заявки изменён.",

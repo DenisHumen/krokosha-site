@@ -321,3 +321,174 @@
       });
   });
 })();
+
+// Quick answers (lead.html): a template goes into the answer without a reload — its text is added
+// to what is there, its files come along as checked boxes, and it is sent as one of the answer's
+// templates. Without scripts every template is a link that puts its text into the form.
+(function () {
+  'use strict';
+  var composer = document.querySelector('[data-composer]');
+  if (!composer) return;
+  var form = composer.querySelector('[data-reply]');
+  var source = document.getElementById('templates-data');
+  if (!form || !source) return;
+  var templates;
+  try {
+    templates = JSON.parse(source.textContent || '{}');
+  } catch (error) {
+    return;
+  }
+  var text = form.querySelector('textarea[name="text"]');
+  var chosen = form.querySelector('[data-chosen]');
+  var list = form.querySelector('[data-attach-list]');
+  var base = (document.querySelector('[data-reply]').getAttribute('action') || '').replace(/\/upload\/leads\/\d+\/reply$/, '');
+
+  function has(name, value) {
+    return form.querySelector('input[name="' + name + '"][value="' + value + '"]') !== null;
+  }
+
+  function addFile(file) {
+    if (!list || has('media', file.id)) return;
+    var item = document.createElement('li');
+    item.className = 'attach-item';
+    var label = document.createElement('label');
+    label.className = 'attach-check';
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.name = 'media';
+    box.value = String(file.id);
+    box.checked = true;
+    label.appendChild(box);
+    var preview;
+    if (file.kind === 'jpg' || file.kind === 'png') {
+      preview = document.createElement('img');
+      preview.className = 'attach-thumb';
+      preview.alt = '';
+      preview.loading = 'lazy';
+      preview.src = base + '/templates/media/' + file.id;
+    } else {
+      preview = document.createElement('span');
+      preview.className = 'attach-icon';
+      preview.setAttribute('aria-hidden', 'true');
+      preview.textContent = file.kind === 'mp4' ? '▶' : '≡';
+    }
+    label.appendChild(preview);
+    var name = document.createElement('span');
+    name.className = 'attach-name';
+    name.textContent = file.name;
+    label.appendChild(name);
+    var size = document.createElement('span');
+    size.className = 'attach-size';
+    size.textContent = file.size;
+    label.appendChild(size);
+    item.appendChild(label);
+    list.appendChild(item);
+  }
+
+  composer.addEventListener('click', function (event) {
+    var link = event.target.closest('[data-template]');
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    var id = link.getAttribute('data-template');
+    var template = templates[id];
+    if (!template) return;
+    event.preventDefault();
+    if (!has('template', id)) {
+      var current = text.value.replace(/\s+$/, '');
+      text.value = current ? current + '\n\n' + template.body : template.body;
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'template';
+      input.value = id;
+      chosen.appendChild(input);
+      (template.media || []).forEach(addFile);
+    }
+    composer.querySelectorAll('[data-template="' + id + '"]').forEach(function (other) {
+      other.setAttribute('aria-current', 'true');
+    });
+    text.focus();
+    text.setSelectionRange(text.value.length, text.value.length);
+  });
+
+  // The search over all the templates: by title and by text.
+  var filter = composer.querySelector('[data-template-filter]');
+  var all = composer.querySelector('[data-templates]');
+  if (filter && all) {
+    filter.hidden = false;
+    filter.addEventListener('input', function () {
+      var query = filter.value.trim().toLowerCase();
+      all.querySelectorAll('[data-group]').forEach(function (group) {
+        var shown = 0;
+        group.querySelectorAll('[data-template]').forEach(function (chip) {
+          var template = templates[chip.getAttribute('data-template')] || { body: '' };
+          var match = !query || (chip.textContent + '\n' + template.body).toLowerCase().indexOf(query) >= 0;
+          chip.hidden = !match;
+          if (match) shown++;
+        });
+        group.hidden = shown === 0;
+      });
+    });
+  }
+})();
+
+// Forms with files (lead.html, template.html): the limits are checked as soon as files are chosen,
+// so that a video too big is named at once — not after a long upload, by a bare page of nginx. The
+// server checks them again, by what is inside the files.
+(function () {
+  'use strict';
+  var MB = 1024 * 1024;
+  var limits = { photo: 10, video: 50, document: 20 };
+  var names = { photo: 'фото', video: 'видео', document: 'документа' };
+  var most = 10;
+  var total = 110;
+
+  function kindOf(file) {
+    var name = file.name.toLowerCase();
+    if (/\.(jpe?g|png)$/.test(name) || file.type === 'image/jpeg' || file.type === 'image/png') return 'photo';
+    if (/\.mp4$/.test(name) || file.type === 'video/mp4') return 'video';
+    return 'document';
+  }
+
+  function megabytes(bytes) {
+    return String(Math.round((bytes / MB) * 10) / 10).replace('.', ',');
+  }
+
+  document.querySelectorAll('input[type="file"][data-upload]').forEach(function (input) {
+    var form = input.form;
+    var note = document.createElement('p');
+    note.className = 'upload-problem';
+    note.setAttribute('role', 'alert');
+    note.hidden = true;
+    (input.closest('label') || input).insertAdjacentElement('afterend', note);
+
+    function check() {
+      var problem = '';
+      var sum = 0;
+      var count = input.files.length + (Number(input.getAttribute('data-upload')) || 0);
+      if (form) count += form.querySelectorAll('input[name="media"]:checked').length;
+      for (var i = 0; i < input.files.length && !problem; i++) {
+        var file = input.files[i];
+        var kind = kindOf(file);
+        sum += file.size;
+        if (file.size > limits[kind] * MB) {
+          problem = 'Файл «' + file.name + '» — ' + megabytes(file.size) + ' МБ, а для ' + names[kind] + ' предел ' + limits[kind] + ' МБ.';
+        }
+      }
+      if (!problem && count > most) {
+        problem = 'Файлов получится ' + count + ', а можно не больше ' + most + ': столько Telegram показывает одним альбомом.';
+      }
+      if (!problem && sum > total * MB) {
+        problem = 'Файлы вместе — ' + megabytes(sum) + ' МБ, за раз можно до ' + total + ' МБ: разделите их на два ответа.';
+      }
+      input.setCustomValidity(problem);
+      note.textContent = problem;
+      note.hidden = !problem;
+    }
+
+    input.addEventListener('change', check);
+    if (form) {
+      form.addEventListener('change', function (event) {
+        if (event.target.name === 'media') check();
+      });
+    }
+  });
+})();

@@ -428,9 +428,41 @@ func replyChannel(ctx context.Context, db querier, id int64, method string, clie
 // of «time to first reaction». A phone call cannot be delivered by a machine: for those the
 // text is the record of the call.
 func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messageID int64, err error) {
-	text = clean(text, true)
-	if text == "" {
+	return s.ReplyWith(ctx, id, actor, Answer{Text: text})
+}
+
+// Answer is what the staff send: the text, the templates it was made from, the files of those
+// templates that go along, and files attached by hand — already kept in the attachments
+// (SaveOutgoing). What is not stored in the end is removed from the disk: the caller need not.
+type Answer struct {
+	Text      string
+	Templates []int64
+	Media     []int64 // files of templates (Media.ID)
+	Files     []Upload
+}
+
+// ReplyWith is Reply with templates and files: the files of templates get a copy of their own in
+// the request (a hard link), and every file becomes an attachment of the answer.
+func (s *Store) ReplyWith(ctx context.Context, id int64, actor string, answer Answer) (messageID int64, err error) {
+	var linked []Upload
+	defer func() {
+		if err == nil {
+			return
+		}
+		for _, file := range append(linked, answer.Files...) {
+			if s.files != nil {
+				_ = s.files.Remove(file.StoredAs)
+			}
+		}
+	}()
+	text := clean(answer.Text, true)
+	switch {
+	case text == "" && len(answer.Media)+len(answer.Files) == 0:
 		return 0, ErrEmptyText
+	case len(answer.Media)+len(answer.Files) > MaxOutgoingFiles:
+		return 0, ErrTooManyFiles
+	case len(answer.Media)+len(answer.Files) > 0 && s.files == nil:
+		return 0, ErrNoFilesHere
 	}
 	now := s.now().UTC()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -451,6 +483,13 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	if err != nil {
 		return 0, err
 	}
+	if channel == MethodPhone && len(answer.Media)+len(answer.Files) > 0 {
+		return 0, ErrNoFilesByPhone
+	}
+	templates, err := existingTemplates(ctx, tx, answer.Templates)
+	if err != nil {
+		return 0, err
+	}
 	delivery := sql.NullString{String: "queued", Valid: true}
 	switch channel {
 	case MethodPhone:
@@ -458,13 +497,48 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	case ChannelSite:
 		delivery.String = "sent" // it is in the account the moment it is stored; the notice about it is a task of its own
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, delivery) VALUES (?, ?, 'out', ?, ?, ?, ?)`,
-		id, now, channel, actor, cut(text, 8000), delivery)
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, templates, delivery) VALUES (?, ?, 'out', ?, ?, ?, NULLIF(?, ''), ?)`,
+		id, now, channel, actor, cut(text, 8000), cut(joinIDs(templates), 255), delivery)
 	if err != nil {
 		return 0, err
 	}
 	if messageID, err = result.LastInsertId(); err != nil {
 		return 0, err
+	}
+	// The files of templates: a copy of each, in the order they were chosen.
+	for _, mediaID := range answer.Media {
+		var file Upload
+		var storedAs string
+		err := tx.QueryRowContext(ctx, `SELECT filename, kind, size, sha256, stored_as FROM template_media WHERE id = ?`, mediaID).
+			Scan(&file.Filename, &file.Kind, &file.Size, &file.SHA256, &storedAs)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // removed from its template a moment ago: the rest goes
+		}
+		if err != nil {
+			return 0, err
+		}
+		if s.media == nil {
+			return 0, ErrNoFilesHere
+		}
+		copied, err := s.files.Link(s.media, storedAs, file)
+		if err != nil {
+			return 0, err
+		}
+		linked = append(linked, copied)
+	}
+	for _, file := range append(append([]Upload(nil), linked...), answer.Files...) {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lead_attachments (lead_id, message_id, created_at, filename, kind, size, sha256, stored_as) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, messageID, now, cut(file.Filename, 255), file.Kind, file.Size, file.SHA256, file.StoredAs); err != nil {
+			return 0, err
+		}
+	}
+	if len(templates) > 0 {
+		args := append([]any{now}, idsAsArgs(templates)...)
+		used := `UPDATE reply_templates SET used_count = used_count + 1, used_at = ? WHERE id IN (` + placeholders(len(templates)) + `)` //nolint:gosec // placeholders only
+		if _, err := tx.ExecContext(ctx, used, args...); err != nil {
+			return 0, err
+		}
 	}
 
 	next := StatusWaitingClient
@@ -915,75 +989,4 @@ func (s *Store) Export(ctx context.Context, fn func(row []string) error) error {
 		}
 	}
 	return rows.Err()
-}
-
-// --- ready-made answers --------------------------------------------------------------------------
-
-// Template is a ready-made answer or refusal, editable in the admin area.
-type Template struct {
-	ID    int64
-	Kind  string // reply | reject
-	Lang  string
-	Title string
-	Body  string
-}
-
-// Templates lists the templates of a kind ("" = all) in the order of the editor.
-func (s *Store) Templates(ctx context.Context, kind string) ([]Template, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, lang, title, body FROM reply_templates WHERE (? = '' OR kind = ?) ORDER BY kind, lang, position, id`, kind, kind)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Template
-	for rows.Next() {
-		var item Template
-		if err := rows.Scan(&item.ID, &item.Kind, &item.Lang, &item.Title, &item.Body); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
-
-// SaveTemplate adds a template (ID 0) or changes one.
-func (s *Store) SaveTemplate(ctx context.Context, item Template) error {
-	item.Title, item.Body = clean(item.Title, false), clean(item.Body, true)
-	if item.Title == "" || item.Body == "" {
-		return ErrEmptyText
-	}
-	if item.Kind != "reply" && item.Kind != "reject" {
-		return errors.New("a template is a reply or a reject")
-	}
-	if !languages[item.Lang] {
-		return errors.New("unknown language of a template")
-	}
-	now := s.now().UTC()
-	if item.ID == 0 {
-		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO reply_templates (kind, lang, position, title, body, updated_at)
-			SELECT ?, ?, COALESCE(MAX(position), 0) + 1, ?, ?, ? FROM reply_templates WHERE kind = ? AND lang = ?`,
-			item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.Kind, item.Lang)
-		return err
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE reply_templates SET kind = ?, lang = ?, title = ?, body = ?, updated_at = ? WHERE id = ?`,
-		item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.ID)
-	if err != nil {
-		return err
-	}
-	if changed, _ := result.RowsAffected(); changed == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// DeleteTemplate removes a template.
-func (s *Store) DeleteTemplate(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM reply_templates WHERE id = ?`, id)
-	return err
-}
-
-// FillTemplate puts the client's name and the number of the request into a template.
-func FillTemplate(body string, lead *Lead) string {
-	return strings.NewReplacer("{name}", lead.Name, "{id}", "#"+lead.Number()).Replace(body)
 }

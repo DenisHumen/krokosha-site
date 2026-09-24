@@ -71,11 +71,18 @@ func Inspect(filename string, size int64, content io.ReaderAt) (kind string, err
 	case size > MaxAttachmentBytes:
 		return "", ErrFileTooBig
 	}
+	if err := check(kind, size, content); err != nil {
+		return "", err
+	}
+	return kind, nil
+}
 
+// check makes sure the content is what the kind says, by its signature.
+func check(kind string, size int64, content io.ReaderAt) error {
 	head := make([]byte, 1024)
 	n, err := content.ReadAt(head, 0)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
+		return err
 	}
 	head, err = head[:n], nil // a file shorter than a kilobyte ends early, which is no error
 
@@ -92,14 +99,81 @@ func Inspect(filename string, size int64, content io.ReaderAt) (kind string, err
 		matches, err = isPlainText(io.NewSectionReader(content, 0, size))
 	case KindDOCX:
 		matches = bytes.HasPrefix(head, signatureZIP) && isWordDocument(content, size)
+	case KindMP4:
+		matches = isMP4(head)
 	}
 	if err != nil {
-		return "", err
+		return err
 	}
 	if !matches {
+		return ErrFileType
+	}
+	return nil
+}
+
+// --- what goes to a client: the files of templates and of answers ----------------------------------
+
+// KindMP4 is the one kind of video: the one Telegram plays in the chat (brief of quick answers).
+const KindMP4 = "mp4"
+
+// Limits of the files that go to a client. Telegram takes a photo up to 10 MB and anything else up
+// to 50 MB from a bot; documents are kept to what a letter can still carry.
+const (
+	MaxPhotoBytes    = 10 << 20
+	MaxVideoBytes    = 50 << 20
+	MaxDocumentBytes = 20 << 20
+	// MaxOutgoingFiles: an album of Telegram holds ten.
+	MaxOutgoingFiles = 10
+)
+
+var mediaKinds = map[string]string{
+	".jpg": KindJPG, ".jpeg": KindJPG, ".png": KindPNG, ".mp4": KindMP4, ".m4v": KindMP4,
+	".pdf": KindPDF, ".docx": KindDOCX, ".txt": KindTXT,
+}
+
+// MaxBytesOf is the limit of a file of a kind that goes to a client.
+func MaxBytesOf(kind string) int64 {
+	switch kind {
+	case KindJPG, KindPNG:
+		return MaxPhotoBytes
+	case KindMP4:
+		return MaxVideoBytes
+	default:
+		return MaxDocumentBytes
+	}
+}
+
+// IsPhoto and IsVideo: what Telegram shows in the chat rather than as a file to download.
+func IsPhoto(kind string) bool { return kind == KindJPG || kind == KindPNG }
+func IsVideo(kind string) bool { return kind == KindMP4 }
+
+// InspectMedia decides whether a file may go to a client — a photo, a video or a document — and
+// what it is, by its content, like Inspect does for the files of the form.
+func InspectMedia(filename string, size int64, content io.ReaderAt) (kind string, err error) {
+	kind, known := mediaKinds[strings.ToLower(path.Ext(CleanFilename(filename)))]
+	switch {
+	case !known, size <= 0:
 		return "", ErrFileType
+	case size > MaxBytesOf(kind):
+		return "", ErrFileTooBig
+	}
+	if err := check(kind, size, content); err != nil {
+		return "", err
 	}
 	return kind, nil
+}
+
+// isMP4: an ISO media file whose brand is one of MPEG-4's — «ftyp» right after the size of the
+// first box. QuickTime («qt  ») plays nowhere but on Apple's devices, and is not taken.
+func isMP4(head []byte) bool {
+	if len(head) < 12 || string(head[4:8]) != "ftyp" {
+		return false
+	}
+	switch string(head[8:12]) {
+	case "isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "MSNV", "dash", "mmp4":
+		return true
+	}
+	return false
 }
 
 // isPlainText: no zero bytes and no control characters besides the ones text is made of. Any
@@ -191,8 +265,13 @@ func (f *Files) where(storedAs string) (string, error) {
 	return filepath.Join(f.dir, storedAs), nil
 }
 
-// Save writes an inspected file under a new random name, for the service's eyes only.
+// Save writes an inspected file of the form under a new random name, for the service's eyes only.
 func (f *Files) Save(filename, kind string, content io.Reader) (Upload, error) {
+	return f.SaveLimited(filename, kind, content, MaxAttachmentBytes)
+}
+
+// SaveLimited is Save with a limit of its own: a video for a client is bigger than a file of the form.
+func (f *Files) SaveLimited(filename, kind string, content io.Reader, limit int64) (Upload, error) {
 	if err := os.MkdirAll(f.dir, 0o700); err != nil {
 		return Upload{}, err
 	}
@@ -208,11 +287,11 @@ func (f *Files) Save(filename, kind string, content io.Reader) (Upload, error) {
 		return Upload{}, err
 	}
 	hash := sha256.New()
-	upload.Size, err = io.Copy(io.MultiWriter(out, hash), io.LimitReader(content, MaxAttachmentBytes+1))
+	upload.Size, err = io.Copy(io.MultiWriter(out, hash), io.LimitReader(content, limit+1))
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}
-	if err == nil && upload.Size > MaxAttachmentBytes {
+	if err == nil && upload.Size > limit {
 		err = ErrFileTooBig
 	}
 	if err != nil {
@@ -220,6 +299,46 @@ func (f *Files) Save(filename, kind string, content io.Reader) (Upload, error) {
 		return Upload{}, err
 	}
 	upload.SHA256 = hash.Sum(nil)
+	return upload, nil
+}
+
+// Link gives a file of another directory a name of its own here: a hard link, so that the file of
+// a template goes into an answer without taking the disk twice, and deleting one leaves the other.
+// Where a link cannot be made (another file system), the file is copied.
+func (f *Files) Link(from *Files, storedAs string, upload Upload) (Upload, error) {
+	source, err := from.where(storedAs)
+	if err != nil {
+		return Upload{}, err
+	}
+	if err := os.MkdirAll(f.dir, 0o700); err != nil {
+		return Upload{}, err
+	}
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return Upload{}, err
+	}
+	upload.StoredAs = hex.EncodeToString(random)
+	target := filepath.Join(f.dir, upload.StoredAs)
+	if err := os.Link(source, target); err == nil {
+		return upload, nil
+	}
+	in, err := os.Open(source) // checked by where: 32 hex digits inside the other directory
+	if err != nil {
+		return Upload{}, err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // the random name made above
+	if err != nil {
+		return Upload{}, err
+	}
+	_, err = io.Copy(out, in)
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(target)
+		return Upload{}, err
+	}
 	return upload, nil
 }
 

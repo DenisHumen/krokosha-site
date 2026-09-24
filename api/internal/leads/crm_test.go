@@ -413,7 +413,7 @@ func TestTemplates(t *testing.T) {
 		t.Errorf("templates: %d replies, %d refusals", len(replies), len(rejects))
 	}
 
-	if err := store.SaveTemplate(ctx, Template{Kind: "reply", Lang: "ru", Title: "Созвон", Body: "Здравствуйте, {name}! По заявке {id}: давайте созвонимся."}); err != nil {
+	if _, err := store.SaveTemplate(ctx, Template{Kind: "reply", Lang: "ru", Title: "Созвон", Body: "Здравствуйте, {name}! По заявке {id}: давайте созвонимся."}); err != nil {
 		t.Fatal(err)
 	}
 	replies, _ = store.Templates(ctx, "reply")
@@ -427,22 +427,32 @@ func TestTemplates(t *testing.T) {
 		t.Fatal("the new template is not in the list")
 	}
 	lead, _ := store.Get(ctx, f.seed(nil))
-	if got := FillTemplate(added.Body, lead); got != "Здравствуйте, Иван Петров! По заявке #K-0001: давайте созвонимся." {
+	if got := FillTemplate(added.Body, lead, Filling{}); got != "Здравствуйте, Иван Петров! По заявке #K-0001: давайте созвонимся." {
 		t.Errorf("filled template: %q", got)
+	}
+	links := LinksFor("https://krokosha.com/", lead)
+	if got := FillTemplate("{site}#projects · {account}", lead, links); got != "https://krokosha.com/ru/#projects · https://krokosha.com/ru/account/#K-0001" {
+		t.Errorf("the links of a template: %q", got)
 	}
 
 	added.Body = "Новый текст"
-	if err := store.SaveTemplate(ctx, added); err != nil {
+	if _, err := store.SaveTemplate(ctx, added); err != nil {
 		t.Fatal(err)
 	}
+	// Saving what is already there changes nothing, and is no error.
+	if _, err := store.SaveTemplate(ctx, added); err != nil {
+		t.Errorf("saving the same template twice: %v", err)
+	}
 	for name, bad := range map[string]Template{
-		"no title":        {Kind: "reply", Lang: "ru", Body: "текст"},
-		"no body":         {Kind: "reply", Lang: "ru", Title: "заголовок"},
-		"unknown kind":    {Kind: "spam", Lang: "ru", Title: "a", Body: "b"},
-		"unknown lang":    {Kind: "reply", Lang: "de", Title: "a", Body: "b"},
-		"missing to edit": {ID: 99999, Kind: "reply", Lang: "ru", Title: "a", Body: "b"},
+		"no title":         {Kind: "reply", Lang: "ru", Body: "текст"},
+		"no body":          {Kind: "reply", Lang: "ru", Title: "заголовок"},
+		"unknown kind":     {Kind: "spam", Lang: "ru", Title: "a", Body: "b"},
+		"unknown lang":     {Kind: "reply", Lang: "de", Title: "a", Body: "b"},
+		"missing to edit":  {ID: 99999, Kind: "reply", Lang: "ru", Title: "a", Body: "b"},
+		"unknown moment":   {Kind: "reply", Lang: "ru", Title: "a", Body: "b", Moment: "someday"},
+		"unknown category": {Kind: "reply", Lang: "ru", Title: "a", Body: "b", Category: "gossip"},
 	} {
-		if err := store.SaveTemplate(ctx, bad); err == nil {
+		if _, err := store.SaveTemplate(ctx, bad); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}

@@ -174,13 +174,23 @@ type leadData struct {
 	// client who left a contact and never opened the bot: answers wait for that (telegram.ClientPrefix).
 	ClientBotLink string
 	Next          []string
-	Replies       []leads.Template // in the client's language
-	Rejects       []leads.Template
-	Draft         string // the answer being written: a chosen template, or what was typed before an error
-	Refusal       string // the same for the letter that goes with a refusal
-	VisitID       string
-	CanReply      bool
-	ByPhone       bool
+	// Suggestions are the answers in the client's language, the best for this conversation first;
+	// Top are the first three of them (leads.Rank), Groups the rest by what they answer.
+	Suggestions []leads.Suggestion
+	Top         []leads.Suggestion
+	Groups      []suggestionGroup
+	Rejects     []leads.Template
+	Draft       string // the answer being written: a chosen template, or what was typed before an error
+	Refusal     string // the same for the letter that goes with a refusal
+	// Chosen are the templates the draft was made from; Attached the files of theirs that go along.
+	Chosen   []int64
+	Attached []leads.Media
+	// Filled are the templates filled in for this client, for the script that puts them into the
+	// answer without a reload.
+	Filled   map[int64]filledTemplate
+	VisitID  string
+	CanReply bool
+	ByPhone  bool
 	// Description is what the client wrote in the form (the first message); Thread is the rest
 	// of the conversation and the history, oldest first.
 	Description *leads.Entry
@@ -189,6 +199,34 @@ type leadData struct {
 	Client *clients.Row
 	// Template is the ready-made answer chosen with ?template=…
 	Template int64
+	// Files: the answer may carry files (not a call); ByMail: they go as attachments of a letter.
+	Files  bool
+	ByMail bool
+}
+
+// filledTemplate is a template as the page's script gets it (JSON inside the page).
+type filledTemplate struct {
+	Body  string      `json:"body"`
+	Media []mediaInfo `json:"media,omitempty"`
+}
+
+type mediaInfo struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Size string `json:"size"`
+}
+
+type suggestionGroup struct {
+	Category, Name string
+	Items          []leads.Suggestion
+}
+
+// draftOf is what a failed answer leaves in the form: its text, templates and files of templates.
+type draftOf struct {
+	Text      string
+	Templates []int64
+	Media     []int64
 }
 
 func leadID(r *http.Request) (int64, bool) {
@@ -197,10 +235,10 @@ func leadID(r *http.Request) (int64, bool) {
 }
 
 func (h *Handler) leadCard(w http.ResponseWriter, r *http.Request) {
-	h.showLead(w, r, http.StatusOK, "", "")
+	h.showLead(w, r, http.StatusOK, "", draftOf{})
 }
 
-func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, problem, draft string) {
+func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, problem string, draft draftOf) {
 	id, ok := leadID(r)
 	if !ok {
 		h.notFound(w, r, "Заявка не найдена")
@@ -216,8 +254,11 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 		return
 	}
 	lead := card.Lead
-	data := leadData{Card: card, Direction: h.directionName(lead.Direction), Next: leads.NextStatuses(lead.Status), Draft: draft,
-		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: card.ReplyVia == leads.MethodPhone}
+	data := leadData{Card: card, Direction: h.directionName(lead.Direction), Next: leads.NextStatuses(lead.Status), Draft: draft.Text,
+		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: card.ReplyVia == leads.MethodPhone,
+		Chosen: draft.Templates}
+	data.Files = !data.ByPhone && h.opts.Leads.Files() != nil
+	data.ByMail = card.ReplyVia == leads.MethodEmail
 	switch lead.ContactMethod {
 	case leads.MethodEmail:
 		data.Contact = "mailto:" + lead.ContactValue
@@ -254,22 +295,71 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 		h.fail(w, r, "cannot read the templates", err)
 		return
 	}
+	sent, err := h.opts.Leads.UsedTemplates(r.Context(), lead.ID)
+	if err != nil {
+		h.fail(w, r, "cannot read the templates of the request", err)
+		return
+	}
+	links := leads.LinksFor(h.siteURL(), lead)
+	data.Filled = map[int64]filledTemplate{}
+	media := map[int64]leads.Media{}
 	for _, item := range templates {
 		if item.Lang != lead.Lang {
 			continue
 		}
+		filled := filledTemplate{Body: leads.FillTemplate(item.Body, lead, links)}
+		for _, file := range item.Media {
+			media[file.ID] = file
+			filled.Media = append(filled.Media, mediaInfo{ID: file.ID, Name: file.Filename, Kind: file.Kind, Size: formatBytes(file.Size)})
+		}
+		data.Filled[item.ID] = filled
 		// «?template=7» puts a ready-made text into its form — without any script.
 		chosen := strconv.FormatInt(item.ID, 10) == r.URL.Query().Get("template")
-		if item.Kind == "reply" {
-			data.Replies = append(data.Replies, item)
-			if chosen && draft == "" {
-				data.Draft = leads.FillTemplate(item.Body, lead)
-			}
-		} else {
+		switch {
+		case item.Kind == "reject":
 			data.Rejects = append(data.Rejects, item)
 			if chosen {
-				data.Refusal = leads.FillTemplate(item.Body, lead)
+				data.Refusal = data.Filled[item.ID].Body
 			}
+		case chosen && draft.Text == "":
+			data.Draft = data.Filled[item.ID].Body
+			data.Chosen = []int64{item.ID}
+			draft.Media = nil
+			for _, file := range item.Media {
+				draft.Media = append(draft.Media, file.ID)
+			}
+		}
+	}
+	for _, id := range draft.Media {
+		if file, ok := media[id]; ok {
+			data.Attached = append(data.Attached, file)
+		}
+	}
+	data.Suggestions = leads.Rank(templates, leads.SituationOf(card, sent, time.Now()))
+	groups := map[string]*suggestionGroup{}
+	var order []string
+	for _, item := range data.Suggestions {
+		if item.Top {
+			data.Top = append(data.Top, item)
+			continue
+		}
+		category := item.Template.Category
+		if groups[category] == nil {
+			groups[category] = &suggestionGroup{Category: category, Name: categoryNames[category]}
+			order = append(order, category)
+		}
+		groups[category].Items = append(groups[category].Items, item)
+	}
+	// The rest in the order of categories, the way the editor lists them.
+	for _, category := range append(append([]string(nil), leads.Categories...), "") {
+		if group := groups[category]; group != nil {
+			data.Groups = append(data.Groups, *group)
+			delete(groups, category)
+		}
+	}
+	for _, category := range order {
+		if group := groups[category]; group != nil {
+			data.Groups = append(data.Groups, *group)
 		}
 	}
 	title := "Заявка #"
@@ -349,7 +439,7 @@ func (h *Handler) answerStatus(w http.ResponseWriter, r *http.Request, id int64,
 		h.backToLead(w, r, id, "lead-status")
 		return
 	}
-	h.showLead(w, r, status, problem, "")
+	h.showLead(w, r, status, problem, draftOf{})
 }
 
 func (h *Handler) leadNote(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +452,7 @@ func (h *Handler) leadNote(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		h.backToLead(w, r, id, "lead-note")
 	case errors.Is(err, leads.ErrEmptyText):
-		h.showLead(w, r, http.StatusBadRequest, "Заметка пустая.", "")
+		h.showLead(w, r, http.StatusBadRequest, "Заметка пустая.", draftOf{})
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:
@@ -376,19 +466,72 @@ func (h *Handler) leadReply(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r, "Заявка не найдена")
 		return
 	}
-	text := r.PostFormValue("text")
-	switch _, err := h.opts.Leads.Reply(r.Context(), id, sessionOf(r).User.Login, text); {
+	answer := leads.Answer{Text: r.PostFormValue("text"), Templates: formIDs(r.PostForm["template"]), Media: formIDs(r.PostForm["media"])}
+	draft := draftOf{Text: answer.Text, Templates: answer.Templates, Media: answer.Media}
+	// Files attached by hand: each is checked by what it is; one that does not pass stops the answer.
+	if r.MultipartForm != nil {
+		for _, header := range r.MultipartForm.File["files"] {
+			if header.Filename == "" && header.Size == 0 {
+				continue // a file field nobody touched
+			}
+			file, err := header.Open()
+			var upload leads.Upload
+			if err == nil {
+				upload, err = leads.SaveOutgoing(h.opts.Leads.Files(), header.Filename, header.Size, file)
+				_ = file.Close()
+			}
+			if err != nil {
+				h.discardUploads(answer.Files)
+				if !errors.Is(err, leads.ErrFileType) && !errors.Is(err, leads.ErrFileTooBig) {
+					h.opts.Log.Error("cannot keep a file of an answer", "error", err)
+				}
+				h.showLead(w, r, http.StatusBadRequest, fileProblem(leads.CleanFilename(header.Filename), err)+" Ответ не отправлен.", draft)
+				return
+			}
+			answer.Files = append(answer.Files, upload)
+		}
+	}
+	_, err := h.opts.Leads.ReplyWith(r.Context(), id, sessionOf(r).User.Login, answer)
+	switch {
 	case err == nil:
-		h.auditLead(r, "lead.reply", id, "")
+		details := ""
+		if files := len(answer.Media) + len(answer.Files); files > 0 {
+			details = fmt.Sprintf("файлов: %d", files)
+		}
+		h.auditLead(r, "lead.reply", id, details)
 		h.opts.Kick()
 		h.backToLead(w, r, id, "lead-reply")
 	case errors.Is(err, leads.ErrEmptyText):
-		h.showLead(w, r, http.StatusBadRequest, "Ответ пустой.", "")
+		h.showLead(w, r, http.StatusBadRequest, "Ответ пустой.", draft)
+	case errors.Is(err, leads.ErrTooManyFiles):
+		h.showLead(w, r, http.StatusBadRequest, fmt.Sprintf("Не больше %d файлов в одном ответе — столько Telegram показывает альбомом.", leads.MaxOutgoingFiles), draft)
+	case errors.Is(err, leads.ErrNoFilesByPhone):
+		h.showLead(w, r, http.StatusBadRequest, "Клиент оставил телефон: файлы по звонку не уходят. Запишите итог разговора без них.", draft)
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:
 		h.opts.Log.Error("cannot store an answer", "error", err)
-		h.showLead(w, r, http.StatusInternalServerError, "Не получилось сохранить ответ — текст ниже, попробуйте ещё раз.", text)
+		h.showLead(w, r, http.StatusInternalServerError, "Не получилось сохранить ответ — текст ниже, попробуйте ещё раз.", draft)
+	}
+}
+
+// formIDs reads the ids of a form: the ones that are numbers.
+func formIDs(values []string) []int64 {
+	var out []int64
+	for _, value := range values {
+		if id, err := strconv.ParseInt(value, 10, 64); err == nil && id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// discardUploads removes files of an answer that was not stored.
+func (h *Handler) discardUploads(files []leads.Upload) {
+	for _, file := range files {
+		if err := h.opts.Leads.Files().Remove(file.StoredAs); err != nil {
+			h.opts.Log.Warn("cannot remove a file of an answer that was not stored; the daily sweep will", "error", err)
+		}
 	}
 }
 
@@ -402,7 +545,7 @@ func (h *Handler) leadDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	typed := strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(r.PostFormValue("confirm"))), "#")
 	if typed != leads.Number(id) {
-		h.showLead(w, r, http.StatusBadRequest, "Для удаления введите номер заявки: "+leads.Number(id), "")
+		h.showLead(w, r, http.StatusBadRequest, "Для удаления введите номер заявки: "+leads.Number(id), draftOf{})
 		return
 	}
 	err := h.opts.Leads.Delete(r.Context(), id)
@@ -475,67 +618,5 @@ func (h *Handler) leadsExport(w http.ResponseWriter, r *http.Request) {
 	out.Flush()
 	if err != nil {
 		h.opts.Log.Error("export of requests was cut short", "error", err)
-	}
-}
-
-// --- ready-made answers --------------------------------------------------------------------------
-
-type templateGroup struct {
-	Kind, Name string
-	Langs      []templateLang
-}
-
-type templateLang struct {
-	Lang, Name string
-	Items      []leads.Template
-}
-
-func (h *Handler) templatesPage(w http.ResponseWriter, r *http.Request) {
-	h.showTemplates(w, r, http.StatusOK, "")
-}
-
-func (h *Handler) showTemplates(w http.ResponseWriter, r *http.Request, status int, problem string) {
-	all, err := h.opts.Leads.Templates(r.Context(), "")
-	if err != nil {
-		h.fail(w, r, "cannot read the templates", err)
-		return
-	}
-	var groups []templateGroup
-	for _, kind := range []struct{ id, name string }{{"reply", "Ответы"}, {"reject", "Отказы"}} {
-		group := templateGroup{Kind: kind.id, Name: kind.name}
-		for _, lang := range []string{"ru", "uk", "en"} {
-			block := templateLang{Lang: lang, Name: languageNames[lang]}
-			for _, item := range all {
-				if item.Kind == kind.id && item.Lang == lang {
-					block.Items = append(block.Items, item)
-				}
-			}
-			group.Langs = append(group.Langs, block)
-		}
-		groups = append(groups, group)
-	}
-	h.render(w, r, status, "templates", view{Title: "Шаблоны", Nav: "leads", Error: problem, Data: groups})
-}
-
-func (h *Handler) templateSave(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
-	item := leads.Template{ID: id, Kind: r.PostFormValue("kind"), Lang: r.PostFormValue("lang"), Title: r.PostFormValue("title"), Body: r.PostFormValue("body")}
-	if r.PostFormValue("delete") != "" && id > 0 {
-		if err := h.opts.Leads.DeleteTemplate(r.Context(), id); err != nil {
-			h.fail(w, r, "cannot delete a template", err)
-			return
-		}
-		http.Redirect(w, r, h.opts.Prefix+"/templates?ok=template-deleted", http.StatusSeeOther)
-		return
-	}
-	switch err := h.opts.Leads.SaveTemplate(r.Context(), item); {
-	case err == nil:
-		http.Redirect(w, r, h.opts.Prefix+"/templates?ok=template-saved", http.StatusSeeOther)
-	case errors.Is(err, leads.ErrEmptyText):
-		h.showTemplates(w, r, http.StatusBadRequest, "У шаблона должны быть название и текст.")
-	case errors.Is(err, leads.ErrNotFound):
-		h.showTemplates(w, r, http.StatusNotFound, "Такого шаблона уже нет.")
-	default:
-		h.showTemplates(w, r, http.StatusBadRequest, "Шаблон не сохранён: проверьте вид и язык.")
 	}
 }

@@ -400,7 +400,7 @@ func (h *Handler) leadDiscount(w http.ResponseWriter, r *http.Request) {
 	}
 	percent, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(r.PostFormValue("percent")), "%"))
 	if err != nil || percent < 0 || percent > 100 {
-		h.showLead(w, r, http.StatusBadRequest, "Скидка — целое число процентов от 0 до 100.", "")
+		h.showLead(w, r, http.StatusBadRequest, "Скидка — целое число процентов от 0 до 100.", draftOf{})
 		return
 	}
 	switch err := h.opts.Leads.SetDiscount(r.Context(), id, sessionOf(r).User.Login, percent, r.PostFormValue("note")); {
@@ -424,7 +424,7 @@ func (h *Handler) leadAmount(w http.ResponseWriter, r *http.Request) {
 	if text := strings.TrimSpace(strings.NewReplacer(" ", "", " ", "", ",", ".").Replace(r.PostFormValue("amount"))); text != "" {
 		value, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			h.showLead(w, r, http.StatusBadRequest, "Сумма — число, например 1500 или 1500.50.", "")
+			h.showLead(w, r, http.StatusBadRequest, "Сумма — число, например 1500 или 1500.50.", draftOf{})
 			return
 		}
 		amount = &value
@@ -434,7 +434,7 @@ func (h *Handler) leadAmount(w http.ResponseWriter, r *http.Request) {
 		h.auditLead(r, "lead.amount", id, "")
 		h.backToLead(w, r, id, "lead-amount")
 	case errors.Is(err, leads.ErrBadAmount):
-		h.showLead(w, r, http.StatusBadRequest, "Сумма не может быть отрицательной.", "")
+		h.showLead(w, r, http.StatusBadRequest, "Сумма не может быть отрицательной.", draftOf{})
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:
@@ -455,7 +455,7 @@ func (h *Handler) leadClient(w http.ResponseWriter, r *http.Request) {
 		if err != nil || number <= 0 {
 			rows, _, listErr := h.opts.Clients.List(r.Context(), clients.Filter{Query: text, Limit: 2})
 			if listErr != nil || len(rows) != 1 {
-				h.showLead(w, r, http.StatusBadRequest, "Клиент не найден однозначно: укажите его номер (#12) или точный адрес.", "")
+				h.showLead(w, r, http.StatusBadRequest, "Клиент не найден однозначно: укажите его номер (#12) или точный адрес.", draftOf{})
 				return
 			}
 			number = rows[0].ID
@@ -467,7 +467,7 @@ func (h *Handler) leadClient(w http.ResponseWriter, r *http.Request) {
 		h.auditLead(r, "lead.client", id, fmt.Sprintf("client #%d", client))
 		h.backToLead(w, r, id, "lead-client")
 	case errors.Is(err, leads.ErrNoClient):
-		h.showLead(w, r, http.StatusBadRequest, "Такого клиента нет.", "")
+		h.showLead(w, r, http.StatusBadRequest, "Такого клиента нет.", draftOf{})
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:

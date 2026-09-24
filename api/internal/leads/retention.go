@@ -17,6 +17,7 @@ import (
 type Retention struct {
 	Store *Store
 	Files *Files // nil — no attachments here
+	Media *Files // the files of templates; nil — none
 	Log   *slog.Logger
 
 	KeepMonths int  // 0 — keep forever
@@ -178,6 +179,14 @@ func (r Retention) RunOnce(ctx context.Context) (RetentionReport, error) {
 	if r.Files != nil {
 		removed, err := r.Files.Sweep(func(name string) (bool, error) { return r.Store.KnowsFile(ctx, name) }, now.Add(-24*time.Hour))
 		report.Files = removed
+		if err != nil {
+			return report, err
+		}
+	}
+	if r.Media != nil {
+		// A file of a template whose row never came (the upload failed half-way) or went.
+		removed, err := r.Media.Sweep(func(name string) (bool, error) { return r.Store.KnowsMedia(ctx, name) }, now.Add(-24*time.Hour))
+		report.Files += removed
 		if err != nil {
 			return report, err
 		}
