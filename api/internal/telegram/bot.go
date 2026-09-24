@@ -162,6 +162,10 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		_ = b.opts.Access.SetDialog(ctx, member.TelegramID, nil)
 		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Отменено."})
 	case "":
+		// A reply (a swipe) to a message about a request answers the client of that request.
+		if b.replyTo(ctx, message, member) {
+			return
+		}
 		// A plain text: the answer, the note or the reason the bot asked for.
 		if !b.dialogText(ctx, message, member) {
 			b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Не понял. Чтобы ответить клиенту или оставить заметку, нажмите кнопку на карточке заявки. Команды — /help"})
@@ -246,6 +250,8 @@ func (b *Bot) redeem(ctx context.Context, message *Message, code string) {
 func (b *Bot) help(member *Member) string {
 	lines := []string{
 		"Новые заявки с сайта приходят сюда карточками с кнопками: взять в работу, ответить клиенту, оставить заметку, отклонить. Что бы ни сделали вы или коллеги — здесь или в админке, — карточка меняется у всех сразу.",
+		"",
+		"Ответить клиенту можно и просто ответом (свайпом) на карточку или на сообщение клиента: бот покажет текст перед отправкой. Клиент получит ответ от бота, не от вашего аккаунта.",
 		"",
 		"/leads — открытые заявки: все, новые, мои, ждут клиента",
 		"/lead K-0042 — карточка заявки по номеру",

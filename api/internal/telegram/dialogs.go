@@ -484,6 +484,47 @@ func (b *Bot) rejectNow(ctx context.Context, member *Member, card *leads.Card, l
 	}
 }
 
+// --- a reply to a message ---------------------------------------------------------------------------
+
+// replyTo takes a reply — Telegram's own, a swipe — to a message of the bot about a request (its
+// card, a message of its client, a preview) as the text of an answer to that request: the draft
+// goes to the preview with «send», as after «💬 Ответить». It returns false when the message replies
+// to nothing the bot sent about a request, or when the bot is waiting for a text about that very
+// request (a note, a reason, an answer being written): then the dialog takes the text — the prompts
+// of the dialogs open Telegram's reply field themselves.
+func (b *Bot) replyTo(ctx context.Context, message *Message, member *Member) bool {
+	if message.ReplyToMessage == nil || strings.TrimSpace(message.Text) == "" || b.opts.DB == nil || b.opts.Leads == nil {
+		return false
+	}
+	var leadID int64
+	err := b.opts.DB.QueryRowContext(ctx, `SELECT lead_id FROM bot_messages WHERE chat_id = ? AND message_id = ? AND wipe_after IS NULL`,
+		message.Chat.ID, message.ReplyToMessage.MessageID).Scan(&leadID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			b.opts.Log.Error("telegram: cannot tell what a reply answers", "error", err)
+		}
+		return false
+	}
+	if dialog, err := b.opts.Access.Dialog(ctx, member.TelegramID); err == nil && dialog != nil && dialog.LeadID == leadID {
+		return false
+	}
+	card, err := b.opts.Leads.Card(ctx, leadID)
+	switch {
+	case errors.Is(err, leads.ErrNotFound):
+		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Заявки больше нет: данные клиента удалены."})
+		return true
+	case err != nil:
+		b.opts.Log.Error("telegram: cannot read a request", "error", err)
+		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "Не получилось. Попробуйте ещё раз."})
+		return true
+	case card.Lead.Status == leads.StatusSpam || card.AnonymizedAt.Valid:
+		b.say(ctx, Outgoing{ChatID: message.Chat.ID, Text: "По заявке #" + card.Lead.Number() + " ответить нельзя: это спам или данные клиента уже удалены."})
+		return true
+	}
+	b.preview(ctx, member, message.Chat.ID, card, &Dialog{Kind: dialogReply, LeadID: leadID, Draft: strings.TrimSpace(message.Text)})
+	return true
+}
+
 // --- texts the bot was waiting for ----------------------------------------------------------------
 
 // dialogText handles a plain message from a member. It returns false when the bot was not waiting
