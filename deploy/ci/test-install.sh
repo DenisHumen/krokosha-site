@@ -412,7 +412,7 @@ reply_left() { [[ $(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOI
 check "…leaves through the site's own mail server" wait_for 30 reply_left
 check "a note for colleagues" test "$(admin_post /leads/1/note --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Клиент из теста установки.')" = 303
 check "the status screen shows the queue of notifications" grep -q 'Уведомления (outbox)' <(admin_get "$ADMIN/status")
-check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates")
+check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates?kind=reject&lang=en")
 check "requests as CSV" grep -q '^K-0002,' <(admin_get "$ADMIN/leads/export.csv")
 check "deleting a client's data needs the number typed in" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0001')" = 400
 check "…and then removes everything about the request" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0002')" = 303
@@ -465,7 +465,8 @@ check "deleting the client's data" test "$(admin_post "/leads/$file_lead/delete"
 check "…removes the files too" test "$(find /srv/krokosha/attachments -type f | wc -l)" = 0
 # Quick answers: the files of a template come through a location of their own (…/upload/), the
 # only one in the admin area that takes more than a small form.
-template_id=$(sql "SELECT id FROM reply_templates WHERE kind = 'reply' AND lang = 'ru' AND title = 'Примеры работ'")
+# (By its category: the mysql client in the container speaks latin1, a Cyrillic title would match nothing.)
+template_id=$(sql "SELECT id FROM reply_templates WHERE kind = 'reply' AND lang = 'ru' AND category = 'portfolio' ORDER BY id LIMIT 1")
 check "a template takes a file bigger than a form, through nginx" \
   test "$(admin_post "/upload/templates/$template_id/media" --form "csrf=$(csrf)" --form "files=@$megabyte;filename=notes.txt")" = 303
 check "…kept next to the files of requests, for the service's eyes only" \
