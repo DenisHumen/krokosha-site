@@ -51,11 +51,17 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		lang = "en"
 	}
 	v := loginView{
-		T: loginTexts[lang], Lang: lang, Host: m.SiteHost, Link: s.LinkURL(lang, s.linkToken(l)),
+		T: loginTexts[lang], Lang: lang, Host: m.SiteHost,
 		Minutes: int(l.expiresAt.Sub(l.createdAt).Minutes()), Adding: l.clientID > 0, LinkOnly: payload.LinkOnly,
 	}
 	if !payload.LinkOnly {
 		v.Code = s.code(l)
+	}
+	// An address being added gets the code only: no link finishes that (VerifyLink).
+	if !v.Adding {
+		v.Link = s.LinkURL(lang, s.linkToken(l))
+	} else if v.Joining, err = s.joins(ctx, "email", l.email, l.clientID); err != nil {
+		return err
 	}
 	subject := v.T["subject"]
 	switch {
@@ -106,7 +112,8 @@ type loginView struct {
 	Code     string
 	Link     string
 	Minutes  int
-	Adding   bool // the address is being added to an account
+	Adding   bool // the address is being added to an account: no link, only the code
+	Joining  bool // … and it signs in to another account now, which the code joins to that one
 	LinkOnly bool // the owner sent a link from the admin area: no code, no browser waits
 }
 
@@ -118,7 +125,9 @@ var loginTexts = map[string]map[string]string{
 		"link_only": "Here is a link to sign in to your personal account:",
 		"valid":     "It is valid for {minutes} minutes and works in the browser where you asked for it.", "or": "Or simply open the link:",
 		"button": "Sign in", "valid_link": "The link is valid for a day.",
-		"ignore": "If you did not ask for this, just ignore the letter: nobody can sign in without the code.",
+		"ignore":     "If you did not ask for this, just ignore the letter: nobody can sign in without the code.",
+		"joining":    "This address signs in to another account on the site now: with the code, that account and its requests join the one you are adding the address to.",
+		"ignore_add": "If you did not ask for this, ignore the letter and do not give the code to anybody: without it nothing changes.",
 	},
 	"uk": {
 		"subject": "Код входу {code} — {host}", "subject_add": "Код підтвердження {code} — {host}", "subject_link": "Вхід до особистого кабінету — {host}",
@@ -126,7 +135,9 @@ var loginTexts = map[string]map[string]string{
 		"link_only": "Ось посилання для входу в особистий кабінет:",
 		"valid":     "Він діє {minutes} хвилин і працює в тому браузері, де ви його запросили.", "or": "Або просто відкрийте посилання:",
 		"button": "Увійти", "valid_link": "Посилання діє добу.",
-		"ignore": "Якщо ви цього не запитували, просто проігноруйте лист: без коду ніхто не увійде.",
+		"ignore":     "Якщо ви цього не запитували, просто проігноруйте лист: без коду ніхто не увійде.",
+		"joining":    "Ця адреса вже входить до іншого кабінету на сайті: з кодом той кабінет разом із заявками приєднається до того, куди ви додаєте адресу.",
+		"ignore_add": "Якщо ви цього не запитували, проігноруйте лист і нікому не повідомляйте код: без нього нічого не зміниться.",
 	},
 	"ru": {
 		"subject": "Код входа {code} — {host}", "subject_add": "Код подтверждения {code} — {host}", "subject_link": "Вход в личный кабинет — {host}",
@@ -134,7 +145,9 @@ var loginTexts = map[string]map[string]string{
 		"link_only": "Вот ссылка для входа в личный кабинет:",
 		"valid":     "Он действует {minutes} минут и работает в том браузере, где вы его запросили.", "or": "Или просто откройте ссылку:",
 		"button": "Войти", "valid_link": "Ссылка действует сутки.",
-		"ignore": "Если вы этого не запрашивали, просто проигнорируйте письмо: без кода никто не войдёт.",
+		"ignore":     "Если вы этого не запрашивали, просто проигнорируйте письмо: без кода никто не войдёт.",
+		"joining":    "Этот адрес уже входит в другой кабинет на сайте: с кодом тот кабинет вместе с заявками присоединится к тому, куда вы добавляете адрес.",
+		"ignore_add": "Если вы этого не запрашивали, проигнорируйте письмо и никому не сообщайте код: без него ничего не изменится.",
 	},
 }
 
@@ -152,12 +165,14 @@ var loginText = texttemplate.Must(texttemplate.New("login.txt").Funcs(loginFuncs
 
     {{.Code}}
 
-{{minutes .T.valid .Minutes}}
+{{minutes .T.valid .Minutes}}{{if .Joining}}
+
+{{.T.joining}}{{end}}{{if .Link}}
 
 {{.T.or}}
-{{.Link}}{{end}}
+{{.Link}}{{end}}{{end}}
 
-{{.T.ignore}}
+{{if .Adding}}{{.T.ignore_add}}{{else}}{{.T.ignore}}{{end}}
 --
 https://{{.Host}}
 `))
@@ -172,8 +187,9 @@ var loginHTML = htmltemplate.Must(htmltemplate.New("login.html").Funcs(loginFunc
 <p style="margin:0 0 12px;">{{if .Adding}}{{.T.code_add}}{{else}}{{.T.code}}{{end}}</p>
 <p style="margin:0 0 12px;font-family:'Fira Code',ui-monospace,Consolas,monospace;font-size:30px;letter-spacing:8px;font-weight:600;">{{.Code}}</p>
 <p style="margin:0 0 20px;color:#6b6f7e;font-size:13px;">{{minutes .T.valid .Minutes}}</p>
-<p style="margin:0 0 8px;">{{.T.or}}</p>
+{{if .Joining}}<p style="margin:0 0 20px;">{{.T.joining}}</p>
+{{end}}{{if .Link}}<p style="margin:0 0 8px;">{{.T.or}}</p>
 <p style="margin:0;"><a href="{{.Link}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.button}}</a></p>
+{{end}}{{end}}
 {{end}}
-{{end}}
-{{define "foot"}}{{.T.ignore}}<br><a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a>{{end}}`))
+{{define "foot"}}{{if .Adding}}{{.T.ignore_add}}{{else}}{{.T.ignore}}{{end}}<br><a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a>{{end}}`))

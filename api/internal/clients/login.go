@@ -259,9 +259,10 @@ func startHash(token string) []byte {
 // TelegramCode is what the bot tells the person who opened it with a login.
 type TelegramCode struct {
 	Code    string
-	LinkURL string
+	LinkURL string // none when adding: that is finished by the code only (VerifyLink)
 	Lang    string
 	Adding  bool // the Telegram account is being added to an account, not signed in with
+	Joining bool // … and it signs in to another account now, which the code joins to that one
 }
 
 // ErrUsed: the login was opened in another Telegram account, used, or expired.
@@ -294,7 +295,21 @@ func (s *Service) TelegramStart(ctx context.Context, token string, telegramID in
 	if err != nil {
 		return TelegramCode{}, ErrUsed
 	}
-	return TelegramCode{Code: s.code(l), LinkURL: s.LinkURL(l.lang, s.linkToken(l)), Lang: l.lang, Adding: l.clientID > 0}, nil
+	code := TelegramCode{Code: s.code(l), Lang: l.lang, Adding: l.clientID > 0}
+	if !code.Adding {
+		code.LinkURL = s.LinkURL(l.lang, s.linkToken(l))
+	} else if code.Joining, err = s.joins(ctx, "telegram_id", telegramID, l.clientID); err != nil {
+		return TelegramCode{}, err
+	}
+	return code, nil
+}
+
+// joins tells whether the address or Telegram account signs in to another account than the one it
+// is being added to: its code then joins that account to this one (addWay).
+func (s *Service) joins(ctx context.Context, column string, value any, clientID int64) (bool, error) {
+	var other bool // the column is "email" or "telegram_id"
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM clients WHERE `+column+` = ? AND id <> ?)`, value, clientID).Scan(&other)
+	return other, err
 }
 
 // VerifyCode finishes the login the browser asked for, with the code it was given.
@@ -338,6 +353,11 @@ func (s *Service) VerifyCode(ctx context.Context, browser, code string, a Attemp
 }
 
 // VerifyLink finishes a login by the link of a letter or of the bot.
+//
+// It signs in only. Adding a way to an account is finished by the code, typed in the browser that
+// asked for it: a link works in any browser, and whoever clicked one — the owner of the address or
+// of the Telegram account, talked into it — would hand that address or Telegram account, their
+// requests and their own account over to the account that asked. Such logins get no link at all.
 func (s *Service) VerifyLink(ctx context.Context, token string, a Attempt) (Result, error) {
 	dot := strings.IndexByte(token, '.')
 	if dot <= 0 || len(token) > 60 {
@@ -357,7 +377,7 @@ func (s *Service) VerifyLink(ctx context.Context, token string, a Attempt) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	if !hmac.Equal([]byte(token), []byte(s.linkToken(l))) || (l.channel == MethodTelegram && l.telegramID == 0) {
+	if !hmac.Equal([]byte(token), []byte(s.linkToken(l))) || (l.channel == MethodTelegram && l.telegramID == 0) || l.clientID > 0 {
 		return Result{}, ErrBadCode
 	}
 	return s.complete(ctx, l, a)
@@ -449,9 +469,11 @@ func (s *Service) findOrCreate(ctx context.Context, l *login) (*Client, bool, er
 // addWay puts a proven address or Telegram account on the account that asked for the code.
 //
 // When the address or the Telegram account signs in to another account already, the person has
-// just proved both are theirs — whoever holds the code could sign in there anyway. The other
-// account joins this one (Merge: requests, contacts, achievements), so that whichever way they sign
-// in afterwards, it is the same account. A blocked account joins nothing: that is the owner's call.
+// just proved both are theirs: they typed, in the browser signed in to this account, the code that
+// went to that address or to that Telegram account — whoever holds the code could sign in there
+// anyway (VerifyLink: no link finishes this). The other account joins this one (Merge: requests,
+// contacts, achievements), so that whichever way they sign in afterwards, it is the same account.
+// A blocked account joins nothing: that is the owner's call.
 func (s *Service) addWay(ctx context.Context, l *login) (merged bool, err error) {
 	column, value := "email", any(l.email)
 	if l.channel == MethodTelegram {
