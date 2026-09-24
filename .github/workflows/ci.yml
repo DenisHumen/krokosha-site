@@ -38,6 +38,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # What the site is built from (dependencies, not the tools of development): a known
+      # high-severity hole there is a reason to update before shipping.
+      - name: npm audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Formatting
         run: npm run format:check
 
@@ -103,6 +108,13 @@ jobs:
         with:
           version: v2.13.2
           working-directory: api
+
+      # Known vulnerabilities of the code the service calls — with the toolchain the server builds
+      # with (deploy/toolchain.env), since that decides which standard library ships.
+      - name: govulncheck
+        run: |
+          toolchain="go$(sed -n 's/^GO_VERSION=//p' ../deploy/toolchain.env)"
+          GOTOOLCHAIN="$toolchain" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
       - name: Tests (with the race detector)
         run: go test -race -count=1 ./...
