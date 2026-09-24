@@ -168,10 +168,14 @@ export function initAccount(): void {
   const time = (value: Date) => clock.format(value);
   /** «22 Sep», «22 сент 2026»: the day, the short month without its dot, the year if asked. */
   function shortDate(value: string | Date, year = false): string {
+    // «YYYY-MM-DD» is a day, not a moment: read as UTC midnight, it is shown in UTC too, or a
+    // visitor west of Greenwich would see the day before (a personal discount's last day).
+    const dayOnly = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
     const parts = new Intl.DateTimeFormat(lang, {
       day: 'numeric',
       month: 'short',
       ...(year ? { year: 'numeric' as const } : {}),
+      ...(dayOnly ? { timeZone: 'UTC' } : {}),
     }).formatToParts(new Date(value));
     const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
     return [part('day'), part('month').replace(/\.$/, ''), part('year')].filter(Boolean).join(' ');
@@ -306,6 +310,7 @@ export function initAccount(): void {
   const telegramStep = $(login, '[data-login-telegram]');
   const botLink = $<HTMLAnchorElement>(login, '[data-bot-link]');
   const codeForm = $<HTMLFormElement>(login, '[data-login-code]');
+  const linkStep = $(login, '[data-login-link]');
   const codeInput = $<HTMLInputElement>(codeForm, 'input[name="code"]');
   const cells = all(codeForm, '[data-cell]');
   const resend = $<HTMLButtonElement>(codeForm, '[data-resend]');
@@ -318,12 +323,13 @@ export function initAccount(): void {
   let countdown = 0;
   let sending = false;
 
-  function loginStep(step: 'start' | 'telegram' | 'code') {
+  function loginStep(step: 'start' | 'telegram' | 'code' | 'link') {
     startStep.hidden = step !== 'start';
     telegramStep.hidden = step !== 'telegram';
     codeForm.hidden = step !== 'code';
+    linkStep.hidden = step !== 'link';
     loginTitle.textContent =
-      step === 'start'
+      step === 'start' || step === 'link'
         ? A.login.title
         : step === 'telegram'
           ? A.login.telegram_title
@@ -331,7 +337,11 @@ export function initAccount(): void {
             ? A.login.code_email
             : A.login.code_telegram;
     loginLead.textContent =
-      step === 'start' ? A.login.lead : step === 'telegram' ? A.login.telegram_text : sentText;
+      step === 'start' || step === 'link'
+        ? A.login.lead
+        : step === 'telegram'
+          ? A.login.telegram_text
+          : sentText;
     resend.hidden = step !== 'code' || via !== 'email';
     codeBot.hidden = step !== 'code' || via !== 'telegram' || !botReady;
     if (step !== 'code') stopCountdown();
@@ -384,6 +394,28 @@ export function initAccount(): void {
     show('login');
     loginStep('start');
     loginError.textContent = message;
+  }
+
+  /** Asks whether to sign in to the account a link opens; true — the visitor agreed. */
+  function askLink(account: string): Promise<boolean> {
+    show('login');
+    loginStep('link');
+    loginError.textContent = '';
+    $(linkStep, '[data-link-account]').textContent = fill(A.login.link_ask, { account });
+    const yes = $<HTMLButtonElement>(linkStep, '[data-link-yes]');
+    const no = $<HTMLButtonElement>(linkStep, '[data-link-no]');
+    yes.focus();
+    return new Promise((resolve) => {
+      const answer = (agreed: boolean) => {
+        yes.removeEventListener('click', onYes);
+        no.removeEventListener('click', onNo);
+        resolve(agreed);
+      };
+      const onYes = () => answer(true);
+      const onNo = () => answer(false);
+      yes.addEventListener('click', onYes);
+      no.addEventListener('click', onNo);
+    });
   }
 
   async function startTelegram() {
@@ -1512,14 +1544,28 @@ export function initAccount(): void {
 
   async function start() {
     // A link from a letter or from the bot: «#login=<token>». The token leaves the address at once.
+    // It signs in once the visitor has seen whose account it opens and agreed: a link somebody
+    // else sent would quietly put this browser into their account, and whatever is sent from it
+    // later would be theirs to read.
     const token = /^#login=([A-Za-z0-9._-]{8,200})$/.exec(location.hash)?.[1];
     if (token) {
       history.replaceState(null, '', location.pathname + location.search);
-      $(root!, '[data-loading]').textContent = A.login.link;
-      const { data } = await api('POST', '/api/account/login/link', { token });
-      if (!data.ok) {
-        signedOut(error(data.error));
+      const peek = await api<Answer & { account?: string }>('POST', '/api/account/login/link', {
+        token,
+        peek: true,
+      });
+      if (!peek.data.ok || typeof peek.data.account !== 'string') {
+        signedOut(error(peek.data.error));
         return;
+      }
+      if (await askLink(peek.data.account)) {
+        $(root!, '[data-loading]').textContent = A.login.link;
+        show('loading');
+        const { data } = await api('POST', '/api/account/login/link', { token });
+        if (!data.ok) {
+          signedOut(error(data.error));
+          return;
+        }
       }
     }
     await load();

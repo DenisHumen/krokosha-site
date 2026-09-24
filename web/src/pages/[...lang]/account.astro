@@ -223,6 +223,18 @@ const scriptTexts = JSON.stringify({
               </button>
             </div>
 
+            {/* A link of a letter or of the bot asks first: one somebody else sent would open their account. */}
+            <div class="gate-step" data-login-link hidden>
+              <p class="g-hint" data-link-account></p>
+              <p class="g-hint">{A.login.link_note}</p>
+              <button class="g-btn g-btn-dark" type="button" data-link-yes>
+                {A.login.link_yes}
+              </button>
+              <button class="g-link" type="button" data-link-no>
+                {A.login.link_no}
+              </button>
+            </div>
+
             <form class="gate-step" data-login-code hidden novalidate>
               <label class="visually-hidden" for="login-code">
                 {A.login.code}
