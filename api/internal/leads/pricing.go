@@ -120,28 +120,6 @@ func (s *Store) AccountOf(ctx context.Context, clientID int64) (Account, error) 
 	return account, err
 }
 
-// accountChannel is how the owner of an account hears about an answer in it: the way they prefer,
-// else the address, else Telegram; "" — neither (a blocked or deleted account).
-func accountChannel(ctx context.Context, q querier, clientID int64) (string, error) {
-	var email, preferred sql.NullString
-	var telegram sql.NullInt64
-	err := q.QueryRowContext(ctx, `SELECT email, telegram_id, preferred FROM clients WHERE id = ? AND disabled_at IS NULL`, clientID).
-		Scan(&email, &telegram, &preferred)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return "", nil
-	case err != nil:
-		return "", err
-	case preferred.String == MethodTelegram && telegram.Valid:
-		return ChannelTelegram, nil
-	case email.Valid:
-		return ChannelEmail, nil
-	case telegram.Valid:
-		return ChannelTelegram, nil
-	}
-	return "", nil
-}
-
 // today is the date in the owner's time zone, the one the last day of a personal discount is.
 func (s *Store) today() time.Time {
 	now := s.now().In(s.location)

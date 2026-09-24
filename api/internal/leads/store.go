@@ -72,6 +72,9 @@ func (l *Lead) Number() string { return Number(l.ID) }
 type TaskPayload struct {
 	LeadID    int64 `json:"lead_id"`
 	MessageID int64 `json:"message_id,omitempty"`
+	// DeliveryID of an answer: which of its targets this task delivers to (lead_deliveries). An
+	// answer queued before deliveries existed has none: it goes the one way it was meant to.
+	DeliveryID int64 `json:"delivery_id,omitempty"`
 	// Note is for tasks about something that is not a row anywhere: why a letter came back.
 	Note string `json:"note,omitempty"`
 }

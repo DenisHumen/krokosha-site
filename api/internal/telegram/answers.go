@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,8 +20,8 @@ import (
 // Answers of the staff to clients who continued in Telegram (brief B10.5), with the files of the
 // answer (docs/quick-replies.md): the text first — in pieces, Telegram takes 4096 characters a
 // message — then the photos and videos as one album, then the documents. Every part that went out
-// is counted (lead_messages.sent_parts): a retry after a failure, Telegram busy or the line cut,
-// sends only the rest.
+// is counted (lead_deliveries.sent_parts, per chat): a retry after a failure, Telegram busy or the
+// line cut, sends only the rest.
 
 // part is one message of an answer: a piece of the text, or files.
 type part struct {
@@ -28,9 +29,19 @@ type part struct {
 	files []leads.Attachment
 }
 
-// answerClient delivers an answer to the client. site: the answer is in the personal account
-// already, and this is the notice of it in the account's Telegram — with the files as well.
-func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bool) error {
+// progress is where an answer stands in one chat: how many of its parts went out, and what became of
+// it. An answer queued before deliveries existed keeps both on the message itself.
+type progress struct {
+	parts func(ctx context.Context) (int, error)
+	sent  func(ctx context.Context, parts int) error
+	mark  func(ctx context.Context, status string) error
+}
+
+// answerClient delivers an answer to the client: to the chat of its delivery (leads.Reach). site: an
+// answer queued before deliveries existed, which was in the personal account already, and this is
+// the notice of it in the account's Telegram — with the files as well.
+func (b *Bot) answerClient(ctx context.Context, payload leads.TaskPayload, site bool) error {
+	leadID, messageID := payload.LeadID, payload.MessageID
 	lead, err := b.opts.Leads.Get(ctx, leadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return outbox.Permanent(errors.New("the request is gone (deleted on the client's demand?)"))
@@ -38,8 +49,45 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bo
 	if err != nil {
 		return err
 	}
-	chatID, lang, err := b.clientChat(ctx, lead, site)
-	if err != nil {
+	at := progress{
+		parts: func(ctx context.Context) (int, error) { return b.opts.Leads.SentParts(ctx, messageID) },
+		sent:  func(ctx context.Context, parts int) error { return b.opts.Leads.MarkSentParts(ctx, messageID, parts) },
+		mark: func(ctx context.Context, status string) error {
+			if site {
+				return nil // the notice of an answer in the account: the answer itself is there
+			}
+			return b.opts.Leads.MarkDelivery(ctx, messageID, status, "")
+		},
+	}
+	var chatID int64
+	lang := lead.Lang
+	if payload.DeliveryID > 0 {
+		delivery, err := b.opts.Leads.Delivery(ctx, payload.DeliveryID)
+		if errors.Is(err, leads.ErrNotFound) {
+			return outbox.Permanent(errors.New("the delivery is gone (the request was deleted?)"))
+		}
+		if err != nil {
+			return err
+		}
+		if delivery.To == "" {
+			// The request's link into the bot: the answer waits until the client opens it.
+			if chatID, lang, err = b.clientChat(ctx, lead, false); err != nil {
+				return err
+			}
+		} else if chatID, err = strconv.ParseInt(delivery.To, 10, 64); err != nil {
+			return outbox.Permanent(fmt.Errorf("not a Telegram chat: %q", delivery.To))
+		}
+		at = progress{
+			parts: func(context.Context) (int, error) { return delivery.SentParts, nil },
+			sent: func(ctx context.Context, parts int) error {
+				delivery.SentParts = parts
+				return b.opts.Leads.MarkTargetParts(ctx, delivery.ID, parts)
+			},
+			mark: func(ctx context.Context, status string) error {
+				return b.opts.Leads.MarkTarget(ctx, delivery.ID, status, "")
+			},
+		}
+	} else if chatID, lang, err = b.clientChat(ctx, lead, site); err != nil {
 		return err
 	}
 	body, _, err := b.opts.Leads.Message(ctx, leadID, messageID)
@@ -53,15 +101,11 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bo
 	if err != nil {
 		return err
 	}
-	done, err := b.opts.Leads.SentParts(ctx, messageID)
+	done, err := at.parts(ctx)
 	if err != nil {
 		return err
 	}
-	failed := func() {
-		if !site {
-			_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
-		}
-	}
+	failed := func() { _ = at.mark(ctx, "failed") }
 	parts := b.answerParts(lead, chatID, lang, body, files)
 	for i := done; i < len(parts); i++ {
 		if parts[i].files == nil {
@@ -72,7 +116,7 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bo
 		var refused *APIError
 		switch {
 		case err == nil:
-			if err := b.opts.Leads.MarkSentParts(ctx, messageID, i+1); err != nil {
+			if err := at.sent(ctx, i+1); err != nil {
 				return err
 			}
 		case errors.As(err, &refused) && refused.Gone():
@@ -90,10 +134,7 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bo
 			return err // tried again later, from this very part
 		}
 	}
-	if site {
-		return nil // the answer was in the account already; this was the notice of it
-	}
-	return b.opts.Leads.MarkDelivery(ctx, messageID, "sent", "")
+	return at.mark(ctx, "sent")
 }
 
 // answerParts lays an answer out into messages. The same answer is always laid out the same way:

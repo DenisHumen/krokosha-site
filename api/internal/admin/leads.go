@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +21,6 @@ import (
 // Requests in the admin area (brief B10.6): the list, the board, the card with the conversation,
 // ready-made answers. Everything here ends in a method of leads.Store — the same ones the
 // Telegram bot will call, so both agree on who took what.
-
-const leadsPerPage = 50
 
 var statusNames = map[string]string{
 	leads.StatusNew: "Новая", leads.StatusInProgress: "В работе", leads.StatusWaitingClient: "Ждём клиента",
@@ -46,13 +45,15 @@ func (h *Handler) directionName(id string) string {
 	return id
 }
 
-// --- the list and the board ----------------------------------------------------------------------
+// --- the messenger and the board ------------------------------------------------------------------
 
-type statusTab struct {
-	ID, Name string
-	Count    int
-	Current  bool
-	Query    string
+// messengerData is the «Заявки» screen (messenger.go): the list, and the conversation chosen.
+type messengerData struct {
+	List listData
+	Chat *leadData // nil — none chosen: the month in numbers instead
+	// Funnel of the last 30 days, while no conversation is open.
+	Funnel *leads.Funnel
+	Period string
 }
 
 type boardColumn struct {
@@ -60,108 +61,52 @@ type boardColumn struct {
 	Cards        []leads.Summary
 }
 
-type leadsData struct {
-	View    string // list | board
-	Tabs    []statusTab
-	Items   []leads.Summary
-	Board   []boardColumn
-	Total   int
-	Search  string
-	Status  string
-	Page    int
-	Prev    string // queries of the neighbouring pages, "" = none
-	Next    string
-	ListQ   string // the same filter in the other view
-	BoardQ  string
-	Funnel  *leads.Funnel
-	Period  string
-	Waiting int // the client wrote last: somebody should answer
-	Pages   int
+// boardData is the board: the requests somebody still has to do something about, by status.
+type boardData struct {
+	Board  []boardColumn
+	Search string
+	Funnel *leads.Funnel
+	Period string
 }
 
 func (h *Handler) leadsList(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	data := leadsData{View: "list", Search: strings.TrimSpace(query.Get("q")), Status: query.Get("status"), Period: "за 30 дней"}
-	if query.Get("view") == "board" {
-		data.View = "board"
-	}
-	if _, known := statusNames[data.Status]; !known && data.Status != "all" {
-		data.Status = ""
-	}
-	data.Page, _ = strconv.Atoi(query.Get("page"))
-	data.Page = max(data.Page, 1)
-
-	ctx := r.Context()
-	counts, err := h.opts.Leads.Counts(ctx)
-	if err != nil {
-		h.fail(w, r, "cannot count the requests", err)
+	if r.URL.Query().Get("view") == "board" {
+		h.leadsBoard(w, r)
 		return
 	}
-	link := func(status, view string, page int) string {
-		values := url.Values{}
-		if status != "" {
-			values.Set("status", status)
-		}
-		if data.Search != "" {
-			values.Set("q", data.Search)
-		}
-		if view == "board" {
-			values.Set("view", "board")
-		}
-		if page > 1 {
-			values.Set("page", strconv.Itoa(page))
-		}
-		return values.Encode()
+	ctx := r.Context()
+	list, err := h.conversationList(ctx, listStateFrom(r), 0)
+	if err != nil {
+		h.fail(w, r, "cannot list the requests", err)
+		return
 	}
-	open := 0
-	for status, count := range counts {
-		if status != leads.StatusSpam {
-			open += count
-		}
-	}
-	data.Tabs = append(data.Tabs, statusTab{ID: "", Name: "Все", Count: open, Current: data.Status == "", Query: link("", data.View, 1)})
-	for _, status := range leads.Statuses {
-		data.Tabs = append(data.Tabs, statusTab{ID: status, Name: groupNames[status], Count: counts[status], Current: data.Status == status, Query: link(status, data.View, 1)})
-	}
-	data.ListQ, data.BoardQ = link(data.Status, "list", 1), link(data.Status, "board", 1)
-
-	if data.View == "board" {
-		// The board shows the requests somebody still has to do something about, column by column.
-		for _, status := range []string{leads.StatusNew, leads.StatusInProgress, leads.StatusWaitingClient, leads.StatusDone, leads.StatusRejected} {
-			cards, _, err := h.opts.Leads.List(ctx, leads.Filter{Status: status, Query: data.Search, Limit: 30})
-			if err != nil {
-				h.fail(w, r, "cannot list the requests", err)
-				return
-			}
-			data.Board = append(data.Board, boardColumn{Status: status, Name: groupNames[status], Cards: cards})
-		}
-	} else {
-		items, total, err := h.opts.Leads.List(ctx, leads.Filter{Status: data.Status, Query: data.Search, Limit: leadsPerPage, Offset: (data.Page - 1) * leadsPerPage})
-		if err != nil {
-			h.fail(w, r, "cannot list the requests", err)
-			return
-		}
-		data.Items, data.Total = items, total
-		data.Pages = max(1, (total+leadsPerPage-1)/leadsPerPage)
-		if data.Page > 1 {
-			data.Prev = link(data.Status, "list", data.Page-1)
-		}
-		if data.Page*leadsPerPage < total {
-			data.Next = link(data.Status, "list", data.Page+1)
-		}
-		for _, item := range items {
-			if item.LastFromUser {
-				data.Waiting++
-			}
-		}
-	}
-
+	data := messengerData{List: list, Period: "за 30 дней"}
 	now := time.Now()
 	if data.Funnel, err = h.opts.Leads.Funnel(ctx, now.AddDate(0, 0, -30), now.Add(time.Minute)); err != nil {
 		h.fail(w, r, "cannot compute the funnel", err)
 		return
 	}
-	h.render(w, r, http.StatusOK, "leads", view{Title: "Заявки", Nav: "leads", Data: data})
+	h.render(w, r, http.StatusOK, "leads", view{Title: "Заявки", Nav: "leads", Full: true, Data: data})
+}
+
+func (h *Handler) leadsBoard(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := boardData{Search: strings.TrimSpace(r.URL.Query().Get("q")), Period: "за 30 дней"}
+	for _, status := range []string{leads.StatusNew, leads.StatusInProgress, leads.StatusWaitingClient, leads.StatusDone, leads.StatusRejected} {
+		cards, _, err := h.opts.Leads.List(ctx, leads.Filter{Status: status, Query: data.Search, Limit: 30})
+		if err != nil {
+			h.fail(w, r, "cannot list the requests", err)
+			return
+		}
+		data.Board = append(data.Board, boardColumn{Status: status, Name: groupNames[status], Cards: cards})
+	}
+	now := time.Now()
+	var err error
+	if data.Funnel, err = h.opts.Leads.Funnel(ctx, now.AddDate(0, 0, -30), now.Add(time.Minute)); err != nil {
+		h.fail(w, r, "cannot compute the funnel", err)
+		return
+	}
+	h.render(w, r, http.StatusOK, "board", view{Title: "Доска заявок", Nav: "leads", Data: data})
 }
 
 // --- the card ------------------------------------------------------------------------------------
@@ -190,18 +135,28 @@ type leadData struct {
 	Filled   map[int64]filledTemplate
 	VisitID  string
 	CanReply bool
-	ByPhone  bool
-	// Description is what the client wrote in the form (the first message); Thread is the rest
-	// of the conversation and the history, oldest first.
-	Description *leads.Entry
-	Thread      []leads.Entry
+	// ByPhone: nothing delivers an answer (a phone, no account) — the text is the record of a call.
+	ByPhone bool
 	// Client is the personal account of the request, as the list of clients shows it; nil — none.
 	Client *clients.Row
 	// Template is the ready-made answer chosen with ?template=…
 	Template int64
-	// Files: the answer may carry files (not a call); ByMail: they go as attachments of a letter.
+	// Files: the answer may carry files (not a call); ByMail: some go as attachments of a letter.
 	Files  bool
 	ByMail bool
+
+	// The messenger (messenger.go): the list the conversation is open in, its line there (orders,
+	// what was unread), the conversation laid out, the moves of the header, where the answer goes.
+	List     listData
+	Conv     leads.Conversation
+	Priority int
+	Items    []feedItem
+	Primary  statusAction
+	Others   []statusAction
+	Channels []channelChoice
+	Via      string // «почта · Telegram · кабинет»: where an answer goes unless a channel is left out
+	Facts    string // «$1–3k · 1–2 weeks · −10%»
+	Owed     int    // the client's messages since the last answer, while the request is open
 }
 
 // filledTemplate is a template as the page's script gets it (JSON inside the page).
@@ -244,7 +199,9 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 		h.notFound(w, r, "Заявка не найдена")
 		return
 	}
-	card, err := h.opts.Leads.Card(r.Context(), id)
+	ctx := r.Context()
+	seen := time.Now() // what the client wrote up to now is on the screen
+	card, err := h.opts.Leads.Card(ctx, id)
 	if errors.Is(err, leads.ErrNotFound) {
 		h.notFound(w, r, "Заявка не найдена: возможно, она удалена по запросу клиента.")
 		return
@@ -254,11 +211,61 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 		return
 	}
 	lead := card.Lead
+	// The line of the list as it was before this look: what the client wrote since the last one is
+	// marked in the conversation — and is read from now on.
+	conv, err := h.opts.Leads.Conversation(ctx, id)
+	if err != nil {
+		h.fail(w, r, "cannot read the request", err)
+		return
+	}
+	if r.Method == http.MethodGet && conv.Unread > 0 {
+		if err := h.opts.Leads.MarkStaffSeen(ctx, id, seen); err != nil {
+			h.opts.Log.Warn("cannot mark a conversation as read", "lead", lead.Number(), "error", err)
+		}
+	}
+	list, err := h.conversationList(ctx, listStateFrom(r), id)
+	if err != nil {
+		h.fail(w, r, "cannot list the requests", err)
+		return
+	}
 	data := leadData{Card: card, Direction: h.directionName(lead.Direction), Next: leads.NextStatuses(lead.Status), Draft: draft.Text,
 		CanReply: lead.Status != leads.StatusSpam && !card.AnonymizedAt.Valid, ByPhone: card.ReplyVia == leads.MethodPhone,
-		Chosen: draft.Templates}
+		Chosen: draft.Templates, List: list, Conv: conv, Priority: h.priority(conv), Channels: channelChoices(card.Reach)}
 	data.Files = !data.ByPhone && h.opts.Leads.Files() != nil
-	data.ByMail = card.ReplyVia == leads.MethodEmail
+	data.ByMail = card.Reach.Has(leads.ChannelEmail)
+	data.Primary, data.Others = statusActions(lead.Status)
+	if data.Items, err = h.feed(ctx, card, sessionOf(r).User.Login, conv.Unread); err != nil {
+		h.fail(w, r, "cannot read the deliveries of the answers", err)
+		return
+	}
+	var via []string
+	for _, choice := range data.Channels {
+		via = append(via, choice.Name)
+	}
+	if card.Reach.Account {
+		via = append(via, "кабинет")
+	}
+	data.Via = strings.Join(via, " · ")
+	var facts []string
+	for _, fact := range []string{lead.Budget, lead.Timeline} {
+		if fact != "" {
+			facts = append(facts, fact)
+		}
+	}
+	if lead.Discount.Percent > 0 {
+		facts = append(facts, fmt.Sprintf("−%d%%", lead.Discount.Percent))
+	}
+	data.Facts = strings.Join(facts, " · ")
+	if lead.Status == leads.StatusNew || lead.Status == leads.StatusInProgress || lead.Status == leads.StatusWaitingClient {
+		for i := len(card.Feed) - 1; i >= 0; i-- {
+			if entry := card.Feed[i]; entry.Kind == "message" {
+				if entry.Direction != "in" {
+					break
+				}
+				data.Owed++
+			}
+		}
+	}
 	switch lead.ContactMethod {
 	case leads.MethodEmail:
 		data.Contact = "mailto:" + lead.ContactValue
@@ -270,15 +277,8 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	if lead.Session.Known {
 		data.VisitID = lead.Session.SessionHex()
 	}
-	for i, entry := range card.Feed {
-		if data.Description == nil && entry.Kind == "message" && entry.Direction == "in" {
-			data.Description = &card.Feed[i]
-			continue
-		}
-		data.Thread = append(data.Thread, entry)
-	}
 	if lead.ClientID > 0 && h.opts.Clients != nil {
-		if data.Client, err = h.opts.Clients.Summary(r.Context(), lead.ClientID); err != nil && !errors.Is(err, clients.ErrNotFound) {
+		if data.Client, err = h.opts.Clients.Summary(ctx, lead.ClientID); err != nil && !errors.Is(err, clients.ErrNotFound) {
 			h.fail(w, r, "cannot read the client of the request", err)
 			return
 		}
@@ -290,12 +290,12 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 		}
 	}
 
-	templates, err := h.opts.Leads.Templates(r.Context(), "")
+	templates, err := h.opts.Leads.Templates(ctx, "")
 	if err != nil {
 		h.fail(w, r, "cannot read the templates", err)
 		return
 	}
-	sent, err := h.opts.Leads.UsedTemplates(r.Context(), lead.ID)
+	sent, err := h.opts.Leads.UsedTemplates(ctx, lead.ID)
 	if err != nil {
 		h.fail(w, r, "cannot read the templates of the request", err)
 		return
@@ -366,7 +366,8 @@ func (h *Handler) showLead(w http.ResponseWriter, r *http.Request, status int, p
 	if lead.Kind == leads.KindInquiry {
 		title = "Обращение #"
 	}
-	h.render(w, r, status, "lead", view{Title: title + lead.Number(), Nav: "leads", Error: problem, Data: data})
+	h.render(w, r, status, "leads", view{Title: title + lead.Number(), Nav: "leads", Full: true, Error: problem,
+		Data: messengerData{List: list, Chat: &data}})
 }
 
 func (h *Handler) notFound(w http.ResponseWriter, r *http.Request, message string) {
@@ -374,7 +375,16 @@ func (h *Handler) notFound(w http.ResponseWriter, r *http.Request, message strin
 }
 
 func (h *Handler) backToLead(w http.ResponseWriter, r *http.Request, id int64, flash string) {
-	http.Redirect(w, r, fmt.Sprintf("%s/leads/%d?ok=%s", h.opts.Prefix, id, flash), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/leads/%d?%s", h.opts.Prefix, id, withFlash(listStateFrom(r), flash)), http.StatusSeeOther)
+}
+
+// withFlash is the query of a page of the messenger: the state of its list, and what just happened.
+func withFlash(state listState, flash string) string {
+	query := state.Query()
+	if query != "" {
+		query += "&"
+	}
+	return query + "ok=" + url.QueryEscape(flash)
 }
 
 func (h *Handler) auditLead(r *http.Request, action string, id int64, details string) {
@@ -466,7 +476,12 @@ func (h *Handler) leadReply(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w, r, "Заявка не найдена")
 		return
 	}
-	answer := leads.Answer{Text: r.PostFormValue("text"), Templates: formIDs(r.PostForm["template"]), Media: formIDs(r.PostForm["media"])}
+	if r.PostFormValue("mode") == "note" {
+		h.leadNote(w, r) // the composer's «Заметка»: the text only, files are not kept with notes
+		return
+	}
+	answer := leads.Answer{Text: r.PostFormValue("text"), Templates: formIDs(r.PostForm["template"]), Media: formIDs(r.PostForm["media"]),
+		Channels: chosenChannels(r)}
 	draft := draftOf{Text: answer.Text, Templates: answer.Templates, Media: answer.Media}
 	// Files attached by hand: each is checked by what it is; one that does not pass stops the answer.
 	if r.MultipartForm != nil {
@@ -507,12 +522,30 @@ func (h *Handler) leadReply(w http.ResponseWriter, r *http.Request) {
 		h.showLead(w, r, http.StatusBadRequest, fmt.Sprintf("Не больше %d файлов в одном ответе — столько Telegram показывает альбомом.", leads.MaxOutgoingFiles), draft)
 	case errors.Is(err, leads.ErrNoFilesByPhone):
 		h.showLead(w, r, http.StatusBadRequest, "Клиент оставил телефон: файлы по звонку не уходят. Запишите итог разговора без них.", draft)
+	case errors.Is(err, leads.ErrNoChannel):
+		h.showLead(w, r, http.StatusBadRequest, "Ответ никуда не уйдёт: отметьте хотя бы один канал — у клиента нет личного кабинета.", draft)
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:
 		h.opts.Log.Error("cannot store an answer", "error", err)
 		h.showLead(w, r, http.StatusInternalServerError, "Не получилось сохранить ответ — текст ниже, попробуйте ещё раз.", draft)
 	}
+}
+
+// chosenChannels reads the picker of the composer: the channels left checked. A form without the
+// picker (one way to the client, or a script of its own) sends the answer everywhere; a picker with
+// everything unchecked keeps the answer in the personal account alone.
+func chosenChannels(r *http.Request) []string {
+	if r.PostFormValue("channels") != "1" {
+		return nil
+	}
+	out := []string{leads.ChannelSite}
+	for _, channel := range r.PostForm["channel"] {
+		if (channel == leads.ChannelEmail || channel == leads.ChannelTelegram) && !slices.Contains(out, channel) {
+			out = append(out, channel)
+		}
+	}
+	return out
 }
 
 // formIDs reads the ids of a form: the ones that are numbers.
@@ -558,7 +591,7 @@ func (h *Handler) leadDelete(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		// The journal keeps the number and who deleted it — nothing about the person.
 		h.auditLead(r, "lead.delete", id, "данные клиента удалены по запросу")
-		http.Redirect(w, r, h.opts.Prefix+"/leads?ok=lead-deleted", http.StatusSeeOther)
+		http.Redirect(w, r, h.opts.Prefix+"/leads?"+withFlash(listStateFrom(r), "lead-deleted"), http.StatusSeeOther)
 	case errors.Is(err, leads.ErrNotFound):
 		h.notFound(w, r, "Заявка не найдена")
 	default:

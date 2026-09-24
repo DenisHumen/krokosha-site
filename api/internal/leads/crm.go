@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -207,7 +208,9 @@ type Card struct {
 	FirstResponseAt sql.NullTime
 	RejectReason    string
 	AnonymizedAt    sql.NullTime // set when the storage period ran out: the person and the conversation are gone
-	// ReplyVia is how the next answer will reach the client: email | telegram | phone.
+	// Reach is everywhere the next answer goes; ReplyVia the first of it: email | telegram | site |
+	// phone (the record of a call).
+	Reach    Reach
 	ReplyVia string
 	// BotLinked: the client opened the bot by the link of this request (ClientLinked).
 	BotLinked bool
@@ -230,8 +233,17 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 		return nil, err
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
-	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod, lead.ClientID); err != nil {
-		return nil, err
+	card.ReplyVia = MethodPhone
+	if !card.AnonymizedAt.Valid {
+		if card.Reach, err = reachOf(ctx, s.db, id); err != nil {
+			return nil, err
+		}
+		switch {
+		case len(card.Reach.Targets) > 0:
+			card.ReplyVia = card.Reach.Targets[0].Channel
+		case card.Reach.Account:
+			card.ReplyVia = ChannelSite
+		}
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM lead_events WHERE lead_id = ? AND action = 'client_linked')`, id).
 		Scan(&card.BotLinked); err != nil {
@@ -260,6 +272,23 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
+	// Within the same moment: the request came, then what was written, then what followed from it.
+	rank := func(entry Entry) int {
+		switch {
+		case entry.Kind == "event" && entry.Action == "created":
+			return 0
+		case entry.Kind == "event":
+			return 2
+		}
+		return 1
+	}
+	sort.SliceStable(card.Feed, func(i, j int) bool {
+		a, b := card.Feed[i], card.Feed[j]
+		if !a.At.Equal(b.At) {
+			return a.At.Before(b.At)
+		}
+		return rank(a) < rank(b)
+	})
 
 	files, err := s.Attachments(ctx, id)
 	if err != nil {
@@ -285,9 +314,11 @@ func (s *Store) Take(ctx context.Context, id int64, actor string) (takenBy strin
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// The WHERE clause is the lock: of two racing updates only one finds the row still «new».
-	result, err := tx.ExecContext(ctx, `UPDATE leads SET status = 'in_progress', assignee = ?, assigned_at = ?, updated_at = ? WHERE id = ? AND status = 'new'`,
-		actor, now, now, id)
+	// The WHERE clause is the lock: of two racing updates only one finds the row still «new». Whoever
+	// takes a request has read it (the admin area or the bot's card shows its text).
+	result, err := tx.ExecContext(ctx, `UPDATE leads SET status = 'in_progress', assignee = ?, assigned_at = ?, updated_at = ?,
+		staff_seen_at = GREATEST(COALESCE(staff_seen_at, ?), ?) WHERE id = ? AND status = 'new'`,
+		actor, now, now, now, now, id)
 	if err != nil {
 		return "", err
 	}
@@ -343,8 +374,9 @@ func (s *Store) SetStatus(ctx context.Context, id int64, actor, status, reason s
 	reason = cut(strings.TrimSpace(reason), 255)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE leads SET status = ?, updated_at = ?, closed_at = ?, reject_reason = IF(? = 'rejected', NULLIF(?, ''), reject_reason),
-		       assignee = IF(? = 'in_progress' AND assignee IS NULL, ?, assignee), assigned_at = IF(? = 'in_progress' AND assigned_at IS NULL, ?, assigned_at)
-		WHERE id = ?`, status, now, closed, status, reason, status, actor, status, now, id); err != nil {
+		       assignee = IF(? = 'in_progress' AND assignee IS NULL, ?, assignee), assigned_at = IF(? = 'in_progress' AND assigned_at IS NULL, ?, assigned_at),
+		       staff_seen_at = GREATEST(COALESCE(staff_seen_at, ?), ?)
+		WHERE id = ?`, status, now, closed, status, reason, status, actor, status, now, now, now, id); err != nil { // a status is set by whoever read it
 		return err
 	}
 	if err := event(ctx, tx, id, now, actor, "status", current, status, reason); err != nil {
@@ -382,51 +414,18 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 	if inserted, _ := result.RowsAffected(); inserted == 0 {
 		return ErrNotFound
 	}
-	if _, err = s.db.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id); err != nil {
+	// Whoever writes a note has read the conversation.
+	if _, err = s.db.ExecContext(ctx, `UPDATE leads SET updated_at = ?, staff_seen_at = ? WHERE id = ?`, now, now, id); err != nil {
 		return err
 	}
 	s.changed(id)
 	return nil
 }
 
-// replyChannel says how an answer reaches the client: the way the client wrote last. Somebody who
-// left an email address and then continued in Telegram is answered in Telegram; before they write
-// anything, the contact of the form decides. Opening the bot by the link of the «thank you» page
-// counts as coming to Telegram: the bot told the client the answer would come to that chat. A client
-// with a personal account who left only a phone is answered in the account: the answer is there at
-// once, and the client is told about it.
-func replyChannel(ctx context.Context, db querier, id int64, method string, clientID int64) (string, error) {
-	var last string
-	var lastAt time.Time
-	err := db.QueryRowContext(ctx, `SELECT channel, created_at FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last, &lastAt)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		last = method
-	case err != nil:
-		return "", err
-	case last == ChannelEmail && method != MethodEmail:
-		last = method // a letter from somebody whose address the form does not have: see the mail step
-	}
-	if last != ChannelTelegram {
-		var linkedAt time.Time
-		err := db.QueryRowContext(ctx, `SELECT created_at FROM lead_events WHERE lead_id = ? AND action = 'client_linked' ORDER BY id DESC LIMIT 1`, id).Scan(&linkedAt)
-		switch {
-		case err == nil && linkedAt.After(lastAt): // lastAt is zero when the client wrote nothing yet
-			last = ChannelTelegram
-		case err != nil && !errors.Is(err, sql.ErrNoRows):
-			return "", err
-		}
-	}
-	if last == MethodPhone && clientID > 0 {
-		return ChannelSite, nil
-	}
-	return last, nil
-}
-
-// Reply stores an answer to the client and queues its delivery through the channel the client
-// chose (brief B10.4). The request then waits for the client; the first answer stops the clock
-// of «time to first reaction». A phone call cannot be delivered by a machine: for those the
-// text is the record of the call.
+// Reply stores an answer to the client and queues its delivery everywhere the client can be
+// reached (Reach). The request then waits for the client; the first answer stops the clock of
+// «time to first reaction». A request by phone without an account cannot be answered by a
+// machine: for those the text is the record of the call.
 func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messageID int64, err error) {
 	return s.ReplyWith(ctx, id, actor, Answer{Text: text})
 }
@@ -439,7 +438,13 @@ type Answer struct {
 	Templates []int64
 	Media     []int64 // files of templates (Media.ID)
 	Files     []Upload
+	// Channels the staff chose (ChannelEmail, ChannelTelegram); none — every one that reaches the
+	// client. The personal account shows an answer whatever is chosen.
+	Channels []string
 }
+
+// ErrNoChannel: the channels chosen reach the client nowhere, and there is no account either.
+var ErrNoChannel = errors.New("the answer would reach the client nowhere")
 
 // ReplyWith is Reply with templates and files: the files of templates get a copy of their own in
 // the request (a hard link), and every file becomes an attachment of the answer.
@@ -471,17 +476,27 @@ func (s *Store) ReplyWith(ctx context.Context, id int64, actor string, answer An
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var status, method string
-	var clientID sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT status, contact_method, client_id FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&status, &method, &clientID); err != nil {
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
 		return 0, err
 	}
-	channel, err := replyChannel(ctx, tx, id, method, clientID.Int64)
+	reach, err := reachOf(ctx, tx, id)
 	if err != nil {
 		return 0, err
+	}
+	targets := reach.Only(answer.Channels)
+	// The channel of the message is where it went first: its deliveries say where else.
+	channel := MethodPhone
+	switch {
+	case len(targets) > 0:
+		channel = targets[0].Channel
+	case reach.Account:
+		channel = ChannelSite
+	case !reach.Nothing():
+		return 0, ErrNoChannel // every channel left out, and no account to show it in
 	}
 	if channel == MethodPhone && len(answer.Media)+len(answer.Files) > 0 {
 		return 0, ErrNoFilesByPhone
@@ -495,7 +510,7 @@ func (s *Store) ReplyWith(ctx context.Context, id int64, actor string, answer An
 	case MethodPhone:
 		delivery = sql.NullString{} // nothing to deliver: the call has happened
 	case ChannelSite:
-		delivery.String = "sent" // it is in the account the moment it is stored; the notice about it is a task of its own
+		delivery.String = "sent" // in the account the moment it is stored
 	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, templates, delivery) VALUES (?, ?, 'out', ?, ?, ?, NULLIF(?, ''), ?)`,
 		id, now, channel, actor, cut(text, 8000), cut(joinIDs(templates), 255), delivery)
@@ -547,33 +562,26 @@ func (s *Store) ReplyWith(ctx context.Context, id int64, actor string, answer An
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE leads SET status = ?, updated_at = ?, first_response_at = COALESCE(first_response_at, ?),
-		       assignee = COALESCE(assignee, ?), assigned_at = COALESCE(assigned_at, ?) WHERE id = ?`, next, now, now, actor, now, id); err != nil {
+		       assignee = COALESCE(assignee, ?), assigned_at = COALESCE(assigned_at, ?),
+		       staff_seen_at = ? WHERE id = ?`, next, now, now, actor, now, now, id); err != nil { // an answer, from here or the bot, is read
 		return 0, err
 	}
 	if err := event(ctx, tx, id, now, actor, "replied", status, next, ""); err != nil {
 		return 0, err
 	}
-	switch channel {
-	case MethodPhone:
-	case ChannelSite:
-		// The client is told where the answer is: by the address or in the Telegram of the account.
-		notice, err := accountChannel(ctx, tx, clientID.Int64)
-		if err != nil {
-			return 0, err
-		}
-		if notice != "" {
-			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: notice, Kind: TaskSiteReply, LeadID: id,
-				DedupeKey: fmt.Sprintf("lead:%d:site:%d", id, messageID), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
-				return 0, err
-			}
-		}
-	default:
+	// Every target is a delivery of its own, by the bot or by the mail server.
+	deliveries, err := queueDeliveries(ctx, tx, now, id, messageID, targets)
+	if err != nil {
+		return 0, err
+	}
+	for i, target := range targets {
 		outboxChannel := outbox.ChannelEmail
-		if channel == MethodTelegram {
+		if target.Channel == ChannelTelegram {
 			outboxChannel = outbox.ChannelTelegram
 		}
 		if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: outboxChannel, Kind: TaskReply, LeadID: id,
-			DedupeKey: fmt.Sprintf("lead:%d:reply:%d", id, messageID), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
+			DedupeKey: fmt.Sprintf("lead:%d:reply:%d:%d", id, messageID, deliveries[i]),
+			Payload:   TaskPayload{LeadID: id, MessageID: messageID, DeliveryID: deliveries[i]}}); err != nil {
 			return 0, err
 		}
 	}
@@ -600,6 +608,8 @@ type Incoming struct {
 	// EmailMessageID of a letter: the next answer by mail refers to it, and the client's mail
 	// program keeps the conversation in one thread.
 	EmailMessageID string
+	// FromAddress of a letter: answers go back to it too (Reach).
+	FromAddress string
 	// Automatic: an out-of-office note or the like. It is kept in the conversation, but the
 	// request does not come back to work for it and nobody is woken up.
 	Automatic bool
@@ -640,8 +650,12 @@ func (s *Store) ClientWrote(ctx context.Context, id int64, in Incoming) (message
 		}
 		return 0, err
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body, email_message_id) VALUES (?, ?, 'in', ?, ?, NULLIF(?, ''))`,
-		id, now, in.Channel, cut(text, 8000), cut(in.EmailMessageID, 255))
+	from := ""
+	if in.Channel == ChannelEmail && !in.Automatic {
+		from = NormalizeEmail(in.FromAddress) // an out-of-office note is no address to answer
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body, email_message_id, from_address) VALUES (?, ?, 'in', ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
+		id, now, in.Channel, cut(text, 8000), cut(in.EmailMessageID, 255), cut(from, 200))
 	if err != nil {
 		return 0, err
 	}
@@ -708,6 +722,14 @@ func (s *Store) ByEmail(ctx context.Context, address string) (id int64, err erro
 // who never got the answer keeps waiting for it. emailMessageID may be empty: then the letter
 // was the automatic confirmation, or the report did not say.
 func (s *Store) Undelivered(ctx context.Context, id int64, emailMessageID, reason string, inTx func(ctx context.Context, tx *sql.Tx) error) error {
+	return s.UndeliveredTo(ctx, id, emailMessageID, "", reason, inTx)
+}
+
+// UndeliveredTo is Undelivered with the address that refused the letter: of an answer that went to
+// several addresses, only the delivery to that one failed (lead_deliveries) — the others may well
+// have arrived. An answer from before deliveries, or an address the report does not name, marks the
+// answer itself.
+func (s *Store) UndeliveredTo(ctx context.Context, id int64, emailMessageID, recipient, reason string, inTx func(ctx context.Context, tx *sql.Tx) error) error {
 	now := s.now().UTC()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -722,7 +744,28 @@ func (s *Store) Undelivered(ctx context.Context, id int64, emailMessageID, reaso
 		return err
 	}
 	if emailMessageID != "" {
-		if _, err := tx.ExecContext(ctx, `UPDATE lead_messages SET delivery = 'failed' WHERE lead_id = ? AND direction = 'out' AND email_message_id = ?`, id, emailMessageID); err != nil {
+		failed := int64(0)
+		if recipient != "" {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE lead_deliveries SET status = 'failed', updated_at = ?
+				WHERE lead_id = ? AND channel = 'email' AND email_message_id = ? AND LOWER(target) = LOWER(?)`, now, id, emailMessageID, recipient)
+			if err != nil {
+				return err
+			}
+			failed, _ = result.RowsAffected()
+		}
+		if failed > 0 {
+			// The answer sums its deliveries up again, the way MarkTarget does.
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE lead_messages m JOIN (
+					SELECT message_id,
+					       CASE WHEN SUM(status = 'queued') > 0 THEN 'queued' WHEN SUM(status = 'sent') > 0 THEN 'sent' ELSE 'failed' END AS summary
+					FROM lead_deliveries WHERE lead_id = ? AND email_message_id = ? GROUP BY message_id
+				) d ON d.message_id = m.id
+				SET m.delivery = d.summary`, id, emailMessageID); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `UPDATE lead_messages SET delivery = 'failed' WHERE lead_id = ? AND direction = 'out' AND email_message_id = ?`, id, emailMessageID); err != nil {
 			return err
 		}
 	}

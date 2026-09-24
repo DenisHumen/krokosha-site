@@ -418,7 +418,7 @@ func (s *Service) deliver(ctx context.Context, leadID int64, letter *Letter, how
 		text = "[автоответ] " + text
 	}
 	_, err := s.opts.Leads.ClientWrote(ctx, leadID, leads.Incoming{
-		Channel: leads.ChannelEmail, Text: text, Files: uploads, EmailMessageID: letter.MessageID,
+		Channel: leads.ChannelEmail, Text: text, Files: uploads, EmailMessageID: letter.MessageID, FromAddress: letter.From.Address,
 		Automatic: letter.Automatic, Note: strings.Join(notes, "; "),
 		InTx: func(ctx context.Context, tx *sql.Tx, _ int64) error { return written(ctx, tx, len(uploads)) },
 	})
@@ -502,7 +502,7 @@ func (s *Service) bounced(ctx context.Context, letter *Letter, raw []byte, key [
 	if bounce.Failed() {
 		originalID = bounce.OriginalID
 	}
-	err = s.opts.Leads.Undelivered(ctx, leadID, originalID, reason, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.opts.Leads.UndeliveredTo(ctx, leadID, originalID, bounce.Recipient, reason, func(ctx context.Context, tx *sql.Tx) error {
 		inserted, err := s.journal(ctx, tx, record{Key: key, Outcome: OutcomeBounce, LeadID: leadID, Letter: letter})
 		if err == nil && !inserted {
 			err = errHandledBefore

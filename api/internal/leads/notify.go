@@ -90,7 +90,7 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		}
 		message, err = m.autoReply(lead, files)
 	case TaskReply:
-		return m.sendReply(ctx, lead, payload.MessageID)
+		return m.sendReply(ctx, lead, payload)
 	case TaskClientMessage:
 		message, err = m.clientWrote(ctx, lead, payload.MessageID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -427,9 +427,27 @@ var idMark = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(
 
 // sendReply delivers an answer written in the admin area or in the bot (brief B10.5) and
 // records what became of it.
-func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) error {
-	if lead.ContactMethod != MethodEmail {
+func (m *Mailer) sendReply(ctx context.Context, lead *Lead, payload TaskPayload) error {
+	messageID := payload.MessageID
+	// The address of the delivery (Reach); an answer queued before deliveries existed goes to the
+	// address of the form.
+	to := lead.ContactValue
+	mark := func(status, id string) error { return m.Store.MarkDelivery(ctx, messageID, status, id) }
+	if payload.DeliveryID > 0 {
+		delivery, err := m.Store.Delivery(ctx, payload.DeliveryID)
+		if errors.Is(err, ErrNotFound) {
+			return outbox.Permanent(errors.New("the delivery is gone (the request was deleted?)"))
+		}
+		if err != nil {
+			return err
+		}
+		to = delivery.To
+		mark = func(status, id string) error { return m.Store.MarkTarget(ctx, delivery.ID, status, id) }
+	} else if lead.ContactMethod != MethodEmail {
 		return outbox.Permanent(errors.New("the client left no email address"))
+	}
+	if to == "" {
+		return outbox.Permanent(errors.New("no address to write to"))
 	}
 	body, author, err := m.Store.Message(ctx, lead.ID, messageID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -471,7 +489,7 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 	}
 	id := m.messageID(lead.ID, fmt.Sprintf("reply-%d", messageID))
 	message := mail.Message{
-		From: m.From, To: netmail.Address{Name: v.Name, Address: lead.ContactValue},
+		From: m.From, To: netmail.Address{Name: v.Name, Address: to},
 		Subject:   v.Title,
 		Text:      text,
 		HTML:      html,
@@ -484,9 +502,9 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 	var permanent mail.PermanentError
 	switch {
 	case err == nil:
-		return m.Store.MarkDelivery(ctx, messageID, "sent", id)
+		return mark("sent", id)
 	case errors.As(err, &permanent):
-		_ = m.Store.MarkDelivery(ctx, messageID, "failed", "")
+		_ = mark("failed", "")
 		return outbox.Permanent(err)
 	default:
 		return err

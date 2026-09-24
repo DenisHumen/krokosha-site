@@ -249,9 +249,9 @@ func (b *Bot) Send(ctx context.Context, task outbox.Task) error {
 	case leads.TaskNotify:
 		return b.announce(ctx, payload.LeadID)
 	case leads.TaskReply:
-		return b.answerClient(ctx, payload.LeadID, payload.MessageID, false)
+		return b.answerClient(ctx, payload, false)
 	case leads.TaskSiteReply:
-		return b.answerClient(ctx, payload.LeadID, payload.MessageID, true)
+		return b.answerClient(ctx, payload, true)
 	case leads.TaskClientMessage:
 		return b.clientWrote(ctx, payload.LeadID, payload.MessageID)
 	case leads.TaskUndelivered:

@@ -211,10 +211,15 @@ func run() error {
 	// An answer that could not be delivered after all the retries is marked so in the conversation.
 	deliveries.OnGiveUp(func(ctx context.Context, task outbox.Task, _ string) {
 		var payload leads.TaskPayload
-		if task.Kind == leads.TaskReply && json.Unmarshal(task.Payload, &payload) == nil && payload.MessageID > 0 {
-			if err := leadStore.MarkDelivery(ctx, payload.MessageID, "failed", ""); err != nil {
-				log.Error("cannot mark an answer as failed", "error", err)
-			}
+		if task.Kind != leads.TaskReply || json.Unmarshal(task.Payload, &payload) != nil || payload.MessageID <= 0 {
+			return
+		}
+		err := leadStore.MarkDelivery(ctx, payload.MessageID, "failed", "")
+		if payload.DeliveryID > 0 {
+			err = leadStore.MarkTarget(ctx, payload.DeliveryID, "failed", "")
+		}
+		if err != nil {
+			log.Error("cannot mark an answer as failed", "error", err)
 		}
 	})
 	leads.NewHandler(leads.Options{
