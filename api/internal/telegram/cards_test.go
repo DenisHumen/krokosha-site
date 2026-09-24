@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -284,8 +285,25 @@ func TestAnsweringAClientFromTheBot(t *testing.T) {
 		t.Fatalf("the offer: %q %v (calls: %d)", offer.Text(), labels, len(calls))
 	}
 
+	// The answers that fit the conversation come first, marked; no more than three of them.
+	stars, details := 0, ""
+	for i, label := range labels {
+		if strings.HasPrefix(label, "★ ") {
+			stars++
+			if i >= 3 {
+				t.Errorf("a marked answer below the others: %v", labels)
+			}
+		}
+		if strings.TrimPrefix(label, "★ ") == "Нужны детали" {
+			details = data[label]
+		}
+	}
+	if stars == 0 || stars > 3 || details == "" {
+		t.Fatalf("the answers offered: %v", labels)
+	}
+
 	// A template → a preview of what the client gets → send.
-	f.presses(denis, data["Нужны детали"])
+	f.presses(denis, details)
 	preview := lastCall(t, f.api.Sent(denis.ID))
 	labels, data = preview.Buttons()
 	if !strings.Contains(preview.Text(), "Предпросмотр ответа по <b>#K-0001</b>") || !strings.Contains(preview.Text(), "Здравствуйте, Иван &lt;b&gt;Петров&lt;/b&gt;!") ||
@@ -557,5 +575,74 @@ func TestErasedRequestsAreWipedFromTheChats(t *testing.T) {
 	f.settle()
 	if wiped = f.api.Calls("editMessageText"); len(wiped) != 2 || !strings.Contains(wiped[0].Text(), "#K-0002: данные клиента удалены") {
 		t.Errorf("after anonymisation: %+v", wiped)
+	}
+}
+
+// TestOnlyNotifications: a person with the role «notify» gets the cards and can read them, but
+// nothing can be done from their chat — no taking, no answers, no swipes.
+func TestOnlyNotifications(t *testing.T) {
+	f := newFixture(t)
+	store := f.withLeads()
+	ctx := context.Background()
+	f.join(denis, RoleOwner)
+	watcher := User{ID: 1004, FirstName: "Рома", Username: "roma_ops"}
+	f.join(watcher, RoleNotify)
+	lead := f.addLead(store, nil)
+	f.announce(lead.ID)
+
+	card := lastCall(t, f.api.Sent(watcher.ID))
+	if labels, data := card.Buttons(); fmt.Sprint(labels) != "[📄 Полностью 🕘 История]" || data["📄 Полностью"] != "l:full:1" {
+		t.Errorf("the buttons of a card that can only be read: %v", labels)
+	}
+	if labels, _ := lastCall(t, f.api.Sent(denis.ID)).Buttons(); len(labels) != 7 {
+		t.Errorf("the owner's card lost its buttons: %v", labels)
+	}
+	// A button of somebody else's card, pressed anyway: refused, and the request stays new.
+	if text, alert := toast(t, f.presses(watcher, "l:take:1")); !alert || !strings.Contains(text, "только к уведомлениям") {
+		t.Errorf("taking from a notify-only chat: %q %v", text, alert)
+	}
+	if got, _ := store.Get(ctx, lead.ID); got.Status != leads.StatusNew {
+		t.Errorf("the request was changed from a notify-only chat: %s", got.Status)
+	}
+	// Reading is allowed.
+	if text, alert := toast(t, f.presses(watcher, "l:full:1")); alert || text != "" {
+		t.Errorf("reading the full text: %q %v", text, alert)
+	}
+	// A swipe reply to the card answers nobody.
+	var cardID int64
+	if err := f.db.QueryRow(`SELECT message_id FROM bot_messages WHERE lead_id = ? AND chat_id = ? AND kind = 'card'`, lead.ID, watcher.ID).Scan(&cardID); err != nil {
+		t.Fatal(err)
+	}
+	if text := oneText(t, f.replies(watcher, cardID, "Здравствуйте!")); !strings.Contains(text, "только к уведомлениям") {
+		t.Errorf("a swipe from a notify-only chat: %q", text)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM lead_messages WHERE direction = 'out'`); n != 0 {
+		t.Errorf("answers written from a notify-only chat: %d", n)
+	}
+	if help := oneText(t, f.says(watcher, "/help")); strings.Contains(help, "/invite") || !strings.Contains(help, "только к уведомлениям") {
+		t.Errorf("the help of a notify-only person: %q", help)
+	}
+
+	// The role changes; the last owner stays one; a colleague is let in by id; the admin sees who was here.
+	member, _ := f.access.Member(ctx, watcher.ID)
+	if !member.LastSeenAt.Valid || member.Username != "roma_ops" {
+		t.Errorf("last seen: %+v", member)
+	}
+	if changed, err := f.access.SetRole(ctx, member.ID, RoleMember); err != nil || changed.Role != RoleMember {
+		t.Errorf("a new role: %+v %v", changed, err)
+	}
+	owner, _ := f.access.Member(ctx, denis.ID)
+	if _, err := f.access.SetRole(ctx, owner.ID, RoleNotify); !errors.Is(err, ErrLastOwner) {
+		t.Errorf("the only owner made a watcher: %v", err)
+	}
+	added, err := f.access.Add(ctx, 1005, RoleNotify, "  Олег  ", "denis")
+	if err != nil || added.Name != "Олег" || added.Role != RoleNotify || added.InvitedBy != "denis" {
+		t.Errorf("added by id: %+v %v", added, err)
+	}
+	if _, err := f.access.Add(ctx, -5, RoleMember, "", "denis"); !errors.Is(err, ErrBadID) {
+		t.Errorf("a group's id: %v", err)
+	}
+	if _, err := f.access.Add(ctx, 1006, "root", "", "denis"); !errors.Is(err, ErrBadRole) {
+		t.Errorf("a made-up role: %v", err)
 	}
 }

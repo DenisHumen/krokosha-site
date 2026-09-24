@@ -61,6 +61,10 @@ type Message struct {
 	Date           int64    `json:"date"`
 	Text           string   `json:"text"`
 	ReplyToMessage *Message `json:"reply_to_message"`
+	// The file a sent message carries (media.go): the sizes of a photo, a video, a document.
+	Photo    []FileRef `json:"photo"`
+	Video    *FileRef  `json:"video"`
+	Document *FileRef  `json:"document"`
 }
 
 // CallbackQuery is a press of an inline button.
@@ -107,9 +111,10 @@ type Outgoing struct {
 	Silent      bool // no sound: the digest at night, a card for somebody who muted the bot
 }
 
-// Escape makes any text safe inside an HTML message: Telegram knows three special characters.
+// Escape makes any text safe inside an HTML message: in the text and in the value of an attribute
+// (href="…"). Those are the entities Telegram knows.
 func Escape(text string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;").Replace(text)
 }
 
 // APIError is Telegram saying no.
@@ -141,6 +146,8 @@ type Client struct {
 	base  string
 	token string
 	http  *http.Client
+	// uploads carry files: as long as the context of the delivery allows, not a fixed minute.
+	uploads *http.Client
 }
 
 // NewClient builds a client. base is DefaultAPI unless a test or the staging machine says otherwise.
@@ -151,23 +158,30 @@ func NewClient(token, base string) *Client {
 	return &Client{
 		base: strings.TrimRight(base, "/"), token: token,
 		// Long polling holds a request for 50 seconds; everything else answers in a moment.
-		http: &http.Client{Timeout: 70 * time.Second},
+		http:    &http.Client{Timeout: 70 * time.Second},
+		uploads: &http.Client{},
 	}
 }
 
-// call runs one method. The address contains the token, and errors of net/http quote the address:
-// every error from here is rewritten so that the token never reaches a log or a screen.
+// call runs one method with JSON parameters.
 func (c *Client) call(ctx context.Context, method string, params, result any) error {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/bot"+c.token+"/"+method, bytes.NewReader(body))
+	return c.post(ctx, c.http, method, bytes.NewReader(body), "application/json", result)
+}
+
+// post sends one request of a method. The address contains the token, and errors of net/http
+// quote the address: every error from here is rewritten so that the token never reaches a log or
+// a screen.
+func (c *Client) post(ctx context.Context, client *http.Client, method string, body io.Reader, contentType string, result any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/bot"+c.token+"/"+method, body)
 	if err != nil {
 		return fmt.Errorf("telegram %s: cannot build the request", method)
 	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := c.http.Do(request)
+	request.Header.Set("Content-Type", contentType)
+	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()

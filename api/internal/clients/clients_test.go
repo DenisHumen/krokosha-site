@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -355,10 +356,17 @@ func TestAddingAnAddress(t *testing.T) {
 
 	b := f.browser("203.0.113.7")
 	b.signInByEmail("first@example.com")
-	// Somebody else's address: refused, and the account keeps its own.
+	// The address of another account: whoever types its code holds it, so that account is theirs too
+	// and joins this one (TestTwoAccountsOfOnePersonBecomeOne).
 	b.send(http.MethodPost, "/api/account/email", map[string]string{"email": "taken@example.com"})
-	if got := b.send(http.MethodPost, "/api/account/login/code", map[string]string{"code": f.service.code(f.lastLogin())}); got.status != http.StatusConflict {
+	if got := b.send(http.MethodPost, "/api/account/login/code", map[string]string{"code": f.service.code(f.lastLogin())}); got.status != http.StatusOK {
 		t.Errorf("an address of another account: %d %v", got.status, got.body)
+	}
+	if email := b.me()["client"].(map[string]any)["email"]; email != "taken@example.com" {
+		t.Errorf("email after joining the other account: %v", email)
+	}
+	if got := taken.send(http.MethodGet, "/api/account/me", nil); got.body["ok"] != false {
+		t.Errorf("the joined account is still signed in: %s", got.raw)
 	}
 	// A new address replaces the old one; the session stays.
 	b.send(http.MethodPost, "/api/account/email", map[string]string{"email": "second@example.com"})
@@ -459,10 +467,13 @@ func TestLookAlikeAddresses(t *testing.T) {
 	if other := same.me()["client"].(map[string]any)["id"]; other != id {
 		t.Errorf("the address in capitals opened account %v, not %v", other, id)
 	}
-	// A request left with a look-alike joins no account.
-	lead, err := f.leads.Get(context.Background(), mustNumber(t, f.submit(f.browser("198.51.100.25"), "ánna@example.com", nil)["id"].(string)))
-	if err != nil || lead.ClientID != 0 {
-		t.Errorf("a request with a look-alike joined account %d (%v)", lead.ClientID, err)
+	// The form takes no look-alike either (addresses are ASCII): no request of one can join the account.
+	form := url.Values{
+		"name": {"Анна"}, "contact_method": {"email"}, "contact_value": {"ánna@example.com"}, "direction": {"networks"},
+		"description": {"Нужно перестроить сеть офиса на 40 мест: MikroTik и два VLAN."}, "consent": {"on"}, "lang": {"ru"},
+	}
+	if got := f.browser("198.51.100.25").send(http.MethodPost, "/api/leads", form); got.status != http.StatusUnprocessableEntity {
+		t.Errorf("the form took a look-alike address: %d %s", got.status, got.raw)
 	}
 }
 
@@ -549,7 +560,11 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	if err := f.leads.AddNote(ctx, id, "denis", "внутренняя заметка: клиент торопится"); err != nil {
 		t.Fatal(err)
 	}
+	if item := b.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any)[0].(map[string]any); item["answered"] != nil {
+		t.Errorf("answered before any answer: %v", item["answered"])
+	}
 	f.now = f.now.Add(time.Minute)
+	replied := f.now
 	if _, err := f.leads.Reply(ctx, id, "denis", "Здравствуйте! Нужны детали."); err != nil {
 		t.Fatal(err)
 	}
@@ -557,6 +572,10 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	list := b.send(http.MethodGet, "/api/account/leads", nil).body["leads"].([]any)
 	if item := list[0].(map[string]any); item["status"] != leads.StatusWaitingClient || item["unread"] != true {
 		t.Errorf("the list: %v", item)
+	}
+	// When the answer came: the account's header says «answer: today 09:12».
+	if at, err := time.Parse(time.RFC3339Nano, fmt.Sprint(list[0].(map[string]any)["answered"])); err != nil || !at.Equal(replied.Truncate(time.Millisecond)) {
+		t.Errorf("answered = %v (%v), want %v", list[0].(map[string]any)["answered"], err, replied)
 	}
 	view := b.send(http.MethodGet, "/api/account/leads/"+number, nil)
 	raw := view.raw
@@ -591,6 +610,91 @@ func TestTheConversationInTheAccount(t *testing.T) {
 	}
 	if f.tasks(leads.TaskClientMessage) != 2 {
 		t.Errorf("the staff is not told: %d tasks", f.tasks(leads.TaskClientMessage))
+	}
+}
+
+// fetch asks for a file the way the account's page does: an image, a link — no JSON either way.
+func (b *browser) fetch(path string, edit ...func(*http.Request)) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Host = "krokosha.com"
+	request.RemoteAddr = "127.0.0.1:40000"
+	request.Header.Set("X-Real-IP", b.ip)
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	for name, value := range b.cookies {
+		request.AddCookie(&http.Cookie{Name: name, Value: value})
+	}
+	for _, change := range edit {
+		change(request)
+	}
+	recorder := httptest.NewRecorder()
+	b.f.handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestFilesOfTheConversation(t *testing.T) {
+	f := newFixture(t)
+	files := leads.NewFiles(t.TempDir())
+	f.leads.UseFiles(files)
+	b := f.browser("203.0.113.12")
+	b.signInByEmail("maria@example.com")
+	number := f.submit(b, "maria@example.com", nil)["id"].(string)
+	id := mustNumber(t, number)
+	ctx := context.Background()
+
+	jpg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, bytes.Repeat([]byte{7}, 500)...)
+	pdf := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
+	save := func(name string, content []byte) leads.Upload {
+		upload, err := leads.SaveOutgoing(files, name, int64(len(content)), bytes.NewReader(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return upload
+	}
+	if _, err := f.leads.ReplyWith(ctx, id, "denis", leads.Answer{Text: "Фото стойки и смета.", Files: []leads.Upload{save("стойка.jpg", jpg), save("Смета.pdf", pdf)}}); err != nil {
+		t.Fatal(err)
+	}
+	feed := b.send(http.MethodGet, "/api/account/leads/"+number, nil).body["lead"].(map[string]any)["feed"].([]any)
+	var shown []map[string]any
+	for _, item := range feed {
+		list, _ := item.(map[string]any)["files"].([]any)
+		for _, file := range list {
+			shown = append(shown, file.(map[string]any))
+		}
+	}
+	if len(shown) != 2 || shown[0]["name"] != "стойка.jpg" || shown[0]["kind"] != "jpg" || shown[0]["size"] != float64(len(jpg)) || shown[1]["kind"] != "pdf" {
+		t.Fatalf("the files of the answer: %v", shown)
+	}
+	address := func(file map[string]any) string {
+		return fmt.Sprintf("/api/account/leads/%s/files/%v", number, file["id"])
+	}
+
+	// The photo of an answer is shown in the page, as what it is; the document is a download.
+	photo := b.fetch(address(shown[0]))
+	if photo.Code != http.StatusOK || photo.Header().Get("Content-Type") != "image/jpeg" || photo.Body.String() != string(jpg) ||
+		!strings.HasPrefix(photo.Header().Get("Content-Disposition"), "inline; filename*=utf-8''") ||
+		photo.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(photo.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Errorf("the photo: %d %v", photo.Code, photo.Header())
+	}
+	document := b.fetch(address(shown[1]))
+	if document.Code != http.StatusOK || document.Header().Get("Content-Type") != "application/octet-stream" ||
+		!strings.HasPrefix(document.Header().Get("Content-Disposition"), "attachment;") || document.Body.String() != string(pdf) {
+		t.Errorf("the document: %d %v", document.Code, document.Header())
+	}
+
+	// Nobody else gets them: another account, a page of another site, nobody signed in.
+	stranger := f.browser("203.0.113.13")
+	stranger.signInByEmail("oleg@example.com")
+	if got := stranger.fetch(address(shown[0])); got.Code != http.StatusNotFound {
+		t.Errorf("another account: %d", got.Code)
+	}
+	if got := b.fetch(address(shown[0]), func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }); got.Code != http.StatusForbidden {
+		t.Errorf("from another site: %d", got.Code)
+	}
+	if got := f.browser("203.0.113.14").fetch(address(shown[0])); got.Code != http.StatusUnauthorized {
+		t.Errorf("signed out: %d", got.Code)
+	}
+	if got := b.fetch(fmt.Sprintf("/api/account/leads/%s/files/%v", leads.Number(id+1), shown[0]["id"])); got.Code != http.StatusNotFound {
+		t.Errorf("through another request's address: %d", got.Code)
 	}
 }
 
@@ -770,6 +874,15 @@ func TestDiscountsOfASignedInClient(t *testing.T) {
 	if percent, _ := discountOf(f.submit(b, "loyal@example.com", nil)); percent != 5 {
 		t.Errorf("the personal discount once was not spent: %v", percent)
 	}
+
+	// The numbers on top of the admin's list: one account, new, one order so far, and its amount.
+	totals, err := f.service.Totals(context.Background(), f.now.Add(-24*time.Hour), f.now.AddDate(-1, 0, 0))
+	if err != nil || totals != (Totals{Clients: 1, New: 1, Repeat: 0, Revenue: 1200}) {
+		t.Errorf("totals: %+v %v", totals, err)
+	}
+	if totals, err = f.service.Totals(context.Background(), f.now.Add(time.Hour), f.now.AddDate(-1, 0, 0)); err != nil || totals.New != 0 {
+		t.Errorf("an account made before «since» is not new: %+v %v", totals, err)
+	}
 }
 
 func allReceipt(t *testing.T) string {
@@ -822,6 +935,22 @@ func TestDiscountsOfAStranger(t *testing.T) {
 	lead, _ := f.leads.Get(context.Background(), mustNumber(t, typed["id"].(string)))
 	if lead.Discount.Percent != 10 || lead.Discount.Reason != "tier" || lead.ClientID == 0 {
 		t.Errorf("the request of a known address: %+v", lead.Discount)
+	}
+
+	// Nor does the typed address get the client's personal discount, let alone spend it «once»:
+	// that is the owner's gift to the client, who gets it signed in.
+	var goldID int64
+	_ = f.db.QueryRow(`SELECT id FROM clients WHERE email = 'gold@example.com'`).Scan(&goldID)
+	if err := f.service.SetPersonal(context.Background(), goldID, Personal{Percent: 30, Note: "партнёр", Once: true}); err != nil {
+		t.Fatal(err)
+	}
+	typed = f.submit(f.browser("198.51.100.33"), "gold@example.com", nil)
+	lead, _ = f.leads.Get(context.Background(), mustNumber(t, typed["id"].(string)))
+	if lead.Discount.Reason == "personal" {
+		t.Errorf("a stranger got the personal discount of an address: %+v", lead.Discount)
+	}
+	if own := f.submit(gold, "gold@example.com", nil); func() bool { percent, reason := discountOf(own); return percent != 30 || reason != "personal" }() {
+		t.Errorf("the personal discount after a stranger typed the address: %v", own)
 	}
 }
 

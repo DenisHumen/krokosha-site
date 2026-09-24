@@ -456,3 +456,138 @@ func TestAlertsGoToOwners(t *testing.T) {
 		t.Errorf("the alert: %q", text)
 	}
 }
+
+// replies sends a reply — Telegram's own, a swipe — to one of the bot's messages in the person's
+// chat, and returns what the bot answered there.
+func (f *fixture) replies(who User, messageID int64, text string) []tgtest.Call {
+	f.t.Helper()
+	f.api.Forget()
+	f.update++
+	f.bot.Handle(context.Background(), Update{UpdateID: f.update, Message: &Message{
+		MessageID: f.update, From: &who, Chat: Chat{ID: who.ID, Type: "private"}, Text: text, Date: f.now.Unix(),
+		ReplyToMessage: &Message{MessageID: messageID, Chat: Chat{ID: who.ID, Type: "private"}},
+	}})
+	return f.api.Sent(who.ID)
+}
+
+// TestAnsweringByAReply: a swipe-reply to the push of a client's message, or to a card, is an answer
+// to that request — shown before it goes, like «💬 Ответить»; the texts the bot asked for stay theirs.
+func TestAnsweringByAReply(t *testing.T) {
+	f := newFixture(t)
+	store := f.withLeads()
+	ctx := context.Background()
+	f.join(denis, RoleOwner)
+	f.join(olena, RoleMember)
+	lead := f.addLead(store, func(sub *leads.Submission) { sub.ContactMethod, sub.ContactValue = leads.MethodTelegram, "@ivan_p" })
+	other := f.addLead(store, nil)
+	f.announce(lead.ID)
+	f.announce(other.ID)
+	f.says(client, "/start "+ClientPrefix+lead.PublicToken)
+	f.says(client, "Когда сможете начать?")
+	var incoming int64
+	if err := f.db.QueryRow(`SELECT id FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel = 'telegram'`, lead.ID).Scan(&incoming); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.bot.Send(ctx, task(leads.TaskClientMessage, lead.ID, incoming)); err != nil {
+		t.Fatal(err)
+	}
+	var push, otherCard int64
+	if err := f.db.QueryRow(`SELECT message_id FROM bot_messages WHERE lead_id = ? AND chat_id = ? AND ref = ?`, lead.ID, olena.ID, fmt.Sprint("in:", incoming)).Scan(&push); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRow(`SELECT message_id FROM bot_messages WHERE lead_id = ? AND chat_id = ? AND kind = 'card'`, other.ID, olena.ID).Scan(&otherCard); err != nil {
+		t.Fatal(err)
+	}
+
+	// A reply to the push: the preview of an answer to that very request.
+	preview := lastCall(t, f.replies(olena, push, "В понедельник, <утром>."))
+	labels, data := preview.Buttons()
+	if !strings.Contains(preview.Text(), "Предпросмотр ответа по <b>#K-0001</b>") || !strings.Contains(preview.Text(), "В понедельник, &lt;утром&gt;.") ||
+		fmt.Sprint(labels) != "[✅ Отправить ✏️ Изменить Отмена]" {
+		t.Fatalf("the preview after a reply: %q %v", preview.Text(), labels)
+	}
+	f.presses(olena, data["✅ Отправить"])
+	var body, author string
+	if err := f.db.QueryRow(`SELECT body, author FROM lead_messages WHERE lead_id = ? AND direction = 'out'`, lead.ID).Scan(&body, &author); err != nil ||
+		body != "В понедельник, <утром>." || author != "Олена" {
+		t.Fatalf("the answer stored: %q by %q (%v)", body, author, err)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM outbox WHERE lead_id = 1 AND kind = 'lead.reply' AND channel = 'telegram'`); n != 1 {
+		t.Errorf("answers queued for Telegram: %d", n)
+	}
+
+	// A reply to the card of another request answers that one — even with a dialog of this one open.
+	f.presses(olena, "l:own:1")
+	if preview := lastCall(t, f.replies(olena, otherCard, "Добрый день! Уточните бюджет.")); !strings.Contains(preview.Text(), "#K-0002") {
+		t.Errorf("a reply to the card of K-0002: %q", preview.Text())
+	}
+
+	// The bot asked for a note: the reply to its question is the note, not an answer to the client.
+	f.presses(olena, "l:note:1")
+	var question int64
+	if err := f.db.QueryRow(`SELECT message_id FROM bot_messages WHERE lead_id = 1 AND chat_id = ? ORDER BY id DESC LIMIT 1`, olena.ID).Scan(&question); err != nil {
+		t.Fatal(err)
+	}
+	if text := oneText(t, f.replies(olena, question, "Клиент просил не звонить до обеда.")); !strings.Contains(text, "Заметка к #K-0001 сохранена") {
+		t.Errorf("a reply to the question of a note: %q", text)
+	}
+
+	// A reply to something the bot did not send about a request is just a text.
+	if text := oneText(t, f.replies(olena, 999999, "просто так")); !strings.Contains(text, "Не понял") {
+		t.Errorf("a reply to an unknown message: %q", text)
+	}
+	// Spam gets no answers.
+	if err := store.SetStatus(ctx, other.ID, "Олена", leads.StatusSpam, ""); err != nil {
+		t.Fatal(err)
+	}
+	if text := oneText(t, f.replies(olena, otherCard, "Ответ спамеру")); !strings.Contains(text, "ответить нельзя") {
+		t.Errorf("a reply about spam: %q", text)
+	}
+}
+
+// TestLongAnswersAndABlockedBot: an answer longer than one message goes in parts; when the client
+// blocked the bot, everybody on the staff learns that the answer did not arrive.
+func TestLongAnswersAndABlockedBot(t *testing.T) {
+	f := newFixture(t)
+	store := f.withLeads()
+	ctx := context.Background()
+	f.join(denis, RoleOwner)
+	lead := f.addLead(store, func(sub *leads.Submission) { sub.ContactMethod, sub.ContactValue = leads.MethodTelegram, "@ivan_p" })
+	f.announce(lead.ID)
+	f.says(client, "/start "+ClientPrefix+lead.PublicToken)
+
+	long := strings.Repeat("A long line of the plan, step by step.\n", 180) // about 7000 characters
+	answerID, err := store.Reply(ctx, lead.ID, "Денис Гумен", long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.api.Forget()
+	if err := f.bot.Send(ctx, task(leads.TaskReply, lead.ID, answerID)); err != nil {
+		t.Fatal(err)
+	}
+	sent := f.api.Sent(client.ID)
+	var got strings.Builder
+	for _, call := range sent {
+		got.WriteString(call.Text())
+	}
+	if len(sent) != 2 || !strings.HasPrefix(sent[0].Text(), "💬 Ответ по заявке #K-0001:") || strings.HasPrefix(sent[1].Text(), "💬") ||
+		strings.Count(got.String(), "step by step.") != 180 {
+		t.Fatalf("a long answer: %d messages, %d lines arrived", len(sent), strings.Count(got.String(), "step by step."))
+	}
+	if f.count(fmt.Sprintf(`SELECT COUNT(*) FROM lead_messages WHERE id = %d AND delivery = 'sent'`, answerID)) != 1 {
+		t.Error("the long answer is not marked as delivered")
+	}
+
+	// The client blocked the bot.
+	lateID, _ := store.Reply(ctx, lead.ID, "Денис Гумен", "Напоминаю про понедельник.")
+	f.api.Forget()
+	f.api.Refuse("sendMessage", 1, http.StatusForbidden, "Forbidden: bot was blocked by the user", 0)
+	if err := f.bot.Send(ctx, task(leads.TaskReply, lead.ID, lateID)); !outbox.IsPermanent(err) {
+		t.Fatalf("an answer to somebody who blocked the bot: %v", err)
+	}
+	alert := lastCall(t, f.api.Sent(denis.ID))
+	if !strings.Contains(alert.Text(), "#K-0001</b> · ответ не доставлен в Telegram") || !strings.Contains(alert.Text(), "заблокировал(а) бота") ||
+		f.count(fmt.Sprintf(`SELECT COUNT(*) FROM lead_messages WHERE id = %d AND delivery = 'failed'`, lateID)) != 1 {
+		t.Errorf("the staff after a blocked bot: %q", alert.Text())
+	}
+}

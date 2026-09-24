@@ -66,11 +66,9 @@ report() { # report OK RENEWED ERROR
   error=${error//\\/\\\\}
   error=${error//\"/\\\"}
   error=${error//$'\n'/ }
-  install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$(dirname "$STATUS_FILE")" 2>/dev/null || true
   printf '{"checked_at":"%s","ok":%s,"renewed":%s,"certificates":[%s],"error":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$renewed" "$list" "$error" >"$STATUS_FILE.tmp"
-  chmod 0644 "$STATUS_FILE.tmp"
-  mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$renewed" "$list" "$error" |
+    write_as_site_user "$STATUS_FILE"
 }
 
 main() {
@@ -138,7 +136,7 @@ main() {
     for i in "${!names[@]}"; do printf '%s (%s): осталось дней: %s\n' "${names[i]}" "${hosts[i]}" "${days[i]}"; done
     printf '\nЧто ответил certbot:\n%s\n\nПроверить руками: sudo certbot renew --dry-run\n' "${output: -1500}"
   )
-  report false "$renewed" "$subject"
+  report false "$renewed" "$subject" || warn "the status screen could not be told"
   warn "$subject"
   # One alert a day while the trouble lasts.
   if [[ -x $KROKOSHA_ROOT/bin/krokosha-cli ]]; then

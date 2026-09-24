@@ -180,6 +180,31 @@ type Overview struct {
 	Eggs        []Share
 }
 
+// Totals counts the visitors, visits and page views of a period, and the average time a page was
+// on screen, without the rest of the dashboard: for the header of the admin area and for comparing
+// a period with the one before it. AdVisits and Actions stay zero.
+func (r *Reports) Totals(ctx context.Context, period Period) (Totals, error) {
+	var out Totals
+	from, to := period.fromDay(), period.toDay()
+	if r.rawGone(period) {
+		var viewSum, viewCount int64
+		err := r.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(visitors), 0), COALESCE(SUM(visits), 0), COALESCE(SUM(pageviews), 0),
+			       COALESCE(SUM(view_ms_sum), 0), COALESCE(SUM(view_ms_count), 0)
+			  FROM analytics_daily WHERE day BETWEEN ? AND ?`, from, to).
+			Scan(&out.Visitors, &out.Visits, &out.Pageviews, &viewSum, &viewCount)
+		if viewCount > 0 {
+			out.AvgViewMs = int((viewSum + viewCount/2) / viewCount)
+		}
+		return out, err
+	}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT visitor), COUNT(DISTINCT session_id), COUNT(*), COALESCE(ROUND(AVG(NULLIF(duration_ms, 0))), 0)
+		FROM analytics_pageviews WHERE day BETWEEN ? AND ?`, from, to).
+		Scan(&out.Visitors, &out.Visits, &out.Pageviews, &out.AvgViewMs)
+	return out, err
+}
+
 // Overview computes the dashboard for a period.
 func (r *Reports) Overview(ctx context.Context, period Period) (*Overview, error) {
 	if r.rawGone(period) {

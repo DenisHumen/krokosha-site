@@ -62,6 +62,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/account/leads", h.private(h.leadList))
 	mux.HandleFunc("GET /api/account/leads/{number}", h.private(h.leadView))
 	mux.HandleFunc("POST /api/account/leads/{number}/messages", h.private(h.leadMessage))
+	mux.HandleFunc("GET /api/account/leads/{number}/files/{file}", h.private(h.leadFile))
 	mux.HandleFunc("POST /api/account/inquiries", h.private(h.inquiry))
 	mux.HandleFunc("POST /api/account/eggs", h.private(h.eggs))
 	mux.HandleFunc("POST /api/account/achievements/seen", h.private(h.achievementsSeen))
@@ -309,7 +310,8 @@ func (h *Handler) answerVerified(w http.ResponseWriter, result Result, err error
 		if result.Token != "" {
 			setCookie(w, SessionCookie, result.Token, SessionLifetime)
 		}
-		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "lang": result.Lang, "created": result.Created, "linked": result.Linked})
+		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "lang": result.Lang, "created": result.Created, "linked": result.Linked,
+			"merged": result.Merged})
 	}
 }
 
@@ -616,6 +618,47 @@ func (h *Handler) leadView(w http.ResponseWriter, r *http.Request) {
 		*leads.ClientView
 		Discount offerJSON `json:"discount"`
 	}{view, offerOf(view.Discount)}})
+}
+
+// leadFile hands out a file of the conversation to its client. The photos and videos of answers
+// are shown in the page; everything else — and whatever the client sent — is a download. The type
+// is what the content was checked to be when the file came; nothing is sniffed or run.
+func (h *Handler) leadFile(w http.ResponseWriter, r *http.Request) {
+	id, ok := number(r)
+	fileID, err := strconv.ParseInt(r.PathValue("file"), 10, 64)
+	if !ok || err != nil || fileID <= 0 {
+		fail(w, http.StatusNotFound, "not_found")
+		return
+	}
+	file, out, content, err := h.s.opts.Leads.ClientFile(r.Context(), sessionOf(r).Client.ID, id, fileID)
+	switch {
+	case errors.Is(err, leads.ErrNotFound):
+		fail(w, http.StatusNotFound, "not_found")
+		return
+	case err != nil:
+		h.internal(w, "cannot open a file of a request", err)
+		return
+	}
+	defer content.Close()
+	stat, err := content.Stat()
+	if err != nil {
+		h.internal(w, "cannot read a file of a request", err)
+		return
+	}
+	disposition, contentType := "attachment", "application/octet-stream"
+	if out && (leads.IsPhoto(file.Kind) || leads.IsVideo(file.Kind)) {
+		disposition, contentType = "inline", leads.ContentTypeOf(file.Kind)
+	}
+	if value := mime.FormatMediaType(disposition, map[string]string{"filename": file.Filename}); value != "" {
+		disposition = value
+	}
+	header := w.Header()
+	header.Set("Content-Type", contentType)
+	header.Set("Content-Disposition", disposition)
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	// A video is played in parts (Range); the time is left out, so nothing is cached as «not modified».
+	http.ServeContent(w, r, "", time.Time{}, io.NewSectionReader(content, 0, stat.Size()))
 }
 
 func (h *Handler) leadMessage(w http.ResponseWriter, r *http.Request) {

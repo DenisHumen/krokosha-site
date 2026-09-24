@@ -47,6 +47,13 @@ type Sender interface {
 	Send(ctx context.Context, task Task) error
 }
 
+// Patient is a Sender some of whose tasks take longer than a message: an answer with videos goes
+// to Telegram in minutes on a slow line. The worker waits that long, up to five minutes, and holds
+// the task for as long — the other tasks wait meanwhile, so it is asked only for big files.
+type Patient interface {
+	Timeout(ctx context.Context, task Task) time.Duration
+}
+
 // SenderFunc adapts a function to Sender.
 type SenderFunc func(ctx context.Context, task Task) error
 
@@ -94,7 +101,8 @@ func IsNotReady(err error) bool {
 	return errors.As(err, &notReady)
 }
 
-// Pauses between attempts. After the last one the task is given up on: eight tries in two days.
+// Pauses between attempts. The attempt after the last pause is the last one: nine tries, and the
+// task is given up on about two days after it came (1 d 20 h 42 min).
 var backoff = []time.Duration{
 	30 * time.Second, 2 * time.Minute, 10 * time.Minute, 30 * time.Minute,
 	2 * time.Hour, 6 * time.Hour, 12 * time.Hour, 24 * time.Hour,
@@ -104,6 +112,7 @@ const (
 	pollEvery      = 5 * time.Second
 	batchSize      = 10
 	sendTimeout    = 45 * time.Second
+	maxSendTimeout = 5 * time.Minute  // what a Patient sender may ask for: an album of videos
 	lockFor        = 2 * time.Minute  // a delivery taking longer than this is considered dead
 	unconfiguredIn = 10 * time.Minute // look again whether a channel got its sender
 )
@@ -260,9 +269,13 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 		return
 	}
 
+	timeout := sendTimeout
+	if patient, ok := sender.(Patient); ok {
+		timeout = max(timeout, min(patient.Timeout(ctx, task), maxSendTimeout))
+	}
 	// Claim it. Should another worker ever run beside this one, only one of them gets the row.
 	result, err := w.db.ExecContext(ctx, `UPDATE outbox SET status = 'sending', locked_until = ? WHERE id = ? AND status = 'pending'`,
-		now.Add(lockFor), task.ID)
+		now.Add(max(lockFor, timeout+time.Minute)), task.ID)
 	if err != nil {
 		w.log.Error("outbox: cannot claim a task", "task", task.ID, "error", err)
 		return
@@ -271,7 +284,7 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 		return
 	}
 
-	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	err = sender.Send(sendCtx, task)
 	cancel()
 
@@ -293,7 +306,7 @@ func (w *Worker) deliver(ctx context.Context, task Task) {
 	}
 	attempts := task.Attempts + 1
 	message := truncate(err.Error(), 500)
-	if IsPermanent(err) || attempts >= len(backoff) {
+	if IsPermanent(err) || attempts > len(backoff) {
 		w.log.Error("outbox: giving up on a task", "task", task.ID, "channel", task.Channel, "kind", task.Kind, "attempts", attempts, "error", message)
 		_, _ = w.db.ExecContext(saveCtx, `UPDATE outbox SET status = 'failed', attempts = ?, last_error = ?, locked_until = NULL WHERE id = ?`, attempts, message, task.ID)
 		if hook != nil {
@@ -335,4 +348,46 @@ func ReadStats(ctx context.Context, db *sql.DB, now time.Time) (Stats, error) {
 		FROM outbox`, now.UTC().AddDate(0, 0, -30)).Scan(&stats.Pending, &stats.Failed, &oldest, &lastError)
 	stats.OldestPending, stats.LastError = oldest.Time, lastError.String
 	return stats, err
+}
+
+// Entry is a task the way the admin's «Почта» screen lists it.
+type Entry struct {
+	ID          int64
+	CreatedAt   time.Time
+	Channel     string
+	Kind        string
+	LeadID      int64 // 0 — the task is not about a request
+	Status      string
+	Attempts    int
+	NextAttempt time.Time
+	LastError   string
+	SentAt      sql.NullTime
+}
+
+// Recent lists the newest tasks, newest first.
+func Recent(ctx context.Context, db *sql.DB, limit int) ([]Entry, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, created_at, channel, kind, COALESCE(lead_id, 0), status, attempts, next_attempt_at, COALESCE(last_error, ''), sent_at
+		FROM outbox ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var entry Entry
+		if err := rows.Scan(&entry.ID, &entry.CreatedAt, &entry.Channel, &entry.Kind, &entry.LeadID, &entry.Status, &entry.Attempts,
+			&entry.NextAttempt, &entry.LastError, &entry.SentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, entry)
+	}
+	return out, rows.Err()
+}
+
+// SentSince counts the tasks of a channel delivered since a moment.
+func SentSince(ctx context.Context, db *sql.DB, channel string, since time.Time) (int, error) {
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox WHERE channel = ? AND status = 'sent' AND sent_at >= ?`, channel, since.UTC()).Scan(&count)
+	return count, err
 }

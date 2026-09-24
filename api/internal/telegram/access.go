@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,7 +20,15 @@ import (
 const (
 	RoleOwner  = "owner"  // manages access, sees everything
 	RoleMember = "member" // gets requests and works with them
+	// RoleNotify gets the cards of requests and the reminders, and can read them, but nothing can
+	// be done from the bot: no answers, no taking, no statuses (docs/telegram.md).
+	RoleNotify = "notify"
 )
+
+// ValidRole tells a role from a typo.
+func ValidRole(role string) bool {
+	return role == RoleOwner || role == RoleMember || role == RoleNotify
+}
 
 // InviteLifetime is how long an invitation can be used.
 const InviteLifetime = 24 * time.Hour
@@ -32,7 +41,9 @@ const InvitePrefix = "i_"
 var (
 	ErrNoAccess  = errors.New("this Telegram account has no access to the bot")
 	ErrBadInvite = errors.New("the invitation is wrong, used or expired")
-	ErrBadRole   = errors.New("the role must be owner or member")
+	ErrBadRole   = errors.New("the role must be owner, member or notify")
+	// ErrBadID: a Telegram id is a positive number (a person's, not a group's).
+	ErrBadID = errors.New("a Telegram id is a positive number")
 )
 
 // Member is a person with access.
@@ -46,10 +57,15 @@ type Member struct {
 	InvitedBy  string
 	DisabledAt sql.NullTime
 	MutedUntil sql.NullTime
+	// LastSeenAt is when the person last wrote to the bot or pressed one of its buttons.
+	LastSeenAt sql.NullTime
 }
 
 // Owner reports whether the person manages access.
 func (m Member) Owner() bool { return m.Role == RoleOwner }
+
+// CanAct reports whether the person may do something with a request, not only read about it.
+func (m Member) CanAct() bool { return m.Role == RoleOwner || m.Role == RoleMember }
 
 // Actor is how the person is written into the history of requests and the audit log.
 func (m Member) Actor() string { return m.Name }
@@ -86,7 +102,7 @@ func hashCode(code string) []byte {
 // Invite makes a one-time invitation and returns its code — the only time the code exists in
 // readable form: the database keeps a hash.
 func (a *Access) Invite(ctx context.Context, role, createdBy string) (code string, expires time.Time, err error) {
-	if role != RoleOwner && role != RoleMember {
+	if !ValidRole(role) {
 		return "", time.Time{}, ErrBadRole
 	}
 	random := make([]byte, 12) // 96 bits: nothing to guess
@@ -142,11 +158,11 @@ func (a *Access) Redeem(ctx context.Context, code string, who User) (*Member, er
 	return a.Member(ctx, who.ID)
 }
 
-const memberColumns = `id, telegram_id, role, name, COALESCE(username, ''), created_at, invited_by, disabled_at, muted_until`
+const memberColumns = `id, telegram_id, role, name, COALESCE(username, ''), created_at, invited_by, disabled_at, muted_until, last_seen_at`
 
 func scanMember(row interface{ Scan(...any) error }) (Member, error) {
 	var m Member
-	err := row.Scan(&m.ID, &m.TelegramID, &m.Role, &m.Name, &m.Username, &m.CreatedAt, &m.InvitedBy, &m.DisabledAt, &m.MutedUntil)
+	err := row.Scan(&m.ID, &m.TelegramID, &m.Role, &m.Name, &m.Username, &m.CreatedAt, &m.InvitedBy, &m.DisabledAt, &m.MutedUntil, &m.LastSeenAt)
 	return m, err
 }
 
@@ -224,6 +240,109 @@ func (a *Access) SetDisabled(ctx context.Context, id int64, disabled bool) (*Mem
 
 // ErrLastOwner: the only owner cannot be switched off.
 var ErrLastOwner = errors.New("the last owner cannot be switched off")
+
+// Add lets a person in by their numeric Telegram id, without an invitation — for the owner who
+// knows the id of a colleague (the colleague sees it in @userinfobot and the like). The name is how
+// cards call them until they write to the bot. Somebody who is there already gets the role;
+// somebody whose access was revoked gets it back.
+func (a *Access) Add(ctx context.Context, telegramID int64, role, name, addedBy string) (*Member, error) {
+	if !ValidRole(role) {
+		return nil, ErrBadRole
+	}
+	if telegramID <= 0 {
+		return nil, ErrBadID
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "id " + strconv.FormatInt(telegramID, 10)
+	}
+	if runes := []rune(name); len(runes) > 64 {
+		name = string(runes[:64])
+	}
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if role != RoleOwner {
+		// Making the last owner a member would leave nobody to let people in.
+		if err := keepAnOwner(ctx, tx, telegramID); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO bot_users (telegram_id, role, name, created_at, invited_by) VALUES (?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE role = VALUES(role), disabled_at = NULL, state = NULL`,
+		telegramID, role, name, a.now().UTC(), addedBy); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return a.Member(ctx, telegramID)
+}
+
+// SetRole changes what a person may do; the last owner stays one.
+func (a *Access) SetRole(ctx context.Context, id int64, role string) (*Member, error) {
+	if !ValidRole(role) {
+		return nil, ErrBadRole
+	}
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	member, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberColumns+` FROM bot_users WHERE id = ? FOR UPDATE`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNoAccess
+	}
+	if err != nil {
+		return nil, err
+	}
+	if role != RoleOwner {
+		if err := keepAnOwner(ctx, tx, member.TelegramID); err != nil {
+			return nil, err
+		}
+	}
+	// A dialog the person had begun (an answer, a note) is dropped: they may not finish it now.
+	if _, err := tx.ExecContext(ctx, `UPDATE bot_users SET role = ?, state = NULL WHERE id = ?`, role, id); err != nil {
+		return nil, err
+	}
+	member.Role = role
+	return &member, tx.Commit()
+}
+
+// keepAnOwner refuses to take the role of the owner from the last one with access.
+func keepAnOwner(ctx context.Context, tx *sql.Tx, telegramID int64) error {
+	var isOwner bool
+	err := tx.QueryRowContext(ctx, `SELECT role = 'owner' AND disabled_at IS NULL FROM bot_users WHERE telegram_id = ? FOR UPDATE`, telegramID).Scan(&isOwner)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !isOwner) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var others int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_users WHERE role = 'owner' AND disabled_at IS NULL AND telegram_id <> ?`,
+		telegramID).Scan(&others); err != nil {
+		return err
+	}
+	if others == 0 {
+		return ErrLastOwner
+	}
+	return nil
+}
+
+// Seen notes that a person used the bot just now — at most once a minute —, and keeps their name
+// in Telegram: somebody added by id has none until they write.
+func (a *Access) Seen(ctx context.Context, telegramID int64, username string) error {
+	now := a.now().UTC()
+	_, err := a.db.ExecContext(ctx, `
+		UPDATE bot_users SET last_seen_at = ?, username = COALESCE(NULLIF(?, ''), username)
+		WHERE telegram_id = ? AND (last_seen_at IS NULL OR last_seen_at < ? OR (? <> '' AND NOT (username <=> ?)))`,
+		now, username, telegramID, now.Add(-time.Minute), username, username)
+	return err
+}
 
 // Invites lists invitations that can still be used.
 func (a *Access) Invites(ctx context.Context) ([]Invite, error) {

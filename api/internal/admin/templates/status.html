@@ -1,143 +1,160 @@
 {{define "content"}}
   {{$s := .Data.Status}}
-  <div class="page-head">
-    <h1>Статус системы</h1>
-  </div>
-
   {{range $s.Problems}}
     <p class="notice {{if eq .Level "error"}}notice-error{{else}}notice-warn{{end}}" role="{{if eq .Level "error"}}alert{{else}}status{{end}}">{{.Text}}</p>
   {{else}}
     <p class="notice notice-ok" role="status">Всё в порядке.</p>
   {{end}}
 
-  <div class="grid">
-    <section class="card">
-      <h2 class="card-title">Сайт</h2>
-      <div class="card-body">
-        <dl class="facts">
-          <div><dt>Живой релиз</dt><dd class="mono">{{if $s.Release}}{{$s.Release}}{{else}}—{{end}}</dd></div>
-          {{if not $s.ReleaseAt.IsZero}}<div><dt>Собран</dt><dd>{{time $s.ReleaseAt}} · {{ago $s.ReleaseAt}}</dd></div>{{end}}
-          {{if $s.Sync.Known}}
-            <div><dt>Последняя сборка</dt><dd>{{if $s.Sync.OK}}<span class="dot dot-ok"></span>успешно{{else}}<span class="dot dot-error"></span>сбой на шаге «{{$s.Sync.Step}}»{{end}} · {{ago $s.Sync.FinishedAt}}</dd></div>
-            <div><dt>Длилась</dt><dd>{{elapsed ($s.Sync.FinishedAt.Sub $s.Sync.StartedAt)}}</dd></div>
-          {{else}}
-            <div><dt>Последняя сборка</dt><dd class="muted">отчёта ещё нет</dd></div>
-          {{end}}
-          {{if $s.GitHub.Known}}
-            <div><dt>Данные GitHub</dt><dd>{{if $s.GitHub.Stale}}<span class="dot dot-warn"></span>устарели{{else}}<span class="dot dot-ok"></span>свежие{{end}} · {{plural $s.GitHub.Repos "репозиторий" "репозитория" "репозиториев"}} · {{ago $s.GitHub.SyncedAt}}</dd></div>
-          {{end}}
-        </dl>
-        <form method="post" action="{{path "/status/rebuild"}}">
-          <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
-          <button class="button" type="submit" {{if $s.RebuildRequested}}disabled{{end}}>{{if $s.RebuildRequested}}Пересборка запрошена…{{else}}Пересобрать сейчас{{end}}</button>
-        </form>
-        <p class="muted">Сайт сам пересобирается каждые 6 часов: свежие данные GitHub, стаж, новые тексты из репозитория.</p>
-      </div>
-    </section>
-
-    {{if $s.HTTPS}}
-      <section class="card">
-        <h2 class="card-title">Сертификат</h2>
-        <div class="card-body">
-          {{with $s.Certificate}}
-            <div class="figures">
-              <div><p class="figure-label">Осталось</p><p class="figure">{{if lt .DaysLeft 0}}истёк{{else}}{{plural .DaysLeft "день" "дня" "дней"}}{{end}}</p></div>
-            </div>
-            <dl class="facts">
-              <div><dt>Действует до</dt><dd>{{time .NotAfter}}</dd></div>
-              <div><dt>Выдан</dt><dd>{{.Issuer}}</dd></div>
-              <div><dt>Имена</dt><dd class="mono">{{range $i, $name := .Names}}{{if $i}}, {{end}}{{$name}}{{end}}</dd></div>
-              <div><dt>Доверенный</dt><dd>{{if .Trusted}}<span class="dot dot-ok"></span>да{{else}}<span class="dot dot-warn"></span>нет{{end}}</dd></div>
-            </dl>
-            <p class="muted">Это сертификат, который nginx отдаёт посетителям прямо сейчас. Продлевается сам (certbot.timer).</p>
-          {{else}}
-            <p><span class="dot dot-error"></span>Прочитать не удалось: <span class="mono">{{$s.CertificateError}}</span></p>
-          {{end}}
+  <section class="tiles">
+    {{if $s.Host.Supported}}
+      <div class="tile center">
+        <div class="ring-box ring-box-l">
+          {{ring $s.Host.CPUPercent "accent"}}
+          <div class="ring-text"><strong>{{printf "%.0f%%" $s.Host.CPUPercent}}</strong><span>процессор · {{plural $s.Host.CPUs "ядро" "ядра" "ядер"}}</span></div>
         </div>
-      </section>
+      </div>
+      {{with usage "Память" $s.Host.MemoryTotal $s.Host.MemoryFree}}
+        <div class="tile tile-stat meter">
+          <span class="label">Память</span>
+          <div class="num-row"><span class="num">{{bytes .Used}}</span><span class="num-sub">/ {{bytes .Total}}</span></div>
+          {{meter .Percent}}
+        </div>
+      {{end}}
+      {{if $s.Host.Disks}}
+        {{with index $s.Host.Disks 0}}
+          {{with usage "Диск" .TotalBytes .FreeBytes}}
+            <div class="tile tile-stat meter">
+              <span class="label">Диск</span>
+              <div class="num-row"><span class="num">{{pct .Percent}}</span><span class="num-sub">/ {{bytes .Total}}</span></div>
+              {{meter .Percent}}
+            </div>
+          {{end}}
+        {{end}}
+      {{else}}
+        <div class="tile tile-stat"><span class="label">Диск</span><p class="empty">не прочитать</p></div>
+      {{end}}
+    {{else}}
+      <div class="tile span-3"><p class="empty">Показатели сервера доступны только на Linux.</p></div>
     {{end}}
+    <div class="tile tile-accent tile-stat">
+      <span class="label">Аптайм</span>
+      <div class="who"><span class="num">{{if $s.Host.Supported}}{{spanOf $s.Host.Uptime}}{{else}}—{{end}}</span><span class="meta">версия <span class="mono">{{$s.Version}}</span> · API работает {{elapsed $s.Uptime}}</span></div>
+    </div>
 
-    <section class="card">
-      <h2 class="card-title">Сервер</h2>
-      <div class="card-body">
+    <section class="tile span-3">
+      <span class="label">Службы</span>
+      <div class="lines">
+        <div class="line line-top"><span class="line-name"><span class="dot"></span> API</span><span class="line-v soft">версия <span class="mono">{{$s.Version}}</span> · работает {{elapsed $s.Uptime}}</span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{if not $s.Database.OK}} dot-error{{end}}"></span> MySQL</span><span class="line-v soft">{{if $s.Database.OK}}{{$s.Database.Version}} · {{bytes $s.Database.SizeBytes}} · {{plural $s.Database.Tables "таблица" "таблицы" "таблиц"}}{{else}}не отвечает{{end}}</span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{if eq $s.Redis "off"}} dot-off{{else if ne $s.Redis "ok"}} dot-warn{{end}}"></span> Redis</span><span class="line-v soft">{{if eq $s.Redis "ok"}}работает{{else if eq $s.Redis "off"}}не настроен — всё считается в памяти сервиса{{else}}недоступен — лимиты в памяти сервиса{{end}}</span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{if $s.Outbox.Failed}} dot-error{{else if $s.Outbox.Pending}} dot-warn{{end}}"></span> Уведомления (outbox)</span><span class="line-v soft">{{if $s.Outbox.Failed}}не доставлено: {{$s.Outbox.Failed}}{{else if $s.Outbox.Pending}}в очереди: {{$s.Outbox.Pending}}{{else}}очередь пуста{{end}}{{if $s.Outbox.LastError}} · {{$s.Outbox.LastError}}{{end}}</span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.Inbox}}{{if not .Connected}}{{if .LastError}} dot-error{{else}} dot-warn{{end}}{{end}}{{else}} dot-off{{end}}"></span> Входящая почта</span><span class="line-v soft">
+          {{- with $s.Inbox}}
+            {{- if .Connected}}ящик <span class="mono">{{$s.Mailbox}}</span> на связи с {{time .Since}}{{if not .CheckedAt.IsZero}} · проверен {{ago .CheckedAt}}{{end}}
+            {{- else if .LastError}}нет связи с ящиком <span class="mono">{{$s.Mailbox}}</span>: {{.LastError}}
+            {{- else}}подключается к ящику <span class="mono">{{$s.Mailbox}}</span>…{{end}}
+            {{- if .Unmatched}} · <a href="{{path "/inbox"}}">писем без заявки: {{.Unmatched}}</a>{{end}}
+          {{- else}}не настроена — ответы клиентов письмом не читаются{{end -}}
+        </span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.CertWatch}}{{if not .Known}} dot-off{{else if not .OK}} dot-error{{end}}{{end}}"></span> Слежение за сертификатами</span><span class="line-v soft">
+          {{- with $s.CertWatch}}
+            {{- if not .Known}}ещё не проверялись
+            {{- else}}{{ago .CheckedAt}}{{if .Renewed}} · продлены{{end}}
+              {{- range .Certificates}} · {{if eq .Name "mail"}}почта{{else}}сайт{{end}}: {{if .DaysLeft}}{{plural .DaysLeft "день" "дня" "дней"}}{{else}}не отвечает{{end}}{{end}}
+            {{- end}}
+          {{- end -}}
+        </span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{if $s.LogReadAt.IsZero}} dot-off{{end}}"></span> Лог nginx</span><span class="line-v soft">{{if $s.LogReadAt.IsZero}}ещё не читался{{else}}прочитан {{ago $s.LogReadAt}}{{end}}</span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.Map}}{{if not .Known}} dot-off{{else if gt .Last.ID .LastOK.ID}} dot-warn{{else if not .LastOK.ID}} dot-off{{end}}{{end}}"></span> Карта интернета</span><span class="line-v soft">
+          {{- with $s.Map}}
+            {{- if not .Known}}не прочитать
+            {{- else if .LastOK.ID}}{{ago .LastOK.Finished}} · сетей: {{count .LastOK.Networks}} · связей: {{count .LastOK.Links}}
+              {{- if or .LastOK.Added .LastOK.Gone .LastOK.Changed}} · за последний раз: +{{count .LastOK.Added}} −{{count .LastOK.Gone}}{{if .LastOK.Changed}}, изменились: {{count .LastOK.Changed}}{{end}}{{end}}
+            {{- else if .Last.ID}}{{if .Last.Finished.IsZero}}строится с {{time .Last.Started}}{{else}}не построилась: {{.Last.Error}}{{end}}
+            {{- else}}ещё не строилась — <span class="mono">sudo systemctl start krokosha-netmap.service</span>
+            {{- end}}
+          {{- end -}}
+        </span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.Geo}}{{if not .Loaded}} dot-warn{{end}}{{else}} dot-off{{end}}"></span> База GeoIP</span><span class="line-v soft">
+          {{- with $s.Geo}}
+            {{- if .Loaded}}{{.Type}} от {{.Built.Format "02.01.2006"}}
+            {{- else}}не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>.
+              Установщик скачивает её сам: <span class="mono">sudo /opt/krokosha/repo/deploy/update.sh</span>; почему не скачалась — <span class="mono">sudo journalctl -u krokosha-dbip -u krokosha-geoipupdate</span>
+            {{- end}}
+          {{- else}}выключена (GEOIP_DB=off)
+          {{- end -}}
+        </span></div>
+        <div class="line line-top"><span class="line-name"><span class="dot{{with $s.Fail2ban}}{{if not .Known}} dot-off{{else if not .OK}} dot-error{{end}}{{end}}"></span> fail2ban</span><span class="line-v soft">
+          {{- with $s.Fail2ban}}
+            {{- if not .Known}}ещё не считали — счёт появится через несколько минут после установки
+            {{- else if not .OK}}{{.Error}}
+            {{- else}}{{plural .Banned "адрес" "адреса" "адресов"}} в бане{{range .Jails}} · {{.Name}}: {{.Banned}} сейчас, {{.Total}} всего{{end}} · {{ago .CheckedAt}}
+            {{- end}}
+          {{- end -}}
+        </span></div>
         {{if $s.Host.Supported}}
-          <dl class="facts">
-            <div><dt>Нагрузка (1 / 5 / 15 мин)</dt><dd class="mono">{{printf "%.2f / %.2f / %.2f" (index $s.Host.Load 0) (index $s.Host.Load 1) (index $s.Host.Load 2)}} · {{plural $s.Host.CPUs "ядро" "ядра" "ядер"}}</dd></div>
-            <div><dt>Работает без перезагрузки</dt><dd>{{elapsed $s.Host.Uptime}}</dd></div>
-          </dl>
-          <ul class="rows rows-meter">
-            {{template "usage" (usage "Память" $s.Host.MemoryTotal $s.Host.MemoryFree)}}
-            {{if $s.Host.SwapTotal}}{{template "usage" (usage "Swap" $s.Host.SwapTotal $s.Host.SwapFree)}}{{end}}
-            {{range $s.Host.Disks}}{{template "usage" (usage (print "Диск " .Path) .TotalBytes .FreeBytes)}}{{end}}
-          </ul>
-        {{else}}
-          <p class="muted">Показатели сервера доступны только на Linux.</p>
+          <div class="line line-top"><span class="line-name"><span class="dot"></span> Нагрузка</span><span class="line-v soft mono">{{printf "%.2f / %.2f / %.2f" (index $s.Host.Load 0) (index $s.Host.Load 1) (index $s.Host.Load 2)}} за 1 / 5 / 15 мин</span></div>
+          {{if $s.Host.SwapTotal}}{{with usage "Swap" $s.Host.SwapTotal $s.Host.SwapFree}}<div class="line"><span class="line-name"><span class="dot"></span> Swap</span><span class="line-v soft">{{pct .Percent}} · {{bytes .Used}} из {{bytes .Total}}</span></div>{{end}}{{end}}
+          {{range $i, $disk := $s.Host.Disks}}{{if $i}}{{with usage "Диск" $disk.TotalBytes $disk.FreeBytes}}<div class="line"><span class="line-name"><span class="dot"></span> Диск {{$disk.Path}}</span><span class="line-v soft">{{pct .Percent}} · {{bytes .Used}} из {{bytes .Total}}</span></div>{{end}}{{end}}{{end}}
         {{end}}
       </div>
     </section>
 
-    <section class="card">
-      <h2 class="card-title">Сервисы</h2>
-      <div class="card-body">
-        <dl class="facts">
-          <div><dt>API</dt><dd><span class="dot dot-ok"></span>версия <span class="mono">{{$s.Version}}</span> · работает {{elapsed $s.Uptime}}</dd></div>
-          <div><dt>MySQL</dt><dd>{{if $s.Database.OK}}<span class="dot dot-ok"></span>{{$s.Database.Version}} · {{bytes $s.Database.SizeBytes}} · {{plural $s.Database.Tables "таблица" "таблицы" "таблиц"}}{{else}}<span class="dot dot-error"></span>не отвечает{{end}}</dd></div>
-          <div><dt>Redis</dt><dd>{{if eq $s.Redis "ok"}}<span class="dot dot-ok"></span>работает{{else if eq $s.Redis "off"}}<span class="dot"></span>не настроен — всё считается в памяти сервиса{{else}}<span class="dot dot-warn"></span>недоступен — лимиты в памяти сервиса{{end}}</dd></div>
-          <div><dt>Уведомления (outbox)</dt><dd>{{if $s.Outbox.Failed}}<span class="dot dot-error"></span>не доставлено: {{$s.Outbox.Failed}}{{else if $s.Outbox.Pending}}<span class="dot dot-warn"></span>в очереди: {{$s.Outbox.Pending}}{{else}}<span class="dot dot-ok"></span>очередь пуста{{end}}</dd></div>
-          <div><dt>Входящая почта</dt><dd>
-            {{- with $s.Inbox}}
-              {{- if .Connected}}<span class="dot dot-ok"></span>ящик <span class="mono">{{$s.Mailbox}}</span> на связи с {{time .Since}}{{if not .CheckedAt.IsZero}} · проверен {{ago .CheckedAt}}{{end}}
-              {{- else if .LastError}}<span class="dot dot-error"></span>нет связи с ящиком <span class="mono">{{$s.Mailbox}}</span>: {{.LastError}}
-              {{- else}}<span class="dot dot-warn"></span>подключается к ящику <span class="mono">{{$s.Mailbox}}</span>…{{end}}
-              {{- if .Unmatched}} · <a href="{{path "/inbox"}}">писем без заявки: {{.Unmatched}}</a>{{end}}
-            {{- else}}<span class="dot"></span>не настроена — ответы клиентов письмом не читаются{{end -}}
-          </dd></div>
-          <div><dt>Резервная копия</dt><dd>
-            {{- with $s.Backup}}
-              {{- if not .Known}}<span class="dot"></span>ещё не делалась — первая будет ночью
-              {{- else if .OK}}<span class="dot dot-ok"></span>{{ago .FinishedAt}} · {{bytes .Bytes}}{{if .CopiedTo}} · копия: <span class="mono">{{.CopiedTo}}</span>{{else}} · <span class="muted">только на этом диске</span>{{end}}
-              {{- else}}<span class="dot dot-error"></span>не сделана: {{.Error}}{{end}}
-            {{- end -}}
-          </dd></div>
-          <div><dt>Слежение за сертификатами</dt><dd>
-            {{- with $s.CertWatch}}
-              {{- if not .Known}}<span class="dot"></span>ещё не проверялись
-              {{- else}}<span class="dot {{if .OK}}dot-ok{{else}}dot-error{{end}}"></span>{{ago .CheckedAt}}{{if .Renewed}} · продлены{{end}}
-                {{- range .Certificates}} · {{if eq .Name "mail"}}почта{{else}}сайт{{end}}: {{if .DaysLeft}}{{plural .DaysLeft "день" "дня" "дней"}}{{else}}не отвечает{{end}}{{end}}
-              {{- end}}
-            {{- end -}}
-          </dd></div>
-          <div><dt>Чтение лога nginx</dt><dd>{{if $s.LogReadAt.IsZero}}<span class="dot"></span>ещё не читался{{else}}<span class="dot dot-ok"></span>{{ago $s.LogReadAt}}{{end}}</dd></div>
-          <div><dt>Карта интернета</dt><dd>
-            {{- with $s.Map}}
-              {{- if not .Known}}<span class="dot"></span>не прочитать
-              {{- else if .LastOK.ID}}<span class="dot {{if gt .Last.ID .LastOK.ID}}dot-warn{{else}}dot-ok{{end}}"></span>{{ago .LastOK.Finished}} · сетей: {{count .LastOK.Networks}} · связей: {{count .LastOK.Links}}
-                {{- if or .LastOK.Added .LastOK.Gone .LastOK.Changed}} · за последний раз: +{{count .LastOK.Added}} −{{count .LastOK.Gone}}{{if .LastOK.Changed}}, изменились: {{count .LastOK.Changed}}{{end}}{{end}}
-              {{- else if .Last.ID}}<span class="dot dot-warn"></span>{{if .Last.Finished.IsZero}}строится с {{time .Last.Started}}{{else}}не построилась: {{.Last.Error}}{{end}}
-              {{- else}}<span class="dot"></span>ещё не строилась — <span class="mono">sudo systemctl start krokosha-netmap.service</span>
-              {{- end}}
-            {{- end -}}
-          </dd></div>
-          <div><dt>База GeoIP</dt><dd>
-            {{- with $s.Geo}}
-              {{- if .Loaded}}<span class="dot dot-ok"></span>{{.Type}} от {{.Built.Format "02.01.2006"}}
-              {{- else}}<span class="dot"></span>не установлена — страны и города посетителей не определяются. Файл: <span class="mono">{{.Path}}</span>.
-                Установщик скачивает её сам: <span class="mono">sudo /opt/krokosha/repo/deploy/update.sh</span>; почему не скачалась — <span class="mono">sudo journalctl -u krokosha-dbip -u krokosha-geoipupdate</span>
-              {{- end}}
-            {{- else}}<span class="dot"></span>выключена (GEOIP_DB=off)
-            {{- end -}}
-          </dd></div>
-        </dl>
+    <section class="tile tile-beige tile-stat">
+      <form class="corner" method="post" action="{{path "/status/backup"}}">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+        <button class="btn" type="submit" {{if $s.BackupRequested}}disabled{{end}}>{{if $s.BackupRequested}}Запрошена…{{else}}↻ Сделать сейчас{{end}}</button>
+      </form>
+      <div class="stack">
+        <span class="headline-s">Резервная<br />копия</span>
+        <span class="meta">
+          {{- with $s.Backup}}
+            {{- if not .Known}}ещё не делалась — первая будет ночью
+            {{- else if .OK}}последняя {{ago .FinishedAt}} · {{bytes .Bytes}}{{if .CopiedTo}} · копия: <span class="mono">{{.CopiedTo}}</span>{{else}} · только на этом диске{{end}}
+            {{- else}}не сделана: {{.Error}}{{end}}
+          {{- end -}}
+        </span>
       </div>
     </section>
-  </div>
-{{end}}
 
-{{define "usage"}}
-  <li class="row">
-    <span class="row-share">{{pct .Percent}}</span>
-    <span class="row-name">{{.Name}}</span>
-    {{meter .Percent}}
-    <span class="row-value">{{bytes .Used}} из {{bytes .Total}}</span>
-  </li>
+    <section class="tile span-2">
+      <span class="label">Сайт</span>
+      <dl class="lines">
+        <div><dt>Живой релиз</dt><dd class="mono">{{if $s.Release}}{{$s.Release}}{{else}}—{{end}}</dd></div>
+        {{if not $s.ReleaseAt.IsZero}}<div><dt>Собран</dt><dd>{{time $s.ReleaseAt}} · {{ago $s.ReleaseAt}}</dd></div>{{end}}
+        {{if $s.Sync.Known}}
+          <div><dt>Последняя сборка</dt><dd>{{if $s.Sync.OK}}<span class="ok">успешно</span>{{else}}<span class="warn">сбой на шаге «{{$s.Sync.Step}}»</span>{{end}} · {{ago $s.Sync.FinishedAt}}</dd></div>
+          <div><dt>Длилась</dt><dd>{{elapsed ($s.Sync.FinishedAt.Sub $s.Sync.StartedAt)}}</dd></div>
+        {{else}}
+          <div><dt>Последняя сборка</dt><dd class="muted">отчёта ещё нет</dd></div>
+        {{end}}
+        {{if $s.GitHub.Known}}
+          <div><dt>Данные GitHub</dt><dd>{{if $s.GitHub.Stale}}<span class="warn">устарели</span>{{else}}свежие{{end}} · {{plural $s.GitHub.Repos "репозиторий" "репозитория" "репозиториев"}} · {{ago $s.GitHub.SyncedAt}}</dd></div>
+        {{end}}
+      </dl>
+      <form method="post" action="{{path "/status/rebuild"}}">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}" />
+        <button class="btn btn-accent" type="submit" {{if $s.RebuildRequested}}disabled{{end}}>{{if $s.RebuildRequested}}Пересборка запрошена…{{else}}Пересобрать сейчас{{end}}</button>
+      </form>
+      <p class="text-xs">Сайт сам пересобирается каждые 6 часов: свежие данные GitHub, стаж, новые тексты из репозитория.</p>
+    </section>
+
+    {{if $s.HTTPS}}
+      <section class="tile span-2">
+        <span class="label">Сертификат сайта</span>
+        {{with $s.Certificate}}
+          <div class="num-row"><span class="num">{{if lt .DaysLeft 0}}истёк{{else}}{{plural .DaysLeft "день" "дня" "дней"}}{{end}}</span><span class="num-sub">до {{time .NotAfter}}</span></div>
+          <dl class="lines">
+            <div><dt>Выдан</dt><dd>{{.Issuer}}</dd></div>
+            <div><dt>Имена</dt><dd class="mono">{{range $i, $name := .Names}}{{if $i}}, {{end}}{{$name}}{{end}}</dd></div>
+            <div><dt>Доверенный</dt><dd>{{if .Trusted}}да{{else}}<span class="warn">нет</span>{{end}}</dd></div>
+          </dl>
+          <p class="text-xs">Это сертификат, который nginx отдаёт посетителям прямо сейчас. Продлевается сам (certbot.timer).</p>
+        {{else}}
+          <p class="notice notice-error">Прочитать не удалось: <span class="mono">{{$s.CertificateError}}</span></p>
+        {{end}}
+      </section>
+    {{end}}
+  </section>
 {{end}}

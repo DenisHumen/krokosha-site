@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"mime"
@@ -89,6 +90,65 @@ func TestMessageIsWellFormed(t *testing.T) {
 	}
 	if !strings.Contains(bodies[0], "Здравствуйте, Иван!") || !strings.Contains(bodies[1], "<b>#K-0042</b>") {
 		t.Errorf("bodies: %q", bodies)
+	}
+}
+
+func TestAttachmentsFollowTheText(t *testing.T) {
+	message := sample()
+	pdf := []byte("%PDF-1.7\n" + strings.Repeat("смета ", 100))
+	message.Attachments = []Attachment{
+		{Filename: "Смета «стойка».pdf", ContentType: "application/pdf", Content: pdf},
+		{Filename: "rack.jpg\r\nBcc: evil@example.com", ContentType: "image/jpeg", Content: []byte{0xFF, 0xD8, 0xFF, 0xE0}},
+	}
+	raw, err := message.Bytes(sentAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ReplaceAll(string(raw), "\r\n", ""), "\n") {
+		t.Error("bare line feeds")
+	}
+	parsed, err := netmail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Header.Get("Bcc") != "" {
+		t.Error("a file name became a header")
+	}
+	mediaType, params, err := mime.ParseMediaType(parsed.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/mixed" {
+		t.Fatalf("the letter is %q: %v", mediaType, err)
+	}
+	reader := multipart.NewReader(parsed.Body, params["boundary"])
+	text, err := reader.NextPart()
+	if err != nil || !strings.HasPrefix(text.Header.Get("Content-Type"), "multipart/alternative") {
+		t.Fatalf("the first part: %v %v", text.Header, err)
+	}
+	var names []string
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		disposition, dparams, err := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+		if err != nil || disposition != "attachment" || part.Header.Get("Content-Transfer-Encoding") != "base64" {
+			t.Fatalf("a file part: %v %v", part.Header, err)
+		}
+		content, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, part))
+		names = append(names, dparams["filename"])
+		if dparams["filename"] == "Смета «стойка».pdf" && string(content) != string(pdf) {
+			t.Error("the PDF changed on the way")
+		}
+	}
+	if strings.Join(names, "|") != "Смета «стойка».pdf|rack.jpg  Bcc: evil@example.com" {
+		t.Errorf("the files: %q", names)
+	}
+	for _, line := range strings.Split(string(raw), "\r\n") {
+		if len(line) > 998 {
+			t.Fatalf("a line of %d characters", len(line))
+		}
 	}
 }
 

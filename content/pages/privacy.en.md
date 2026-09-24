@@ -44,7 +44,7 @@ The request is available only to Denis and to people Denis has personally given 
 
 If the conversation continues — you reply to an email or write to the bot in Telegram — your messages and the files you attach are stored with the request. An email that cannot be matched to any request is kept for no longer than 30 days.
 
-If you are signed in to the personal account, the request appears there: you can see its status and the whole conversation, and reply.
+If you are signed in to the personal account, the request appears there: you can see its status and the whole conversation with its files, and reply. The files are handed out to you alone, once you are signed in.
 
 Requests and correspondence are kept for 24 months, then deleted or anonymized.
 

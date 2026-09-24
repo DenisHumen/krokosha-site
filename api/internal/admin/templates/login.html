@@ -1,23 +1,48 @@
 {{define "content"}}
-  <section class="card login">
-    <h1 class="card-title">Вход</h1>
-    <div class="card-body">
-      {{if .Data.Pending}}
-        <form method="post" action="{{path "/login/code"}}" autocomplete="off">
-          <input type="hidden" name="pending" value="{{.Data.Pending}}" />
-          <label for="code">Код из приложения-аутентификатора</label>
-          <input id="code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required autofocus />
-          <button class="button" type="submit">Подтвердить</button>
-        </form>
-      {{else}}
-        <form method="post" action="{{path "/login"}}">
-          <label for="login">Логин</label>
-          <input id="login" name="login" value="{{.Data.Login}}" autocomplete="username" autocapitalize="none" spellcheck="false" required {{if not .Data.Login}}autofocus{{end}} />
-          <label for="password">Пароль</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required {{if .Data.Login}}autofocus{{end}} />
-          <button class="button" type="submit">Войти</button>
-        </form>
-      {{end}}
+  <div class="gate">
+    <div class="gate-box">
+      <div class="gate-art" aria-hidden="true">
+        <glyph-field ink="#16161c" accent="#5b6592" cell="12" mask="left" intensity="1.1" fps="24"></glyph-field>
+        <div class="gate-shade"></div>
+        <div class="gate-caption">
+          <p>Заявки, клиенты, трафик и сервер.<br />Всё хозяйство сайта в одном месте.</p>
+          <p>Krokosha — панель управления сайтом</p>
+        </div>
+      </div>
+      <div class="gate-side">
+        {{if .Data.Pending}}
+          <form class="gate-form" method="post" action="{{path "/login/code"}}" autocomplete="off">
+            <div class="gate-intro">
+              <h1>Код подтверждения</h1>
+              <p>Шесть цифр из приложения-аутентификатора.</p>
+            </div>
+            {{if .Error}}<p class="gate-error" role="alert">{{.Error}}</p>{{end}}
+            <input type="hidden" name="pending" value="{{.Data.Pending}}" />
+            <label class="visually-hidden" for="code">Код из приложения-аутентификатора</label>
+            <div class="gate-code-box">
+              <input class="gate-code" id="code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required autofocus />
+            </div>
+            <button class="gate-button" type="submit">Подтвердить</button>
+            <a class="gate-back" href="{{path "/login"}}">← Назад к паролю</a>
+          </form>
+        {{else}}
+          <form class="gate-form" method="post" action="{{path "/login"}}">
+            <div class="gate-intro">
+              <h1>Вход в админку</h1>
+              <p>Доступ только для владельца и помощников. После пяти неверных попыток вход закрывается на 15 минут, после десяти адрес блокируется на час.</p>
+            </div>
+            {{if .Error}}<p class="gate-error" role="alert">{{.Error}}</p>{{end}}
+            <label class="gate-field" for="login">Логин
+              <input class="gate-input" id="login" name="login" value="{{.Data.Login}}" autocomplete="username" autocapitalize="none" spellcheck="false" required {{if not .Data.Login}}autofocus{{end}} />
+            </label>
+            <label class="gate-field" for="password">Пароль
+              <input class="gate-input" id="password" name="password" type="password" autocomplete="current-password" required {{if .Data.Login}}autofocus{{end}} />
+            </label>
+            <p class="gate-note">Сеанс завершается через 2 часа без активности.</p>
+            <button class="gate-button" type="submit">Войти</button>
+          </form>
+        {{end}}
+      </div>
     </div>
-  </section>
+  </div>
 {{end}}

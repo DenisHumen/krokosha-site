@@ -105,6 +105,19 @@ func TestDeliveryAndIdempotentQueueing(t *testing.T) {
 	f.deliver(0) // sent is sent
 	f.enqueue(task)
 	f.deliver(0) // …and stays sent: the key is remembered
+
+	// The «Почта» screen lists it and counts it.
+	ctx := context.Background()
+	recent, err := Recent(ctx, f.db, 10)
+	if err != nil || len(recent) != 1 || recent[0].Kind != "lead.notify" || recent[0].LeadID != 42 || recent[0].Status != "sent" || !recent[0].SentAt.Valid {
+		t.Errorf("recent: %+v %v", recent, err)
+	}
+	if sent, err := SentSince(ctx, f.db, ChannelEmail, f.now.Add(-time.Hour)); err != nil || sent != 1 {
+		t.Errorf("sent since an hour ago: %d %v", sent, err)
+	}
+	if sent, err := SentSince(ctx, f.db, ChannelTelegram, f.now.Add(-time.Hour)); err != nil || sent != 0 {
+		t.Errorf("sent to Telegram: %d %v", sent, err)
+	}
 }
 
 func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
@@ -117,7 +130,7 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	})
 
 	f.enqueue(NewTask{Channel: ChannelEmail, Kind: "lead.notify", LeadID: 7, DedupeKey: "lead:7:notify:email", Payload: struct{}{}})
-	for attempt := 1; attempt < len(backoff); attempt++ {
+	for attempt := 1; attempt <= len(backoff); attempt++ { // every pause is used, the 24 hours too
 		f.deliver(1)
 		status, attempts, lastError, next := f.row("lead:7:notify:email")
 		if status != "pending" || attempts != attempt || !strings.Contains(lastError, "connection refused") || !next.Equal(f.now.Add(backoff[attempt-1])) {
@@ -129,7 +142,7 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	// The mail server comes back before the last attempt: the message still arrives.
 	mail.fail = nil
 	f.deliver(1)
-	if status, attempts, _, _ := f.row("lead:7:notify:email"); status != "sent" || attempts != len(backoff) {
+	if status, attempts, _, _ := f.row("lead:7:notify:email"); status != "sent" || attempts != len(backoff)+1 {
 		t.Errorf("after recovery: %s, %d attempts", status, attempts)
 	}
 	if len(gaveUp) != 0 {
@@ -139,16 +152,20 @@ func TestRetriesWithGrowingPausesThenGivesUp(t *testing.T) {
 	// Another one never gets through.
 	mail.fail = errors.New("still down")
 	f.enqueue(NewTask{Channel: ChannelEmail, Kind: "lead.autoreply", LeadID: 8, DedupeKey: "lead:8:autoreply", Payload: struct{}{}})
-	for range len(backoff) {
+	started := f.now
+	for range len(backoff) + 1 {
 		f.deliver(1)
 		_, _, _, next := f.row("lead:8:autoreply")
 		f.now = next
 	}
-	if status, attempts, _, _ := f.row("lead:8:autoreply"); status != "failed" || attempts != len(backoff) {
+	if status, attempts, _, _ := f.row("lead:8:autoreply"); status != "failed" || attempts != len(backoff)+1 {
 		t.Errorf("after all attempts: %s, %d attempts", status, attempts)
 	}
 	if len(gaveUp) != 1 || gaveUp[0] != "lead.autoreply: still down" {
 		t.Errorf("give-up hook: %v", gaveUp)
+	}
+	if took := f.now.Sub(started); took < 44*time.Hour || took > 45*time.Hour {
+		t.Errorf("given up after %v, want about two days", took)
 	}
 	f.deliver(0)
 
@@ -238,6 +255,42 @@ func TestACrashedDeliveryIsPickedUpAgain(t *testing.T) {
 	f.deliver(1)
 	if len(mail.got) != 1 {
 		t.Errorf("delivered after the lock expired: %d", len(mail.got))
+	}
+}
+
+// patient is a sender that asks for more time and tells how much it was given.
+type patient struct {
+	ask      time.Duration
+	deadline time.Duration // what the delivery got, from the worker's clock
+	locked   time.Time
+	f        *fixture
+}
+
+func (p *patient) Timeout(context.Context, Task) time.Duration { return p.ask }
+
+func (p *patient) Send(ctx context.Context, _ Task) error {
+	deadline, _ := ctx.Deadline()
+	p.deadline = time.Until(deadline).Round(time.Minute)
+	return p.f.db.QueryRow(`SELECT locked_until FROM outbox WHERE dedupe_key = 'video'`).Scan(&p.locked)
+}
+
+func TestASlowDeliveryGetsTheTimeItAsksFor(t *testing.T) {
+	f := newFixture(t)
+	for _, tc := range []struct{ ask, deadline, lock time.Duration }{
+		{3 * time.Minute, 3 * time.Minute, 4 * time.Minute},
+		{time.Hour, maxSendTimeout, maxSendTimeout + time.Minute}, // no more than five minutes
+		{0, time.Minute, lockFor},                                 // 45 s: the usual
+	} {
+		sender := &patient{ask: tc.ask, f: f}
+		f.worker.Register(ChannelTelegram, sender)
+		if _, err := f.db.Exec(`DELETE FROM outbox`); err != nil {
+			t.Fatal(err)
+		}
+		f.enqueue(NewTask{Channel: ChannelTelegram, Kind: "lead.reply", DedupeKey: "video", Payload: struct{}{}})
+		f.deliver(1)
+		if sender.deadline != tc.deadline || !sender.locked.Equal(f.now.Add(tc.lock)) {
+			t.Errorf("asked for %v: %v to deliver, held until %v", tc.ask, sender.deadline, sender.locked.Sub(f.now))
+		}
 	}
 }
 

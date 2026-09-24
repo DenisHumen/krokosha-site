@@ -48,11 +48,11 @@ func TestOverviewShowsThePeriod(t *testing.T) {
 		t.Fatalf("overview: %d", page.status)
 	}
 	for _, want := range []string{
-		"Суббота, 19 сентября 2026",                            // the report day, in words
-		`id="active-count" aria-live="polite">3<`,              // «now on the site»
-		`data-live="` + prefix + `/live"`,                      // where the script connects
-		"<title>09:00 — 1 визит, из них по рекламе: 1</title>", // the bar of the timeline
-		"дошёл до секции «Навыки»",                             // the feed speaks the owner's language
+		"Суббота, 19 сентября 2026",                     // the report day, in words
+		`id="active-count" aria-live="polite">3<`,       // «now on the site»
+		`data-live="` + prefix + `/live"`,               // where the script connects
+		`title="09:00 — 1 визит, из них по рекламе: 1"`, // the bar of the timeline
+		"дошёл до секции «Навыки»",                      // the feed speaks the owner's language
 		"открыл ветку навыков «devops»",
 		"нашёл пасхалку konami",
 		"Реклама", "Телефон", "Українська", "не определена", // ids became words
@@ -78,7 +78,7 @@ func TestOverviewShowsThePeriod(t *testing.T) {
 	}
 
 	week := s.do(http.MethodGet, prefix+"/?p=week&d=2026-09-19", nil, nil)
-	if !strings.Contains(week.body, "14 сентября — 20 сентября 2026") || !strings.Contains(week.body, "<title>19.09, сб — 1 визит") {
+	if !strings.Contains(week.body, "14 сентября — 20 сентября 2026") || !strings.Contains(week.body, `title="19.09, сб — 1 визит`) {
 		t.Error("the week view lacks its title or its daily bars")
 	}
 	if got := s.do(http.MethodGet, prefix+"/?p=custom&from=2026-09-01&to=2026-09-19", nil, nil); !strings.Contains(got.body, "1 сентября — 19 сентября 2026") {
@@ -242,11 +242,6 @@ func TestLiveFeedStreamsToTheDashboard(t *testing.T) {
 }
 
 func TestChartsAndWords(t *testing.T) {
-	for value, want := range map[int]int{0: 4, 3: 4, 5: 5, 7: 10, 18: 20, 23: 25, 26: 50, 99: 100, 101: 200, 1200: 2000} {
-		if got := niceCeil(value); got != want {
-			t.Errorf("niceCeil(%d) = %d, want %d", value, got, want)
-		}
-	}
 	for n, want := range map[int]string{1: "1 визит", 2: "2 визита", 5: "5 визитов", 11: "11 визитов", 21: "21 визит", 112: "112 визитов", 0: "0 визитов"} {
 		if got := plural(n, "визит", "визита", "визитов"); got != want {
 			t.Errorf("plural(%d) = %q, want %q", n, got, want)
@@ -317,5 +312,26 @@ func TestOverviewOfAPeriodOlderThanTheRawData(t *testing.T) {
 	// A recent period says nothing of the kind.
 	if page := s.do(http.MethodGet, prefix+"/?p=week", nil, nil); strings.Contains(page.body, "показаны дневные итоги") {
 		t.Error("a recent week is shown as sums")
+	}
+}
+
+func TestSpreadsheetSafe(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                            "",
+		"mikrotik":                    "mikrotik",
+		"price - 100, as agreed":      "price - 100, as agreed",
+		"=SUM(A1)":                    "'=SUM(A1)",
+		"-5":                          "'-5",
+		"@cmd":                        "'@cmd",
+		`x;=HYPERLINK("http://evil")`: `x;'=HYPERLINK("http://evil")`,
+		"Ivan; -cmd|' /C calc'!A1":    "Ivan; '-cmd|' /C calc'!A1",
+		`a;"=1+1"`:                    `a;"'=1+1"`,
+		"first line\n=cmd\n- a point": "first line\n'=cmd\n'- a point",
+		"a\t+1":                       "a\t'+1",
+		"a;\r=1":                      "a;'\r'=1",
+	} {
+		if got := spreadsheetSafe(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
 	}
 }

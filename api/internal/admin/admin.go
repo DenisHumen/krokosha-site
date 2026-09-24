@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
@@ -26,6 +28,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	"github.com/DenisHumen/krokosha-site/api/internal/loyalty"
 	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
+	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
@@ -78,6 +81,10 @@ type Options struct {
 	// false when there is no token (invitations can be prepared before there is a bot).
 	BotAccess *telegram.Access
 	BotStatus func() (telegram.Status, bool)
+	// BotRemindAfter: the bot reminds about a request nobody took after this long (0 — never);
+	// BotDigestAt is the time of its morning summary, "" — none.
+	BotRemindAfter time.Duration
+	BotDigestAt    string
 
 	// Inbox reads the service mailbox; nil — answers by mail are not read (no IMAP_ADDR).
 	// Mailbox is its address, KeepLettersDays how long a letter without a request waits.
@@ -96,6 +103,12 @@ type Options struct {
 	Achievements *achievements.Service
 	// Mailboxes of the site's own mail server (the «Почта» screen); nil — the screen is not there.
 	Mailboxes *mailboxes.Service
+	// The mail the site sends: its From, the submission server, and the queue of what goes out
+	// by mail and to Telegram (outbox.Recent, outbox.SentSince); nil — not shown.
+	MailFrom   string
+	SMTPAddr   string
+	Deliveries func(ctx context.Context, limit int) ([]outbox.Entry, error)
+	SentSince  func(ctx context.Context, channel string, since time.Time) (int, error)
 }
 
 // Handler serves the admin area.
@@ -103,6 +116,9 @@ type Handler struct {
 	opts      Options
 	templates map[string]*template.Template
 	static    http.Handler
+
+	headerMu sync.Mutex
+	header   headerCache // the slower numbers of the ticker (frame.go)
 }
 
 // New parses the embedded templates.
@@ -122,6 +138,9 @@ func New(opts Options) (*Handler, error) {
 	if opts.Loyalty == nil {
 		opts.Loyalty = func() config.Loyalty { return config.Loyalty{} }
 	}
+	if opts.Active == nil {
+		opts.Active = func(context.Context, time.Duration) int { return 0 }
+	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
 		"path": func(parts ...string) string { return opts.Prefix + strings.Join(parts, "") },
@@ -133,7 +152,20 @@ func New(opts Options) (*Handler, error) {
 			}
 			return template.URL(opts.Prefix + path + "?" + query) //nolint:gosec // query comes from url.Values.Encode
 		},
-		"time":       func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		"time": func(t time.Time) string { return t.In(opts.Location).Format("02.01.2006 15:04") },
+		// «23 сен 14:12», and the year when it is not this one
+		"when": func(t time.Time) string {
+			local := t.In(opts.Location)
+			text := fmt.Sprintf("%d %s", local.Day(), shortMonths[local.Month()])
+			if local.Year() != time.Now().In(opts.Location).Year() {
+				text += fmt.Sprintf(" %d", local.Year())
+			}
+			return text + local.Format(" 15:04")
+		},
+		"dayMonth": func(t time.Time) string {
+			local := t.In(opts.Location)
+			return fmt.Sprintf("%d %s", local.Day(), shortMonths[local.Month()])
+		},
 		"clock":      func(t time.Time) string { return t.In(opts.Location).Format("15:04:05") },
 		"day":        func(t time.Time) string { return t.In(opts.Location).Format("02.01") },
 		"duration":   func(ms any) string { return duration(toInt64(ms)) },
@@ -144,8 +176,16 @@ func New(opts Options) (*Handler, error) {
 		"meter":      meter,
 		"usage":      usage,
 		"statusName": named(statusNames, "—"),
-		"methodName": named(methodNames, "—"),
-		"direction":  func(id string) string { return h.directionName(id) },
+		// Quick answers (quick.go).
+		"categoryName": named(categoryNames, "Другое"),
+		"momentName":   named(momentNames, "в любой момент"),
+		"reasons":      reasonLine,
+		"sent":         wasSent,
+		"mediaCount":   mediaCount,
+		"isPhoto":      leads.IsPhoto,
+		"isVideo":      leads.IsVideo,
+		"methodName":   named(methodNames, "—"),
+		"direction":    func(id string) string { return h.directionName(id) },
 		"safeURL": func(link string) template.URL { // links built by this package from validated contacts
 			return template.URL(link) //nolint:gosec // see leadCard: mailto:, https://t.me/, tel: of a validated value
 		},
@@ -172,9 +212,33 @@ func New(opts Options) (*Handler, error) {
 		"eggName":     named(eggNames, "—"),
 		"orderName":   named(orderNames, "—"),
 		"percentOf":   func(part, whole float64) float64 { return 100 * part / max(whole, 1) },
-		"since":       func(t time.Time) string { return ago(time.Since(t)) },
+		"icon":        icon,
+		"step":        step,
+		"initials":    initials,
+		"botRole":     botRoleName,
+		"lasting":     lasting,
+		"spanOf":      spanOf,
+		"sub":         func(a, b any) int64 { return toInt64(a) - toInt64(b) },
+		// share: part of whole in percent, whatever numbers the report uses; 0 of nothing
+		"share": func(part, whole any) float64 {
+			if w := toNumber(whole); w > 0 {
+				return toNumber(part) * 100 / w
+			}
+			return 0
+		},
+		"shortDuration": shortDuration,
+		"minsec":        func(ms any) string { return minutesSeconds(toInt64(ms)) },
+		"average": func(total, count any) int64 { // total ÷ count, and 0 when there is nothing to divide by
+			if n := toInt64(count); n > 0 {
+				return toInt64(total) / n
+			}
+			return 0
+		},
+		"decimalPct": func(value float64) string { return decimal(value) + "%" },
+		"short":      named(shortNames, "—"),
+		"since":      func(t time.Time) string { return ago(time.Since(t)) },
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error",
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "template", "bot", "account", "error",
 		"clients", "client", "mail", "achievements"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
@@ -250,13 +314,23 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/inbox/{id}/discard", h.private(h.inboxDiscard))
 	mux.Handle("GET "+p+"/templates", h.private(h.templatesPage))
 	mux.Handle("POST "+p+"/templates", h.private(h.templateSave))
+	mux.Handle("GET "+p+"/templates/new", h.private(h.templateNew))
+	mux.Handle("GET "+p+"/templates/{id}", h.private(h.templateEdit))
+	mux.Handle("POST "+p+"/templates/{id}/media/{media}/remove", h.private(h.templateMediaRemove))
+	mux.Handle("GET "+p+"/templates/media/{media}", h.private(h.templateMedia))
+	// Forms with files go under /upload/: nginx lets bigger bodies through there alone.
+	mux.Handle("POST "+p+"/upload/templates/{id}/media", h.upload(uploadLimit, h.templateMediaAdd))
+	mux.Handle("POST "+p+"/upload/leads/{id}/reply", h.upload(uploadLimit, h.leadReply))
 	mux.Handle("GET "+p+"/bot", h.private(h.botPage))
 	mux.Handle("POST "+p+"/bot/invite", h.private(h.botInvite))
 	mux.Handle("POST "+p+"/bot/invite/revoke", h.private(h.botInviteRevoke))
 	mux.Handle("POST "+p+"/bot/member", h.private(h.botMember))
+	mux.Handle("POST "+p+"/bot/add", h.private(h.botAdd))
+	mux.Handle("POST "+p+"/bot/role", h.private(h.botRole))
 	mux.Handle("GET "+p+"/traffic", h.private(h.traffic))
 	mux.Handle("GET "+p+"/status", h.private(h.status))
 	mux.Handle("POST "+p+"/status/rebuild", h.private(h.rebuild))
+	mux.Handle("POST "+p+"/status/backup", h.private(h.backupNow))
 	mux.Handle("GET "+p+"/account", h.private(h.account))
 	mux.Handle("POST "+p+"/account/password", h.private(h.changePassword))
 	mux.Handle("POST "+p+"/account/totp/begin", h.private(h.totpBegin))
@@ -283,7 +357,7 @@ func (h *Handler) headers(next http.Handler) http.Handler {
 		header.Set("Cache-Control", "no-store")
 		// No inline scripts or styles anywhere in the admin area; charts are server-rendered SVG.
 		header.Set("Content-Security-Policy",
-			"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "+
+			"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; "+
 				"connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
@@ -307,7 +381,18 @@ func (h *Handler) sameOrigin(next http.Handler) http.Handler {
 }
 
 // private wraps a page that needs a session; unsafe methods also need the CSRF token.
-func (h *Handler) private(next http.HandlerFunc) http.Handler {
+func (h *Handler) private(next http.HandlerFunc) http.Handler { return h.guarded(formLimit, next) }
+
+// upload is private for a form with files (quick answers): a body up to limit, whose files wait
+// in temporary files — the service has a /tmp of its own — until the page is done.
+func (h *Handler) upload(limit int64, next http.HandlerFunc) http.Handler {
+	return h.guarded(limit, next)
+}
+
+// formLimit: a form without files is a few kilobytes.
+const formLimit = 64 << 10
+
+func (h *Handler) guarded(limit int64, next http.HandlerFunc) http.Handler {
 	return h.headers(h.sameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
@@ -329,7 +414,31 @@ func (h *Handler) private(next http.HandlerFunc) http.Handler {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			if limit > formLimit {
+				// Only a form with files may be big: a url-encoded body is read into memory whole,
+				// so anything else is held to the limit of a small form before a byte is read.
+				if media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); media != "multipart/form-data" {
+					r.Body = http.MaxBytesReader(w, r.Body, formLimit)
+				}
+				err := r.ParseMultipartForm(1 << 20) // the body is capped by MaxBytesReader above
+				if r.MultipartForm != nil {
+					defer func() { _ = r.MultipartForm.RemoveAll() }()
+				}
+				var tooLarge *http.MaxBytesError
+				switch {
+				case errors.Is(err, http.ErrNotMultipart):
+					err = r.ParseForm()
+				case errors.As(err, &tooLarge):
+					h.render(w, r.WithContext(context.WithValue(r.Context(), keySession, session)), http.StatusRequestEntityTooLarge, "error",
+						view{Title: "Слишком много", Error: fmt.Sprintf("Файлы вместе больше %d МБ — отправьте их по частям.", limit>>20)})
+					return
+				}
+				if err != nil {
+					http.Error(w, "the form cannot be read", http.StatusBadRequest)
+					return
+				}
+			}
 			if subtle.ConstantTimeCompare([]byte(r.PostFormValue("csrf")), []byte(session.CSRFToken)) != 1 {
 				http.Error(w, "the form has expired, reload the page", http.StatusForbidden)
 				return
@@ -384,6 +493,13 @@ type view struct {
 	Flash     string // a message about what just happened
 	Error     string
 	Data      any
+
+	// The frame (frame.go): the icons of the rail, the numbers of the ticker, the avatar's letters,
+	// and the address of the site for «Открыть сайт».
+	Rail     []navItem
+	Ticker   [][]tick
+	Initials string
+	SiteURL  string
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
@@ -409,6 +525,14 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	if v.Flash == "" {
 		v.Flash = flashText[r.URL.Query().Get("ok")]
 	}
+	if v.Session != nil {
+		v.Rail = h.nav(v)
+		v.Ticker = h.ticker(r.Context(), v)
+		v.Initials = initials(v.Session.User.Login)
+		if h.opts.SiteHost != "" {
+			v.SiteURL = "https://" + h.opts.SiteHost + "/"
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := h.templates[page].ExecuteTemplate(w, "layout.html", v); err != nil {
@@ -424,6 +548,7 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"totp-off": "Двухфакторная аутентификация выключена.",
 	"revoked":  "Сеанс завершён.",
 	"rebuild":  "Пересборка запрошена: она начнётся в течение нескольких секунд и займёт около минуты.",
+	"backup":   "Резервная копия запрошена: она начнётся в течение нескольких секунд; итог появится здесь.",
 
 	"lead-status":      "Статус изменён.",
 	"lead-note":        "Заметка сохранена.",
@@ -433,6 +558,8 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"letter-discarded": "Письмо удалено.",
 	"template-saved":   "Шаблон сохранён.",
 	"template-deleted": "Шаблон удалён.",
+	"media-added":      "Файлы добавлены к шаблону: они уйдут клиенту вместе с текстом.",
+	"media-removed":    "Файл убран из шаблона. Отправленным раньше ответам он остался.",
 	"lead-discount":    "Скидка заявки изменена.",
 	"lead-amount":      "Сумма заказа сохранена: она учитывается в уровне клиента.",
 	"lead-client":      "Клиент заявки изменён.",
@@ -450,6 +577,8 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"mail-request":     "Запрос отправлен: почтовый сервер применит его через несколько секунд.",
 
 	"bot-invite-revoked": "Приглашение отозвано.",
+	"bot-added":          "Доступ выдан: бот начнёт присылать этому человеку заявки, как только тот напишет боту /start.",
+	"bot-role":           "Роль изменена.",
 	"bot-disabled":       "Доступ отключён: бот больше не отвечает этому человеку и не присылает ему заявки.",
 	"bot-enabled":        "Доступ возвращён.",
 }

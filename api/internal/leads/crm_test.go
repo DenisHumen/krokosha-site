@@ -345,6 +345,13 @@ func TestListSearchAndFunnel(t *testing.T) {
 	if err != nil || len(funnel.Sources) != 1 || funnel.Sources[0] != (SourceStat{Source: "ads", Campaign: "mikrotik-kyiv", Requests: 2, Done: 1}) {
 		t.Errorf("sources: %+v %v", funnel.Sources, err)
 	}
+	// What the completed ones came to: only theirs, the amount of an open request is not money yet.
+	if _, err := f.db.ExecContext(ctx, `UPDATE leads SET amount = IF(status = 'done', 1500, 700)`); err != nil {
+		t.Fatal(err)
+	}
+	if funnel, err = store.Funnel(ctx, noon.Add(-time.Hour), noon.Add(24*time.Hour)); err != nil || funnel.Amount != 1500 {
+		t.Errorf("amount of the completed requests: %+v %v", funnel, err)
+	}
 
 	var rows [][]string
 	if err := store.Export(ctx, func(row []string) error { rows = append(rows, append([]string(nil), row...)); return nil }); err != nil {
@@ -406,7 +413,7 @@ func TestTemplates(t *testing.T) {
 		t.Errorf("templates: %d replies, %d refusals", len(replies), len(rejects))
 	}
 
-	if err := store.SaveTemplate(ctx, Template{Kind: "reply", Lang: "ru", Title: "Созвон", Body: "Здравствуйте, {name}! По заявке {id}: давайте созвонимся."}); err != nil {
+	if _, err := store.SaveTemplate(ctx, Template{Kind: "reply", Lang: "ru", Title: "Созвон", Body: "Здравствуйте, {name}! По заявке {id}: давайте созвонимся."}); err != nil {
 		t.Fatal(err)
 	}
 	replies, _ = store.Templates(ctx, "reply")
@@ -420,22 +427,32 @@ func TestTemplates(t *testing.T) {
 		t.Fatal("the new template is not in the list")
 	}
 	lead, _ := store.Get(ctx, f.seed(nil))
-	if got := FillTemplate(added.Body, lead); got != "Здравствуйте, Иван Петров! По заявке #K-0001: давайте созвонимся." {
+	if got := FillTemplate(added.Body, lead, Filling{}); got != "Здравствуйте, Иван Петров! По заявке #K-0001: давайте созвонимся." {
 		t.Errorf("filled template: %q", got)
+	}
+	links := LinksFor("https://krokosha.com/", lead)
+	if got := FillTemplate("{site}#projects · {account}", lead, links); got != "https://krokosha.com/ru/#projects · https://krokosha.com/ru/account/#K-0001" {
+		t.Errorf("the links of a template: %q", got)
 	}
 
 	added.Body = "Новый текст"
-	if err := store.SaveTemplate(ctx, added); err != nil {
+	if _, err := store.SaveTemplate(ctx, added); err != nil {
 		t.Fatal(err)
 	}
+	// Saving what is already there changes nothing, and is no error.
+	if _, err := store.SaveTemplate(ctx, added); err != nil {
+		t.Errorf("saving the same template twice: %v", err)
+	}
 	for name, bad := range map[string]Template{
-		"no title":        {Kind: "reply", Lang: "ru", Body: "текст"},
-		"no body":         {Kind: "reply", Lang: "ru", Title: "заголовок"},
-		"unknown kind":    {Kind: "spam", Lang: "ru", Title: "a", Body: "b"},
-		"unknown lang":    {Kind: "reply", Lang: "de", Title: "a", Body: "b"},
-		"missing to edit": {ID: 99999, Kind: "reply", Lang: "ru", Title: "a", Body: "b"},
+		"no title":         {Kind: "reply", Lang: "ru", Body: "текст"},
+		"no body":          {Kind: "reply", Lang: "ru", Title: "заголовок"},
+		"unknown kind":     {Kind: "spam", Lang: "ru", Title: "a", Body: "b"},
+		"unknown lang":     {Kind: "reply", Lang: "de", Title: "a", Body: "b"},
+		"missing to edit":  {ID: 99999, Kind: "reply", Lang: "ru", Title: "a", Body: "b"},
+		"unknown moment":   {Kind: "reply", Lang: "ru", Title: "a", Body: "b", Moment: "someday"},
+		"unknown category": {Kind: "reply", Lang: "ru", Title: "a", Body: "b", Category: "gossip"},
 	} {
-		if err := store.SaveTemplate(ctx, bad); err == nil {
+		if _, err := store.SaveTemplate(ctx, bad); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -572,5 +589,50 @@ func TestOpenMineAndUnclaimed(t *testing.T) {
 	}
 	if due, _ = store.Unclaimed(ctx, f.now); len(due) != 0 {
 		t.Errorf("reminded twice: %v", due)
+	}
+}
+
+// TestAnswersFollowTheClientIntoTelegram: a client who left an address and then opened the bot by
+// the link of the «thank you» page was told the answer would come to that chat — so it goes there,
+// until the client writes a letter again.
+func TestAnswersFollowTheClientIntoTelegram(t *testing.T) {
+	f := newFixture(t)
+	store := NewStore(f.db, func() time.Time { return f.now })
+	id := f.seed(nil)
+	ctx := context.Background()
+	queued := func(messageID int64) string {
+		t.Helper()
+		var channel string
+		if err := f.db.QueryRow(`SELECT channel FROM outbox WHERE kind = 'lead.reply' AND JSON_EXTRACT(payload, '$.message_id') = ?`, messageID).Scan(&channel); err != nil {
+			t.Fatal(err)
+		}
+		return channel
+	}
+	answer := func(text string) string {
+		t.Helper()
+		f.now = f.now.Add(time.Minute)
+		messageID, err := store.Reply(ctx, id, "denis", text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return queued(messageID)
+	}
+
+	if channel := answer("Добрый день! Уточните, пожалуйста, сроки."); channel != ChannelEmail {
+		t.Errorf("before the client opened the bot: %s", channel)
+	}
+	f.now = f.now.Add(time.Minute)
+	if err := store.ClientLinked(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if channel := answer("Вижу, вы в Telegram: продолжим здесь."); channel != ChannelTelegram {
+		t.Errorf("after the client opened the bot: %s", channel)
+	}
+	f.now = f.now.Add(time.Minute)
+	if _, err := store.ClientMessage(ctx, id, ChannelEmail, "Лучше пишите на почту."); err != nil {
+		t.Fatal(err)
+	}
+	if channel := answer("Хорошо, пишу на почту."); channel != ChannelEmail {
+		t.Errorf("after a letter of the client: %s", channel)
 	}
 }

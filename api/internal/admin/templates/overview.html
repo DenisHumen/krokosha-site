@@ -1,194 +1,204 @@
-{{define "content"}}
-  {{$o := .Data.Overview}}
-  <div class="page-head">
-    <h1>{{.Data.Period.Title}}</h1>
+{{define "head"}}
+  <div class="head">
+    <h1>{{.Title}}</h1>
     {{template "period" .Data.Period}}
   </div>
+{{end}}
+
+{{define "content"}}
+  {{$d := .Data}}
+  {{$o := $d.Overview}}
   {{if $o.Aggregated}}
-    <p class="notice">Период старше срока хранения подробных данных: показаны дневные итоги, которые хранятся бессрочно. Часы визитов, список визитов и экспорт за это время недоступны; день, который ещё не закончился, в итоги не входит.</p>
+    <p class="notice notice-warn">Период старше срока хранения подробных данных: показаны дневные итоги, которые хранятся бессрочно. Часы визитов, список визитов и экспорт за это время недоступны; день, который ещё не закончился, в итоги не входит.</p>
   {{end}}
 
-  {{/* Three stacks, as in the reference: the timeline over two of them, the numbers on the right. */}}
-  <div class="dashboard" data-live="{{path "/live"}}">
-    <div class="dash-main">
-      <section class="card">
-        <h2 class="card-title">Таймлайн</h2>
-        <div class="card-body">
-          {{.Data.Timeline}}
-          <p class="legend">
-            <span class="legend-item"><span class="swatch swatch-accent"></span>Визиты{{if $o.Hourly}} по часам{{else}} по дням{{end}}</span>
-            <span class="legend-item"><span class="swatch swatch-pink"></span>По рекламе (UTM, click id)</span>
-            {{if .Data.HasBots}}
-              <span class="legend-item"><span class="swatch swatch-cyan"></span>Боты и программы (по логу сервера)</span>
-            {{else}}
-              <span class="legend-item muted">Боты видны в логе сервера — экран «Трафик»</span>
-            {{end}}
-          </p>
-        </div>
-      </section>
-
-      <div class="dash-split">
-        <div class="stack">
-          <section class="card">
-            <h2 class="card-title">Сейчас на сайте</h2>
-            <div class="card-body">
-              <p class="figure figure-large" id="active-count" aria-live="polite">{{.Data.Active}}</p>
-              <p class="muted">посетителей за последние 5 минут</p>
-              <p class="muted live-state" id="live-state" hidden></p>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2 class="card-title">Активность</h2>
-            <div class="card-body">
-              <ol class="feed" id="feed">
-                {{range .Data.Feed}}
-                  <li><time>{{.Time}}</time><span class="feed-path">{{.Path}}</span><span class="feed-text">{{.Text}}</span></li>
-                {{else}}
-                  <li class="muted" id="feed-empty">Пока тихо. Новые события появятся здесь сами.</li>
-                {{end}}
-              </ol>
-            </div>
-          </section>
-        </div>
-        <div class="stack">
-          <section class="card">
-            <h2 class="card-title">Секции: время</h2>
-            <div class="card-body">
-              <ul class="rows">
-                {{range $o.Sections}}
-                  <li class="row">
-                    <span class="row-share">{{pct .TimePercent}}</span>
-                    <span class="row-name">{{section .Name}}</span>
-                    {{bar .TimePercent "accent"}}
-                    <span class="row-value">{{duration .TimeMs}}</span>
-                  </li>
-                {{else}}
-                  <li class="muted">Нет данных за период.</li>
-                {{end}}
-              </ul>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2 class="card-title">Секции: кто дошёл</h2>
-            <div class="card-body">
-              <ul class="rows">
-                {{range $o.Sections}}
-                  <li class="row">
-                    <span class="row-share">{{pct .Reach}}</span>
-                    <span class="row-name">{{section .Name}}</span>
-                    {{bar .Reach "cyan"}}
-                    <span class="row-value">{{.Views}}</span>
-                  </li>
-                {{else}}
-                  <li class="muted">Нет данных за период.</li>
-                {{end}}
-              </ul>
-              <h3 class="card-subtitle">Глубина прокрутки</h3>
-              <ul class="rows">
-                {{range $o.Scroll}}
-                  <li class="row">
-                    <span class="row-share">{{pct .Percent}}</span>
-                    <span class="row-name">до {{.Name}}</span>
-                    {{bar .Percent "pink"}}
-                    <span class="row-value">{{.Count}}</span>
-                  </li>
-                {{end}}
-              </ul>
-            </div>
-          </section>
-        </div>
-      </div>
+  {{/* The grid of the design: 4 columns; tiles of two rows and two columns fall into place by themselves. */}}
+  <section class="tiles" data-live="{{path "/live"}}" aria-label="Обзор">
+    <div class="tile tile-accent tile-stat">
+      <div class="tile-head"><span>Сейчас на сайте</span></div>
+      <div class="num-row"><span class="num" id="active-count" aria-live="polite">{{$d.Active}}</span><span class="num-sub">/ 5 мин</span></div>
+      <p class="small-caps" id="live-state" role="status" hidden></p>
     </div>
-    <div class="dash-side stack">
-      <section class="card">
-        <h2 class="card-title">Посещения</h2>
-        <div class="card-body">
-          <div class="figures">
-            <div><p class="figure-label">Посетители</p><p class="figure">{{$o.Totals.Visitors}}</p></div>
-            <div><p class="figure-label">Визиты</p><p class="figure">{{$o.Totals.Visits}}</p></div>
-            <div><p class="figure-label">Просмотры</p><p class="figure">{{$o.Totals.Pageviews}}</p></div>
-          </div>
-          <dl class="facts">
-            <div><dt>Страница на экране в среднем</dt><dd>{{duration $o.Totals.AvgViewMs}}</dd></div>
-            <div><dt>Клики по кнопкам и ссылкам</dt><dd>{{$o.Totals.Actions}}</dd></div>
-            <div><dt>Визиты по рекламе</dt><dd>{{$o.Totals.AdVisits}}</dd></div>
-          </dl>
-        </div>
-      </section>
 
-      <section class="card">
-        <h2 class="card-title">Конверсии</h2>
-        <div class="card-body scores">
-          {{range $index, $score := $o.Conversions}}
-            <div class="score">
-              <div class="score-ring">{{ring $score.Percent (tone $index)}}<span class="score-value">{{pct $score.Percent}}</span></div>
-              <div><p class="score-name">{{contact $score.Name}}</p><p class="muted">{{plural $score.Visitors "посетитель" "посетителя" "посетителей"}}</p></div>
+    <a class="tile tile-stat rows-2" href="{{path "/leads"}}">
+      <div class="tile-head"><span>Заявки · {{$d.Period.Kind}}</span><span class="aside">→</span></div>
+      <div class="stack">
+        {{if $d.Funnel}}
+          <div class="num-row"><span class="num-xl">{{$d.Requests}}</span><span class="num-sub">/ {{$d.Funnel.Done}} заверш.</span></div>
+          <div class="tile-rule"><span>Первая реакция</span><span>{{if $d.Funnel.FirstResponse}}{{elapsed $d.Funnel.FirstResponse}} / медиана{{else}}—{{end}}</span></div>
+        {{else}}
+          <p class="empty">Заявки не подключены.</p>
+        {{end}}
+      </div>
+    </a>
+
+    <div class="tile span-2 rows-2">
+      <div class="tile-head"><span>Визиты · {{if $o.Hourly}}по часам{{else}}{{$d.Period.Kind}}{{end}}</span><span class="aside">{{$d.Peak}}</span></div>
+      <div class="chart-box">
+        <div class="chart-total">
+          <span class="num-xl">{{count $o.Totals.Visits}}</span>
+          <span class="meta muted-2">{{if $d.Change}}{{$d.Change}}{{else}}прежде визитов не было{{end}}</span>
+        </div>
+        <div class="vbars{{if not $d.ShowValues}} vbars-dense{{end}}" role="img" aria-label="Визиты {{if $o.Hourly}}по часам{{else}}по дням{{end}}: всего {{$o.Totals.Visits}}">
+          {{range $d.Bars}}
+            <div class="vbar{{if .Peak}} is-peak{{end}}" title="{{.Title}}">
+              {{if $d.ShowValues}}<span class="vbar-v">{{.Value}}</span>{{end}}
+              <span class="vbar-fill h-{{.Height}}"></span>
+              <span class="vbar-d">{{.Label}}</span>
             </div>
           {{end}}
         </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">Источники</h2>
-        <div class="card-body">
-          {{template "shares" $o.Sources}}
-          {{if $o.Referrers}}<h3 class="card-subtitle">Сайты</h3>{{template "shares" $o.Referrers}}{{end}}
-          {{if $o.Campaigns}}<h3 class="card-subtitle">Кампании (UTM)</h3>{{template "shares" $o.Campaigns}}{{end}}
-        </div>
-      </section>
+      </div>
+      {{if $d.HasBots}}<p class="legend"><span><span class="swatch swatch-dark"></span>Боты и программы (по логу сервера): {{$d.Bots}} — на экране «Трафик»</span></p>{{end}}
     </div>
-  </div>
 
-  <div class="grid grid-below">
-    <section class="card">
-      <h2 class="card-title">Страницы и языки</h2>
-      <div class="card-body">
-        {{template "shares" $o.Pages}}
-        <h3 class="card-subtitle">Язык страницы</h3>
-        {{template "shares" $o.Languages}}
-      </div>
-    </section>
+    <div class="tile tile-stat">
+      <div class="tile-head"><span>Посетители</span></div>
+      <div class="num-row"><span class="num">{{count $o.Totals.Visitors}}</span><span class="num-sub">/ {{count $o.Totals.Pageviews}} просм.</span></div>
+    </div>
 
-    <section class="card">
-      <h2 class="card-title">Клики</h2>
-      <div class="card-body">
-        {{template "shares" $o.Clicks}}
-        {{if $o.Outbound}}<h3 class="card-subtitle">Внешние переходы</h3>{{template "shares" $o.Outbound}}{{end}}
-        {{if $o.Eggs}}<h3 class="card-subtitle">Пасхалки</h3>{{template "shares" $o.Eggs}}{{end}}
-      </div>
-    </section>
+    <div class="tile rows-2">
+      <div class="tile-head"><span>Активность</span><span class="live">● live</span></div>
+      <ol class="feed" id="feed">
+        {{range $d.Feed}}
+          <li><time>{{slice .Time 0 5}}</time><span class="feed-line"><span class="feed-path">{{.Path}}</span>{{.Text}}</span></li>
+        {{else}}
+          <li class="empty" id="feed-empty">Пока тихо. Новые события появятся здесь сами.</li>
+        {{end}}
+      </ol>
+    </div>
 
-    <section class="card">
-      <h2 class="card-title">Устройства</h2>
-      <div class="card-body">
-        {{template "shares" $o.Devices}}
-        <h3 class="card-subtitle">Браузеры</h3>
-        {{template "shares" $o.Browsers}}
-        <h3 class="card-subtitle">Системы</h3>
-        {{template "shares" $o.Systems}}
+    <div class="tile tile-accent tile-end rows-2 has-art slides">
+      <svg class="art" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="90"></circle><path d="M100 100L100 10M100 100L150 25M100 100L190 100"></path></svg>
+      {{/* A carousel without scripts: the radio buttons pick the slide, their labels are the dots. */}}
+      <input type="radio" name="conversion" id="conversion-lead" checked />
+      {{range $i, $c := $o.Conversions}}<input type="radio" name="conversion" id="conversion-{{$c.Name}}" />{{end}}
+      <div class="slide-list">
+        <div class="slide">
+          <span class="headline">Конверсия<br />в заявку<br />{{decimalPct $d.Conversion}}</span>
+          <span class="small-caps">{{plural $d.Requests "заявка" "заявки" "заявок"}} от {{plural $o.Totals.Visitors "посетителя" "посетителей" "посетителей"}}<br />за {{$d.Period.Short}}</span>
+        </div>
+        {{range $o.Conversions}}
+          <div class="slide">
+            <span class="headline">Клики:<br />{{contact .Name}}<br />{{decimalPct .Percent}}</span>
+            <span class="small-caps">{{plural .Visitors "посетитель" "посетителя" "посетителей"}} из {{$o.Totals.Visitors}}<br />нажали на ссылку «{{contact .Name}}»</span>
+          </div>
+        {{end}}
       </div>
-    </section>
+      <div class="dots">
+        <label for="conversion-lead" title="Заявки"></label>
+        {{range $o.Conversions}}<label for="conversion-{{.Name}}" title="{{contact .Name}}"></label>{{end}}
+      </div>
+    </div>
 
-    <section class="card">
-      <h2 class="card-title">География</h2>
-      <div class="card-body">
-        {{template "shares" $o.Countries}}
-        <p class="muted">Страна и город определяются на сервере по базе GeoIP, если она установлена (экран «Состояние»); сам адрес хранится усечённым.</p>
-      </div>
-    </section>
+    <div class="tile tile-stat">
+      <div class="tile-head"><span>Время на странице</span></div>
+      <div class="num-row"><span class="num">{{minsec $o.Totals.AvgViewMs}}</span><span class="num-sub">{{if $d.PrevView}}/ {{minsec $d.PrevView}} раньше{{else}}в среднем{{end}}</span></div>
+      <span class="hbar hbar-4" title="{{if $d.PrevView}}Сравнение с прошлым периодом{{else}}Сравнить не с чем{{end}}"><span class="w-{{step $d.ViewBar}}"></span></span>
+    </div>
 
-    <section class="card">
-      <h2 class="card-title">Экспорт</h2>
-      <div class="card-body">
-        <p>Данные за выбранный период в CSV (UTF-8, время — UTC).</p>
-        <p class="actions">
-          <a class="button button-ghost" href="{{href "/export/pageviews.csv" .Data.Period.Query}}" download>Просмотры</a>
-          <a class="button button-ghost" href="{{href "/export/events.csv" .Data.Period.Query}}" download>События</a>
-        </p>
-        <p class="muted">В файлах нет ни полных адресов, ни User-Agent: их нет и в базе.</p>
+    <div class="tile center">
+      <div class="ring-box">
+        {{ring $d.Contacts "accent"}}
+        <div class="ring-text"><strong>{{pct $d.Contacts}}</strong><span>дошли до контактов</span></div>
       </div>
-    </section>
-  </div>
+    </div>
+
+    <div class="tile tile-beige span-2">
+      <div class="corner"><a class="round-link" href="{{href "/export/pageviews.csv" $d.Period.Query}}" download aria-label="Просмотры в CSV">↓</a></div>
+      <div class="actions-between actions">
+        <span class="headline-s">Экспорт<br />данных CSV</span>
+        <span class="meta">
+          <a href="{{href "/export/pageviews.csv" $d.Period.Query}}" download>Просмотры</a> ·
+          <a href="{{href "/export/events.csv" $d.Period.Query}}" download>События</a> · UTC
+        </span>
+      </div>
+    </div>
+
+    <div class="tile span-2">
+      <span class="label">Источники</span>
+      <div class="shares shares-2">
+        {{range $o.Sources}}
+          <div class="share">
+            <span class="share-pct">{{pct .Percent}}</span>
+            <span class="share-name"><span>{{.Name}}</span><span class="hbar hbar-beige"><span class="w-{{step .Percent}}"></span></span></span>
+            <span class="share-value">{{.Count}}</span>
+          </div>
+        {{else}}
+          <p class="empty">Нет данных за период.</p>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="tile">
+      <div class="tile-head"><span>Секции: время</span><span class="aside">на просмотр</span></div>
+      {{range $o.Sections}}
+        <div class="meter-row" title="{{section .Name}}: всего {{duration .TimeMs}}, в {{.Views}} просмотрах">
+          <div class="num-row"><span class="line-name">{{section .Name}}</span><span class="soft">{{minsec (average .TimeMs .Views)}}</span></div>
+          <span class="hbar"><span class="w-{{step .TimePercent}}"></span></span>
+        </div>
+      {{else}}
+        <p class="empty">Нет данных за период.</p>
+      {{end}}
+    </div>
+
+    <div class="tile">
+      <span class="label">Устройства и страны</span>
+      {{if $d.Devices}}
+        <div class="strip">{{range $d.Devices}}<span class="w-{{step .Percent}}" title="{{.Name}}: {{pct .Percent}}"></span>{{end}}</div>
+        <div class="strip-legend">{{range $d.Devices}}<span>{{short .Name}} {{pct .Percent}}</span>{{end}}</div>
+      {{end}}
+      <div class="lines tile-end">
+        {{range $i, $c := $o.Countries}}{{if lt $i 4}}<div class="line"><span class="line-name">{{$c.Name}}</span><span class="soft">{{pct $c.Percent}}</span></div>{{end}}{{else}}<p class="empty">Нет данных за период.</p>{{end}}
+      </div>
+    </div>
+  </section>
+
+  {{/* What the design leaves out but the owner used: the rest of the breakdowns, in the same tiles. */}}
+  <section class="tiles tiles-free" aria-label="Подробнее">
+    <div class="tile span-2">
+      <span class="label">Страницы</span>
+      {{template "shares" $o.Pages}}
+    </div>
+    <div class="tile">
+      <span class="label">Язык страницы</span>
+      {{template "shares" $o.Languages}}
+    </div>
+    <div class="tile">
+      <span class="label">Глубина прокрутки</span>
+      <div class="shares">
+        {{range $o.Scroll}}
+          <div class="share">
+            <span class="share-pct">{{pct .Percent}}</span>
+            <span class="share-name"><span>до {{.Name}}</span><span class="hbar hbar-soft"><span class="w-{{step .Percent}}"></span></span></span>
+            <span class="share-value">{{.Count}}</span>
+          </div>
+        {{end}}
+      </div>
+    </div>
+    <div class="tile span-2">
+      <span class="label">Клики</span>
+      {{template "shares" $o.Clicks}}
+      {{if $o.Outbound}}<span class="label muted-2">Внешние переходы</span>{{template "shares" $o.Outbound}}{{end}}
+      {{if $o.Eggs}}<span class="label muted-2">Пасхалки</span>{{template "shares" $o.Eggs}}{{end}}
+    </div>
+    <div class="tile span-2">
+      <span class="label">Сайты и кампании</span>
+      {{template "shares" $o.Referrers}}
+      {{if $o.Campaigns}}<span class="label muted-2">Кампании (UTM)</span>{{template "shares" $o.Campaigns}}{{end}}
+    </div>
+    <div class="tile">
+      <span class="label">Браузеры</span>
+      {{template "shares" $o.Browsers}}
+    </div>
+    <div class="tile">
+      <span class="label">Системы</span>
+      {{template "shares" $o.Systems}}
+    </div>
+    <div class="tile span-2">
+      <span class="label">Страны</span>
+      {{template "shares" $o.Countries}}
+      <p class="text-xs">Страна и город определяются на сервере по базе GeoIP, если она установлена (экран «Статус»); сам адрес хранится усечённым.</p>
+    </div>
+  </section>
 {{end}}

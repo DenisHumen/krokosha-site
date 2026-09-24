@@ -102,6 +102,32 @@ func TestCollectReadsWhatTheWatchdogsLeft(t *testing.T) {
 	}
 }
 
+func TestVitalsForTheHeader(t *testing.T) {
+	s := newServer(t)
+	s.file(filepath.Join(s.state, "status", "backup.json"), `{"finished_at":"2026-09-19T03:31:40Z","ok":true,"name":"20260919-033100"}`)
+	service := s.service(Options{})
+	vitals := service.Vitals()
+	if !vitals.Backup.Known || !vitals.Backup.OK || vitals.Backup.Name != "20260919-033100" {
+		t.Errorf("backup: %+v", vitals.Backup)
+	}
+	if vitals.CPU < 0 || vitals.CPU > 100 || vitals.Disk < 0 || vitals.Disk > 100 {
+		t.Errorf("percentages out of range: %+v", vitals)
+	}
+	if _, _, ok := readCPUTimes(); ok {
+		if vitals.Disk == 0 {
+			t.Error("a Linux machine has a disk that is used a little")
+		}
+		// Busy time is measured between two looks at the counters at least a second apart.
+		service.cpuMu.Lock()
+		service.cpuBase.at = service.cpuBase.at.Add(-3 * time.Second)
+		service.cpuBase.busy, service.cpuBase.total = 0, 1
+		service.cpuMu.Unlock()
+		if percent := service.Vitals().CPU; percent < 0 || percent > 100 {
+			t.Errorf("CPU = %.1f%%", percent)
+		}
+	}
+}
+
 func TestANewServerIsDescribedNotFailed(t *testing.T) {
 	s := newServer(t)
 	s.file(filepath.Join(s.state, "status", "sync.json"), `{"started_at": broken`)

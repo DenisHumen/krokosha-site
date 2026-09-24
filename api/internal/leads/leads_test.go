@@ -65,6 +65,7 @@ func TestParseAcceptsAndNormalizes(t *testing.T) {
 	for method, cases := range map[string]map[string]string{
 		"telegram": {"@krokosha_dev": "@krokosha_dev", "krokosha_dev": "@krokosha_dev", "https://t.me/krokosha_dev": "@krokosha_dev", "t.me/krokosha_dev": "@krokosha_dev"},
 		"phone":    {"+380 (67) 123-45-67": "+380671234567", "067 123 45 67": "0671234567"},
+		"email":    {"ivan@XN--80A1ACNY.XN--P1AI": "ivan@xn--80a1acny.xn--p1ai"}, // a domain in Cyrillic, as punycode
 	} {
 		for input, want := range cases {
 			values := validValues()
@@ -96,6 +97,10 @@ func TestParseRejects(t *testing.T) {
 		"email with a name":      {"contact_value", "Ivan <ivan@company.com>", "contact_value", ErrInvalidEmail},
 		"two emails":             {"contact_value", "a@b.com, c@d.com", "contact_value", ErrInvalidEmail},
 		"email header injection": {"contact_value", "ivan@company.com\r\nBcc: all@example.com", "contact_value", ErrInvalidEmail},
+		"accented email":         {"contact_value", "ívan@gmail.com", "contact_value", ErrInvalidEmail},
+		"sharp s in an email":    {"contact_value", "straße@example.de", "contact_value", ErrInvalidEmail},
+		"full-width domain":      {"contact_value", "ivan@ｇmail.com", "contact_value", ErrInvalidEmail},
+		"cyrillic domain":        {"contact_value", "ivan@пример.укр", "contact_value", ErrInvalidEmail},
 		"unknown method":         {"contact_method", "fax", "contact_method", ErrInvalidChoice},
 		"unknown direction":      {"direction", "astrology", "direction", ErrInvalidChoice},
 		"no direction":           {"direction", "", "direction", ErrRequired},

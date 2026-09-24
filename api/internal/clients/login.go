@@ -75,9 +75,11 @@ type Result struct {
 	// Token of the new session; "" when the code added an address or Telegram to the account of
 	// the browser that asked, which is signed in already.
 	Token string
-	// Created: the account is new; Linked: requests left before with this address joined it.
+	// Created: the account is new; Linked: requests left before with this address joined it;
+	// Merged: the address or Telegram opened another account of the person, which joined this one.
 	Created bool
 	Linked  int
+	Merged  bool
 }
 
 // login is a row of client_logins.
@@ -303,9 +305,10 @@ func startHash(token string) []byte {
 // TelegramCode is what the bot tells the person who opened it with a login.
 type TelegramCode struct {
 	Code    string
-	LinkURL string
+	LinkURL string // none when adding: that is finished by the code only (VerifyLink)
 	Lang    string
 	Adding  bool // the Telegram account is being added to an account, not signed in with
+	Joining bool // … and it signs in to another account now, which the code joins to that one
 }
 
 // ErrUsed: the login was opened in another Telegram account, used, or expired.
@@ -339,10 +342,20 @@ func (s *Service) TelegramStart(ctx context.Context, token string, telegramID in
 		return TelegramCode{}, ErrUsed
 	}
 	code := TelegramCode{Code: s.code(l), Lang: l.lang, Adding: l.clientID > 0}
-	if !code.Adding { // adding a Telegram account is the code's alone (see the top of the file)
+	if !code.Adding {
 		code.LinkURL = s.LinkURL(l.lang, s.linkToken(l))
+	} else if code.Joining, err = s.joins(ctx, "telegram_id = ?", telegramID, l.clientID); err != nil {
+		return TelegramCode{}, err
 	}
 	return code, nil
+}
+
+// joins tells whether the address or Telegram account signs in to another account than the one it
+// is being added to: its code then joins that account to this one (addWay).
+func (s *Service) joins(ctx context.Context, condition string, value any, clientID int64) (bool, error) {
+	var other bool // the condition is sameEmail or "telegram_id = ?"
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM clients WHERE `+condition+` AND id <> ?)`, value, clientID).Scan(&other)
+	return other, err
 }
 
 // VerifyCode finishes the login the browser asked for, with the code it was given.
@@ -386,6 +399,11 @@ func (s *Service) VerifyCode(ctx context.Context, browser, code string, a Attemp
 }
 
 // VerifyLink finishes a login by the link of a letter or of the bot.
+//
+// It signs in only. Adding a way to an account is finished by the code, typed in the browser that
+// asked for it: a link works in any browser, and whoever clicked one — the owner of the address or
+// of the Telegram account, talked into it — would hand that address or Telegram account, their
+// requests and their own account over to the account that asked. Such logins get no link at all.
 func (s *Service) VerifyLink(ctx context.Context, token string, a Attempt) (Result, error) {
 	l, err := s.linkLogin(ctx, token, a)
 	if err != nil {
@@ -450,7 +468,7 @@ func (s *Service) complete(ctx context.Context, l *login, a Attempt) (Result, er
 	}
 	out := Result{Lang: l.lang}
 	if l.clientID > 0 {
-		if err := s.addWay(ctx, l); err != nil {
+		if out.Merged, err = s.addWay(ctx, l); err != nil {
 			return Result{}, err
 		}
 		out.ClientID = l.clientID
@@ -522,18 +540,32 @@ func (s *Service) findOrCreate(ctx context.Context, l *login) (*Client, bool, er
 }
 
 // addWay puts a proven address or Telegram account on the account that asked for the code.
-func (s *Service) addWay(ctx context.Context, l *login) error {
+//
+// When the address or the Telegram account signs in to another account already, the person has
+// just proved both are theirs: they typed, in the browser signed in to this account, the code that
+// went to that address or to that Telegram account — whoever holds the code could sign in there
+// anyway (VerifyLink: no link finishes this). The other account joins this one (Merge: requests,
+// contacts, achievements), so that whichever way they sign in afterwards, it is the same account.
+// A blocked account joins nothing: that is the owner's call.
+func (s *Service) addWay(ctx context.Context, l *login) (merged bool, err error) {
 	condition, value := sameEmail, any(l.email)
 	if l.channel == MethodTelegram {
 		condition, value = "telegram_id = ?", l.telegramID
 	}
 	var owner int64 // the condition is one of the two constants above
-	err := s.opts.DB.QueryRowContext(ctx, `SELECT id FROM clients WHERE `+condition, value).Scan(&owner)
+	var blocked bool
+	err = s.opts.DB.QueryRowContext(ctx, `SELECT id, disabled_at IS NOT NULL FROM clients WHERE `+condition, value).Scan(&owner, &blocked)
 	switch {
+	case err == nil && owner != l.clientID && blocked:
+		return false, ErrTaken
 	case err == nil && owner != l.clientID:
-		return ErrTaken
+		if err := s.Merge(ctx, l.clientID, owner); err != nil {
+			return false, err
+		}
+		merged = true
+		s.opts.Log.Info("account: two accounts of one person became one", "kept", l.clientID, "joined", owner, "by", l.channel)
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
-		return err
+		return false, err
 	}
 	if l.channel == MethodEmail {
 		_, err = s.opts.DB.ExecContext(ctx, `UPDATE clients SET email = ?, updated_at = ? WHERE id = ?`, l.email, s.now(), l.clientID)
@@ -542,9 +574,9 @@ func (s *Service) addWay(ctx context.Context, l *login) error {
 			l.telegramID, nullString(l.telegramUser), s.now(), l.clientID)
 	}
 	if isDuplicate(err) {
-		return ErrTaken
+		return merged, ErrTaken
 	}
-	return err
+	return merged, err
 }
 
 // maskEmail hides most of an address: enough for its owner to recognise it, not for anybody else to learn it.

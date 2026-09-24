@@ -162,46 +162,14 @@ func (b *Bot) clientWrites(ctx context.Context, message *Message, command string
 
 // --- deliveries --------------------------------------------------------------------------------------
 
-// answerClient delivers an answer of the staff to a client who continued in Telegram.
-func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bool) error {
-	lead, err := b.opts.Leads.Get(ctx, leadID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return outbox.Permanent(errors.New("the request is gone (deleted on the client's demand?)"))
-	}
-	if err != nil {
-		return err
-	}
-	chatID, lang, err := b.clientChat(ctx, lead, site)
-	if err != nil {
-		return err
-	}
-	body, _, err := b.opts.Leads.Message(ctx, leadID, messageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return outbox.Permanent(errors.New("the answer is gone"))
-	}
-	if err != nil {
-		return err
-	}
-	text, _ := cut(body, messageLimit-300)
-	message := Outgoing{ChatID: chatID, Text: Escape(fmt.Sprintf(clientText(lang, "answer"), lead.Number())) + "\n\n" + Escape(text)}
-	if lead.ClientID > 0 && b.opts.SiteURL != "" {
-		// A client with a personal account has the whole conversation there as well.
-		message.Buttons = Keyboard{{{Text: clientText(lang, "account"), URL: strings.TrimRight(b.opts.SiteURL, "/") + accountPath(lang) + "#" + lead.Number()}}}
-	}
-	_, err = b.opts.API.Send(ctx, message)
-	var refused *APIError
-	switch {
-	case err == nil && site:
-		return nil // the answer was in the account already; this was the notice of it
-	case err == nil:
-		return b.opts.Leads.MarkDelivery(ctx, messageID, "sent", "")
-	case errors.As(err, &refused) && refused.Gone():
-		if !site {
-			_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
-		}
-		return outbox.Permanent(err) // the client blocked the bot: no retry will help
-	default:
-		return err
+// blocked tells everybody that an answer did not reach the client in Telegram: the client blocked
+// the bot or deleted the account — the answer has to go some other way.
+func (b *Bot) blocked(ctx context.Context, lead *leads.Lead, messageID int64) {
+	text := "⚠️ <b>#" + lead.Number() + "</b> · ответ не доставлен в Telegram\n\n" + Escape(lead.Name) +
+		" заблокировал(а) бота или удалил(а) аккаунт. Свяжитесь другим способом: " + contactLine(lead) + "."
+	buttons := Keyboard{{{Text: "📇 Карточка", Data: leadButtonData("card", lead.ID, "")}}}
+	if err := b.tellStaff(ctx, lead.ID, "blocked:"+strconv.FormatInt(messageID, 10), text, buttons); err != nil && ctx.Err() == nil {
+		b.opts.Log.Warn("telegram: cannot tell the staff about a blocked bot", "lead", lead.Number(), "error", err)
 	}
 }
 

@@ -75,13 +75,15 @@ sudo /opt/krokosha/repo/deploy/restore.sh --from DIR  # восстановить
 
 **Копия на другой машине.** Копия рядом с данными спасает от ошибки, но не от умершего диска. `BACKUP_RSYNC_TO=user@host:/path` в `/etc/krokosha/env` — и каждая копия после создания уезжает туда `rsync`-ом по SSH (ключ root, `BatchMode`: пароль спросить некому; на той стороне нужен `rsync`). Пока переменная пуста, установщик и экран «Статус системы» об этом напоминают. Проверить руками: `sudo /opt/krokosha/repo/deploy/backup.sh` — в конце печатает размер и куда скопировано.
 
+**Копия везёт секреты открытым текстом.** В `config.tar.gz` лежит `/etc/krokosha/env`: пароли базы и почты, `APP_SECRET`, токен бота. Там же письма и файлы клиентов. SSH защищает только дорогу. Поэтому на той стороне нужна машина, которой доверяют как этому серверу: отдельный пользователь, каталог `0700`, диск с шифрованием. Если такой нет, копию стоит отправлять в зашифрованное хранилище (restic или borg с ключом, которого нет на сервере).
+
 **Восстановление** — [`restore.sh`](restore.sh): останавливает API и почту, заменяет базу, письма, файлы и те настройки, которые обязаны остаться прежними (секрет, которым подписаны адреса ответов и ссылки; путь админки; пароль служебного ящика; токен бота; ключи MaxMind и IndexNow; сроки хранения), после чего запускает `install.sh --from-env`, чтобы nginx, почтовый сервер и API всё подхватили. Пароли базы и Redis остаются свои у каждой установки. Без `--yes` просит набрать домен — восстановление **заменяет** то, что есть.
 
 ```bash
 sudo /opt/krokosha/repo/deploy/restore.sh --from /srv/krokosha/backups/latest
 ```
 
-Статус последней копии виден на экране «Статус системы»; если копия не сделалась, владелец получает письмо и сообщение в Telegram (один раз в сутки).
+Статус последней копии виден на экране «Статус системы»; если копия не сделалась, владелец получает письмо и сообщение в Telegram (один раз в сутки). Там же кнопка «Сделать сейчас»: как и «Пересобрать», веб-сервис только кладёт файл-запрос `/var/lib/krokosha/requests/backup`, а `krokosha-backup-now.path` запускает ту же ночную копию от root (не больше четырёх раз в час). `backup.sh` удаляет запрос первым делом — от имени пользователя сайта, как и всё, что root делает в его каталогах.
 
 ### Переезд на другой сервер
 
@@ -157,6 +159,7 @@ sudo systemd-run --pipe --wait --uid=krokosha --gid=krokosha -p EnvironmentFile=
 - **IndexNow** — включён по умолчанию (`--no-indexnow` выключает). Установщик один раз генерирует ключ (`INDEXNOW_KEY`), сайт отдаёт его как `/<ключ>.txt`, а [`build-release.sh`](bin/build-release.sh) после каждого релиза сообщает на `api.indexnow.org`, **какие страницы изменились** (сборка воспроизводима: страница, чьё HTML совпало с прошлым релизом, не менялась). Оттуда узнают Bing (и через его индекс DuckDuckGo, Ecosia и другие), Yandex, Naver, Seznam. Google в IndexNow не участвует.
 - **Google Search Console** — один раз руками: [search.google.com/search-console](https://search.google.com/search-console) → «Добавить ресурс» → тип **Домен** (`krokosha.com`) → подтвердить TXT-записью в DNS (или тип «Префикс URL» с HTML-тегом — тег добавляется в `content/site.yaml`, ключ `verification.google`, и попадает в `<head>` при следующей сборке). После подтверждения: «Файлы Sitemap» → `https://krokosha.com/sitemap.xml`. Там же потом видны запросы, позиции и ошибки индексации.
 - **Bing Webmaster Tools** — [bing.com/webmasters](https://www.bing.com/webmasters): проще всего «Импортировать из Google Search Console» (даёт доступ к уже подтверждённому ресурсу), иначе — та же TXT-запись или мета-тег (`verification.bing` в `content/site.yaml`). Sitemap туда тоже добавить: `https://krokosha.com/sitemap.xml`. Bing показывает и приём IndexNow («IndexNow» в меню).
+- **Иконка сайта в выдаче Google.** Google берёт иконку, на которую ссылается главная страница, и только если её сторона кратна 48 px. Поэтому сайт отдаёт `favicon-96.png` (96×96) и `favicon.ico` (16/32/48), а браузерам — `favicon.svg`. Без иконки подходящего размера релиз не выйдет: это проверяет `check-dist`. Google обновляет иконки сам, от нескольких дней до недель. Ускорить: в Search Console → «Проверка URL» → `https://krokosha.com/` → «Запросить индексирование». Что Google уже взял, видно по адресу `https://www.google.com/s2/favicons?domain=krokosha.com&sz=96`. У старого `krokosha.xyz` иконки в выдаче не будет: он переадресует на новый домен и уйдёт из выдачи после «Изменения адреса» (раздел «Смена домена»).
 - `robots.txt` и `sitemap.xml` собираются сайтом сами; админка в них не упоминается.
 
 ## Как устроен релиз
@@ -171,7 +174,15 @@ sudo systemd-run --pipe --wait --uid=krokosha --gid=krokosha -p EnvironmentFile=
 
 Кроме таймера сборку запускает кнопка «Пересобрать сейчас» в админке: `krokosha-rebuild.path` следит за файлом-запросом и стартует тот же юнит. У веб-сервиса нет прав что-либо запускать — только положить этот файл.
 
-npm и сборка запускаются с **чистым окружением**: секреты из `/etc/krokosha/env` (токен GitHub, позже — почта и бот) стороннему коду не видны. Сам юнит изолирован средствами systemd (`ProtectSystem=strict`, без привилегий, лимит памяти), чтобы сборка не мешала остальному на небольшом VPS.
+npm и сборка исполняют **сторонний код** (зависимости из npm), поэтому им не видно ничего лишнего и почти ничего нельзя менять:
+
+- **Секреты.** npm получает чистое окружение. Сам скрипт после шага 1 (единственного, где нужен токен GitHub) перезапускается без всего из `/etc/krokosha/env`: процесс может прочитать `/proc/<pid>/environ` родителя, если тот работает от того же пользователя. API и `krokosha-cli` сразу при старте становятся «недампируемыми» (`PR_SET_DUMPABLE=0`, `internal/hardening`): их окружение и память не читает никто, кроме root.
+- **Запись.** Юнит (`ProtectSystem=strict`) пишет только туда, куда пишет сборка, — это проверено трассировкой полной сборки: `web/` в репозитории (`node_modules`, `dist`, `.astro`), `content/generated` (данные GitHub), кэши npm и GitHub, `status/` (отчёт и блокировка), `requests/` (кнопка пересборки), `/var/www/krokosha`. Всё, что запускает root (`deploy/`: резервная копия, сертификаты, обновление), из чего собираются программы (`api/`, кэши Go) и что читает git (`.git/`, `~/.gitconfig`), сборке доступно только для чтения. Иначе вредоносный пакет из npm мог бы дописать `backup.sh`, и ночью root выполнил бы его.
+- **Чтение.** Файлы заявок, запросы к почтовым ящикам (хэши паролей) и процессы других пользователей сборке не видны (`InaccessiblePaths`, `ProtectProc=invisible`).
+
+Лимит памяти и низкий приоритет — чтобы сборка не мешала остальному на небольшом VPS.
+
+**Правило для root-скриптов.** В каталогах пользователя сайта (`/var/lib/krokosha`, `/var/www/krokosha`) root ничего не создаёт, не пишет и не читает по имени: пользователь может подложить на место любого имени симлинк, и root пошёл бы по нему — в `/etc/shadow` в том числе. Отчёты `backup.sh` и `krokosha-certwatch` пишет пользователь сайта (`write_as_site_user`, `setpriv`); `krokosha-mailbox` читает запросы и пишет журнал тоже от его имени; каталоги там создаёт `as_site_user mkdir`, а не `install -d -o`.
 
 ## Nginx
 
@@ -245,6 +256,8 @@ sudo fail2ban-client status krokosha-admin              # кто забанен
 sudo fail2ban-client set krokosha-admin unbanip АДРЕС   # снять бан (например, свой)
 ```
 
+Спрашивать fail2ban может только root, поэтому каждые 10 минут `krokosha-fail2ban.timer` → [`bin/krokosha-fail2ban-report`](bin/krokosha-fail2ban-report) записывает в `/var/lib/krokosha/status/fail2ban.json`, сколько адресов в бане в каждом jail — сейчас и с запуска fail2ban. Сами адреса никуда не пишутся. Экран «Статус системы» показывает этот счёт.
+
 ## Фаервол и то, что уже живёт на сервере
 
 Установщик трогает только своё (docs/architecture.md §5):
@@ -271,12 +284,12 @@ deploy/
 ├── docker/staging/     локальный стенд: контейнер-«VPS» и staging.sh
 ├── backup.sh           резервная копия: дамп базы, настройки, сертификаты, письма и файлы (жёсткие ссылки), ротация, rsync наружу
 ├── restore.sh          восстановление из копии на установленный сайт (в т. ч. на новом сервере)
-├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза, IndexNow; krokosha-certwatch; krokosha-mailbox;
+├── bin/                build-release.sh — sync, сборка, проверка, публикация релиза, IndexNow; krokosha-certwatch; krokosha-fail2ban-report; krokosha-mailbox;
 │                       krokosha-dbip-update — база DB-IP City Lite раз в месяц
 ├── lib/                common.sh — общие функции: журнал, шаблоны, /etc/krokosha/env
 ├── nginx/              шаблоны сайта (@@ИМЯ@@ → значение), сниппеты TLS / заголовков / сжатия, формат лога
-├── systemd/            krokosha-api.service, krokosha-sync.service + .timer, krokosha-rebuild.path,
-│                       krokosha-backup, krokosha-certwatch, krokosha-geoipupdate, krokosha-dbip (.service + .timer)
+├── systemd/            krokosha-api.service, krokosha-sync.service + .timer, krokosha-rebuild.path, krokosha-backup-now.path,
+│                       krokosha-backup, krokosha-certwatch, krokosha-fail2ban, krokosha-geoipupdate, krokosha-dbip (.service + .timer)
 ├── logrotate/          ротация access-лога: 30 дней
 ├── fail2ban/           jail для sshd и для входа в админку (+ фильтр)
 ├── env/                .env.example — описание /etc/krokosha/env

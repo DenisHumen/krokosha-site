@@ -109,16 +109,31 @@ server {
     # the rest: every password check costs the server 64 MB and a good part of a second.
     location ^~ @@ADMIN_PATH@@/ {
         limit_req zone=krokosha_admin burst=40 nodelay;
+        client_max_body_size 64k;
+        include snippets/krokosha-admin.conf;
+    }
+
+    # Forms with files: an answer with photos and videos, the files of a template. nginx takes the
+    # body first (buffered, so that a slow upload does not hold the API's reading of it); the API
+    # then checks the session and the origin before it parses a byte, the CSRF token after, and
+    # caps the body at 110 MB. Only who knows the secret path gets here, two uploads at a time.
+    location ^~ @@ADMIN_PATH@@/upload/ {
+        limit_req zone=krokosha_admin burst=40 nodelay;
+        limit_conn krokosha_uploads 2;
+        limit_conn_status 429;
+        client_max_body_size 110m;
         include snippets/krokosha-admin.conf;
     }
 
     location = @@ADMIN_PATH@@/login {
         limit_req zone=krokosha_login burst=10 nodelay;
+        client_max_body_size 64k;
         include snippets/krokosha-admin.conf;
     }
 
     location = @@ADMIN_PATH@@/login/code {
         limit_req zone=krokosha_login burst=10 nodelay;
+        client_max_body_size 64k;
         include snippets/krokosha-admin.conf;
     }
 

@@ -16,7 +16,8 @@ KEEP_RELEASES=${KEEP_RELEASES:-3}
 log() { printf '[build-release] %s\n' "$*"; }
 
 # npm and the site build run third-party code. They get a clean environment: nothing from
-# /etc/krokosha/env (GitHub token, later mail and bot credentials) is visible to them.
+# /etc/krokosha/env (GitHub token, later mail and bot credentials) is visible to them — not in
+# their own environment (here), not in this script's (see «Stage two» below).
 # The VPS has 2 GB of RAM shared with mail and the API, hence the heap limit.
 node_env() {
   env -i \
@@ -35,21 +36,8 @@ node_env() {
 
 [[ -n ${SITE_URL:-} ]] || { log "SITE_URL is not set (expected from /etc/krokosha/env)"; exit 1; }
 
-mkdir -p "$STATE/cache" "$STATE/status" "$STATE/requests" "$WWW/releases"
-# The «rebuild now» button of the admin area drops this file, krokosha-rebuild.path starts this
-# script because of it. It goes first thing: while it exists systemd would start us again.
-rm -f "$STATE/requests/rebuild"
-
-exec 9>"$STATE/build.lock"
-if ! flock -n 9; then
-  log "another build is running, nothing to do"
-  exit 0
-fi
-
 # A report for the «system status» screen: how the last run ended and where it stopped.
 # Every value below is one of our own words or a timestamp — nothing that would need escaping.
-started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-step=sync github=failed release_name=''
 report() { # report EXIT_CODE
   local ok=false tmp
   [[ $1 -eq 0 ]] && ok=true
@@ -59,16 +47,46 @@ report() { # report EXIT_CODE
   chmod 0644 "$tmp"
   mv -f "$tmp" "$STATE/status/sync.json"
 }
-trap 'report $?' EXIT
 
-# 1. GitHub data. A failure is not fatal: the site is built from the cached answer,
-#    or from the committed snapshot on the very first run.
-if "$ROOT/bin/krokosha-cli" sync --content "$REPO/content" --cache "$STATE/cache/github"; then
-  github=ok
-  log "GitHub sync: ok"
-else
-  log "GitHub sync failed — building from what is already there"
+if [[ ${BUILD_STAGE:-} != build ]]; then
+  mkdir -p "$STATE/cache" "$STATE/status" "$STATE/requests" "$WWW/releases"
+  # The «rebuild now» button of the admin area drops this file, krokosha-rebuild.path starts this
+  # script because of it. It goes first thing: while it exists systemd would start us again.
+  rm -f "$STATE/requests/rebuild"
+
+  # In status/: the sandbox of krokosha-sync.service lets the build write there and not next to it.
+  exec 9>"$STATE/status/.build.lock"
+  if ! flock -n 9; then
+    log "another build is running, nothing to do"
+    exit 0
+  fi
+
+  started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  step=sync github=failed release_name=''
+  trap 'report $?' EXIT
+
+  # 1. GitHub data. A failure is not fatal: the site is built from the cached answer,
+  #    or from the committed snapshot on the very first run.
+  if "$ROOT/bin/krokosha-cli" sync --content "$REPO/content" --cache "$STATE/cache/github"; then
+    github=ok
+    log "GitHub sync: ok"
+  else
+    log "GitHub sync failed — building from what is already there"
+  fi
+
+  # Stage two. The GitHub token was the one secret the build needs, and the unit gave this script
+  # all of /etc/krokosha/env. npm and the site build run as this very user, and a process can read
+  # /proc/<pid>/environ of its parent: the script starts over with only what is left to do and
+  # nothing secret. The lock (fd 9) goes along.
+  exec env -i BUILD_STAGE=build BUILD_STARTED_AT="$started_at" BUILD_GITHUB="$github" \
+    PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 HOME="$STATE" \
+    KROKOSHA_ROOT="$ROOT" KROKOSHA_REPO="$REPO" KROKOSHA_STATE="$STATE" KROKOSHA_WWW="$WWW" \
+    KEEP_RELEASES="$KEEP_RELEASES" BUILD_NODE_OPTIONS="${BUILD_NODE_OPTIONS:-}" \
+    SITE_URL="$SITE_URL" INDEXNOW_KEY="${INDEXNOW_KEY:-}" INDEXNOW_API="${INDEXNOW_API:-}" \
+    "$BASH" "${BASH_SOURCE[0]}"
 fi
+started_at=$BUILD_STARTED_AT github=$BUILD_GITHUB step=sync release_name=''
+trap 'report $?' EXIT
 
 # 2. Dependencies, only when the lock file changed.
 step=dependencies

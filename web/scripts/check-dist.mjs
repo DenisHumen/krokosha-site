@@ -101,6 +101,32 @@ function checkInternalLinks(file, html) {
   }
 }
 
+/** Width and height of a PNG file, read from its header. */
+function pngSize(file) {
+  const data = readFileSync(join(dist, file));
+  if (data.toString('latin1', 1, 4) !== 'PNG') return null;
+  return [data.readUInt32BE(16), data.readUInt32BE(20)];
+}
+
+// Google Search shows a site icon only when the home page links one whose side is a multiple of
+// 48 px (developers.google.com/search/docs/appearance/favicon-in-search); an SVG it may skip.
+function checkIcons(file, html) {
+  const links = [...html.matchAll(/<link\b[^>]*>/g)].map(([tag]) =>
+    Object.fromEntries(
+      [...tag.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, name, value]) => [name, value]),
+    ),
+  );
+  const accepted = links.some((link) => {
+    if (!/(^|\s)icon$/.test(link.rel ?? '') || !/^\/[^/].*\.png$/.test(link.href ?? ''))
+      return false;
+    if (!existsSync(join(dist, link.href))) return false;
+    const [width, height] = pngSize(link.href) ?? [];
+    return width > 0 && width === height && width % 48 === 0 && link.sizes === `${width}x${height}`;
+  });
+  if (!accepted)
+    fail(file, 'no icon Google Search accepts: a square PNG whose side is a multiple of 48 px');
+}
+
 // Home pages
 for (const [lang, prefix] of Object.entries(LOCALES)) {
   const file = `${prefix}index.html`;
@@ -127,7 +153,15 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
     if (!types.includes(type)) fail(file, `JSON-LD ${type} is missing`);
   }
   checkInternalLinks(file, html);
+  checkIcons(file, html);
 }
+
+// Browsers and crawlers ask for /favicon.ico when a page links no icon (the admin area, feeds).
+const favicon = existsSync(join(dist, 'favicon.ico'))
+  ? readFileSync(join(dist, 'favicon.ico'))
+  : null;
+if (!favicon || favicon.length < 6 || favicon.readUInt32LE(0) !== 0x00010000)
+  fail('favicon.ico', 'missing or not an icon file');
 
 // The contact form (brief B10.1): it must work as a plain HTML form, because for a visitor
 // without JavaScript that is all there is.

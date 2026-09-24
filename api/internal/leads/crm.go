@@ -156,6 +156,15 @@ func escapeLike(text string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
 }
 
+// ChannelMessages counts the messages of clients and the answers to them in one channel since a
+// moment: the «Бот» screen says how busy Telegram is.
+func (s *Store) ChannelMessages(ctx context.Context, channel string, since time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lead_messages WHERE channel = ? AND direction IN ('in', 'out') AND created_at >= ?`,
+		channel, since.UTC()).Scan(&count)
+	return count, err
+}
+
 // Counts returns how many requests there are in each status.
 func (s *Store) Counts(ctx context.Context) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM leads GROUP BY status`)
@@ -200,7 +209,9 @@ type Card struct {
 	AnonymizedAt    sql.NullTime // set when the storage period ran out: the person and the conversation are gone
 	// ReplyVia is how the next answer will reach the client: email | telegram | phone.
 	ReplyVia string
-	Feed     []Entry
+	// BotLinked: the client opened the bot by the link of this request (ClientLinked).
+	BotLinked bool
+	Feed      []Entry
 }
 
 // Card reads a request with its conversation and history, oldest first.
@@ -220,6 +231,10 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
 	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod, lead.ClientID); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM lead_events WHERE lead_id = ? AND action = 'client_linked')`, id).
+		Scan(&card.BotLinked); err != nil {
 		return nil, err
 	}
 
@@ -376,11 +391,14 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 
 // replyChannel says how an answer reaches the client: the way the client wrote last. Somebody who
 // left an email address and then continued in Telegram is answered in Telegram; before they write
-// anything, the contact of the form decides. A client with a personal account who left only a phone
-// is answered in the account: the answer is there at once, and the client is told about it.
+// anything, the contact of the form decides. Opening the bot by the link of the «thank you» page
+// counts as coming to Telegram: the bot told the client the answer would come to that chat. A client
+// with a personal account who left only a phone is answered in the account: the answer is there at
+// once, and the client is told about it.
 func replyChannel(ctx context.Context, db querier, id int64, method string, clientID int64) (string, error) {
 	var last string
-	err := db.QueryRowContext(ctx, `SELECT channel FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last)
+	var lastAt time.Time
+	err := db.QueryRowContext(ctx, `SELECT channel, created_at FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last, &lastAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		last = method
@@ -388,6 +406,16 @@ func replyChannel(ctx context.Context, db querier, id int64, method string, clie
 		return "", err
 	case last == ChannelEmail && method != MethodEmail:
 		last = method // a letter from somebody whose address the form does not have: see the mail step
+	}
+	if last != ChannelTelegram {
+		var linkedAt time.Time
+		err := db.QueryRowContext(ctx, `SELECT created_at FROM lead_events WHERE lead_id = ? AND action = 'client_linked' ORDER BY id DESC LIMIT 1`, id).Scan(&linkedAt)
+		switch {
+		case err == nil && linkedAt.After(lastAt): // lastAt is zero when the client wrote nothing yet
+			last = ChannelTelegram
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return "", err
+		}
 	}
 	if last == MethodPhone && clientID > 0 {
 		return ChannelSite, nil
@@ -400,9 +428,41 @@ func replyChannel(ctx context.Context, db querier, id int64, method string, clie
 // of «time to first reaction». A phone call cannot be delivered by a machine: for those the
 // text is the record of the call.
 func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messageID int64, err error) {
-	text = clean(text, true)
-	if text == "" {
+	return s.ReplyWith(ctx, id, actor, Answer{Text: text})
+}
+
+// Answer is what the staff send: the text, the templates it was made from, the files of those
+// templates that go along, and files attached by hand — already kept in the attachments
+// (SaveOutgoing). What is not stored in the end is removed from the disk: the caller need not.
+type Answer struct {
+	Text      string
+	Templates []int64
+	Media     []int64 // files of templates (Media.ID)
+	Files     []Upload
+}
+
+// ReplyWith is Reply with templates and files: the files of templates get a copy of their own in
+// the request (a hard link), and every file becomes an attachment of the answer.
+func (s *Store) ReplyWith(ctx context.Context, id int64, actor string, answer Answer) (messageID int64, err error) {
+	var linked []Upload
+	defer func() {
+		if err == nil {
+			return
+		}
+		for _, file := range append(linked, answer.Files...) {
+			if s.files != nil {
+				_ = s.files.Remove(file.StoredAs)
+			}
+		}
+	}()
+	text := clean(answer.Text, true)
+	switch {
+	case text == "" && len(answer.Media)+len(answer.Files) == 0:
 		return 0, ErrEmptyText
+	case len(answer.Media)+len(answer.Files) > MaxOutgoingFiles:
+		return 0, ErrTooManyFiles
+	case len(answer.Media)+len(answer.Files) > 0 && s.files == nil:
+		return 0, ErrNoFilesHere
 	}
 	now := s.now().UTC()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -423,6 +483,13 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	if err != nil {
 		return 0, err
 	}
+	if channel == MethodPhone && len(answer.Media)+len(answer.Files) > 0 {
+		return 0, ErrNoFilesByPhone
+	}
+	templates, err := existingTemplates(ctx, tx, answer.Templates)
+	if err != nil {
+		return 0, err
+	}
 	delivery := sql.NullString{String: "queued", Valid: true}
 	switch channel {
 	case MethodPhone:
@@ -430,13 +497,48 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	case ChannelSite:
 		delivery.String = "sent" // it is in the account the moment it is stored; the notice about it is a task of its own
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, delivery) VALUES (?, ?, 'out', ?, ?, ?, ?)`,
-		id, now, channel, actor, cut(text, 8000), delivery)
+	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, templates, delivery) VALUES (?, ?, 'out', ?, ?, ?, NULLIF(?, ''), ?)`,
+		id, now, channel, actor, cut(text, 8000), cut(joinIDs(templates), 255), delivery)
 	if err != nil {
 		return 0, err
 	}
 	if messageID, err = result.LastInsertId(); err != nil {
 		return 0, err
+	}
+	// The files of templates: a copy of each, in the order they were chosen.
+	for _, mediaID := range answer.Media {
+		var file Upload
+		var storedAs string
+		err := tx.QueryRowContext(ctx, `SELECT filename, kind, size, sha256, stored_as FROM template_media WHERE id = ?`, mediaID).
+			Scan(&file.Filename, &file.Kind, &file.Size, &file.SHA256, &storedAs)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // removed from its template a moment ago: the rest goes
+		}
+		if err != nil {
+			return 0, err
+		}
+		if s.media == nil {
+			return 0, ErrNoFilesHere
+		}
+		copied, err := s.files.Link(s.media, storedAs, file)
+		if err != nil {
+			return 0, err
+		}
+		linked = append(linked, copied)
+	}
+	for _, file := range append(append([]Upload(nil), linked...), answer.Files...) {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lead_attachments (lead_id, message_id, created_at, filename, kind, size, sha256, stored_as) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, messageID, now, cut(file.Filename, 255), file.Kind, file.Size, file.SHA256, file.StoredAs); err != nil {
+			return 0, err
+		}
+	}
+	if len(templates) > 0 {
+		args := append([]any{now}, idsAsArgs(templates)...)
+		used := `UPDATE reply_templates SET used_count = used_count + 1, used_at = ? WHERE id IN (` + placeholders(len(templates)) + `)` //nolint:gosec // placeholders only
+		if _, err := tx.ExecContext(ctx, used, args...); err != nil {
+			return 0, err
+		}
 	}
 
 	next := StatusWaitingClient
@@ -710,6 +812,20 @@ func (s *Store) Message(ctx context.Context, leadID, messageID int64) (body, aut
 	return body, who.String, err
 }
 
+// SentParts is how many parts of an answer reached Telegram — the text in pieces, then the
+// albums: a retry after a failure sends only the rest.
+func (s *Store) SentParts(ctx context.Context, messageID int64) (int, error) {
+	var parts int
+	err := s.db.QueryRowContext(ctx, `SELECT sent_parts FROM lead_messages WHERE id = ?`, messageID).Scan(&parts)
+	return parts, err
+}
+
+// MarkSentParts records that the first parts of an answer are delivered.
+func (s *Store) MarkSentParts(ctx context.Context, messageID int64, parts int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET sent_parts = ? WHERE id = ? AND sent_parts < ?`, parts, messageID, parts)
+	return err
+}
+
 // MarkDelivery records what became of an answer: sent or failed.
 func (s *Store) MarkDelivery(ctx context.Context, messageID int64, delivery, emailMessageID string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET delivery = ?, email_message_id = COALESCE(NULLIF(?, ''), email_message_id) WHERE id = ?`,
@@ -781,6 +897,8 @@ func event(ctx context.Context, tx *sql.Tx, id int64, now time.Time, actor, acti
 // Funnel is the summary above the list (brief B10.6).
 type Funnel struct {
 	Total, New, InProgress, Waiting, Done, Rejected, Spam int
+	// Amount is what the completed ones came to, as the owner entered it (Lead.Amount).
+	Amount float64
 	// FirstResponse is the median time from a request to the first answer; zero when unknown.
 	FirstResponse time.Duration
 	Sources       []SourceStat
@@ -799,9 +917,10 @@ func (s *Store) Funnel(ctx context.Context, from, to time.Time) (*Funnel, error)
 	out := &Funnel{}
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(status = 'new'), 0), COALESCE(SUM(status = 'in_progress'), 0), COALESCE(SUM(status = 'waiting_client'), 0),
-		       COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status = 'rejected'), 0), COALESCE(SUM(status = 'spam'), 0)
+		       COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status = 'rejected'), 0), COALESCE(SUM(status = 'spam'), 0),
+		       COALESCE(SUM(IF(status = 'done', COALESCE(amount, 0), 0)), 0)
 		FROM leads WHERE created_at >= ? AND created_at < ?`, from.UTC(), to.UTC()).
-		Scan(&out.Total, &out.New, &out.InProgress, &out.Waiting, &out.Done, &out.Rejected, &out.Spam)
+		Scan(&out.Total, &out.New, &out.InProgress, &out.Waiting, &out.Done, &out.Rejected, &out.Spam, &out.Amount)
 	if err != nil {
 		return nil, err
 	}
@@ -884,75 +1003,4 @@ func (s *Store) Export(ctx context.Context, fn func(row []string) error) error {
 		}
 	}
 	return rows.Err()
-}
-
-// --- ready-made answers --------------------------------------------------------------------------
-
-// Template is a ready-made answer or refusal, editable in the admin area.
-type Template struct {
-	ID    int64
-	Kind  string // reply | reject
-	Lang  string
-	Title string
-	Body  string
-}
-
-// Templates lists the templates of a kind ("" = all) in the order of the editor.
-func (s *Store) Templates(ctx context.Context, kind string) ([]Template, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, lang, title, body FROM reply_templates WHERE (? = '' OR kind = ?) ORDER BY kind, lang, position, id`, kind, kind)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Template
-	for rows.Next() {
-		var item Template
-		if err := rows.Scan(&item.ID, &item.Kind, &item.Lang, &item.Title, &item.Body); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
-
-// SaveTemplate adds a template (ID 0) or changes one.
-func (s *Store) SaveTemplate(ctx context.Context, item Template) error {
-	item.Title, item.Body = clean(item.Title, false), clean(item.Body, true)
-	if item.Title == "" || item.Body == "" {
-		return ErrEmptyText
-	}
-	if item.Kind != "reply" && item.Kind != "reject" {
-		return errors.New("a template is a reply or a reject")
-	}
-	if !languages[item.Lang] {
-		return errors.New("unknown language of a template")
-	}
-	now := s.now().UTC()
-	if item.ID == 0 {
-		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO reply_templates (kind, lang, position, title, body, updated_at)
-			SELECT ?, ?, COALESCE(MAX(position), 0) + 1, ?, ?, ? FROM reply_templates WHERE kind = ? AND lang = ?`,
-			item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.Kind, item.Lang)
-		return err
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE reply_templates SET kind = ?, lang = ?, title = ?, body = ?, updated_at = ? WHERE id = ?`,
-		item.Kind, item.Lang, cut(item.Title, 100), cut(item.Body, 8000), now, item.ID)
-	if err != nil {
-		return err
-	}
-	if changed, _ := result.RowsAffected(); changed == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// DeleteTemplate removes a template.
-func (s *Store) DeleteTemplate(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM reply_templates WHERE id = ?`, id)
-	return err
-}
-
-// FillTemplate puts the client's name and the number of the request into a template.
-func FillTemplate(body string, lead *Lead) string {
-	return strings.NewReplacer("{name}", lead.Name, "{id}", "#"+lead.Number()).Replace(body)
 }

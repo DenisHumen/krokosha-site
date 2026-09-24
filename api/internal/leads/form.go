@@ -201,7 +201,7 @@ func clean(text string, multiline bool) string {
 }
 
 func normalizeEmail(value string) string {
-	if len(value) > 200 || strings.ContainsAny(value, " \t\r\n<>()[],;:\\\"") {
+	if len(value) > 200 || strings.ContainsAny(value, " \t\r\n<>()[],;:\\\"") || !isASCII(value) {
 		return ""
 	}
 	parsed, err := mail.ParseAddress(value)
@@ -213,6 +213,20 @@ func normalizeEmail(value string) string {
 		return ""
 	}
 	return local + "@" + strings.ToLower(domain)
+}
+
+// isASCII: an address is a person's identity here (the account, the history of requests, the
+// discounts), and MySQL compares text by its collation, not by bytes — ívan@ is ivan@ to it, straße@
+// is strasse@, a full-width ｇmail.com is gmail.com. Only ASCII leaves nothing to such rules but
+// case, and our mail server could not deliver to anything else anyway (no SMTPUTF8). A domain in
+// another script is typed as punycode: ivan@xn--80a1acny.xn--p1ai.
+func isASCII(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // normalizeTelegram accepts «@name», «name» and links to t.me, and returns «@name».

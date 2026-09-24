@@ -1,176 +1,136 @@
-{{define "content"}}
-  {{$t := .Data.Traffic}}
-  <div class="page-head">
-    <h1>Трафик сервера · {{.Data.Period.Title}}</h1>
+{{define "head"}}
+  <div class="head">
+    <h1>Трафик · лог сервера · {{.Data.Period.Kind}}</h1>
     {{template "period" .Data.Period}}
   </div>
+{{end}}
 
-  <div class="dashboard">
-    <div class="dash-main">
-      <section class="card">
-        <h2 class="card-title">Запросы</h2>
-        <div class="card-body">
-          {{.Data.Requests}}
-          <p class="legend">
-            <span class="legend-item"><span class="swatch swatch-accent"></span>Браузеры</span>
-            <span class="legend-item"><span class="swatch swatch-cyan"></span>Боты и программы</span>
-            <span class="legend-item muted">Всё, что отдал nginx — в том числе без JavaScript</span>
-          </p>
-        </div>
-      </section>
+{{define "content"}}
+  {{$d := .Data}}
+  {{$t := $d.Traffic}}
+  <section class="tiles">
+    <div class="tile tile-accent tile-stat">
+      <span class="label">Запросов</span>
+      <div class="num-row"><span class="num">{{count $t.Totals.Requests}}</span><span class="num-sub">/ {{$d.Period.Short}}</span></div>
+    </div>
+    <div class="tile tile-stat">
+      <span class="label">Люди</span>
+      <div class="num-row"><span class="num">{{pct (share (sub $t.Totals.Requests $t.Totals.Bots) $t.Totals.Requests)}}</span><span class="num-sub">{{count (sub $t.Totals.Requests $t.Totals.Bots)}}</span></div>
+    </div>
+    <div class="tile tile-stat">
+      <span class="label">Боты и программы</span>
+      <div class="num-row"><span class="num">{{pct $d.BotShare}}</span><span class="num-sub">{{count $t.Totals.Bots}}</span></div>
+    </div>
+    <div class="tile tile-beige tile-stat">
+      <span class="label">Ошибки 5xx</span>
+      <div class="num-row"><span class="num">{{decimalPct $d.Error5xx}}</span><span class="num-sub">{{count (index $t.Totals.Status 3)}} шт</span></div>
+    </div>
 
-      <section class="card">
-        <h2 class="card-title">Передано данных</h2>
-        <div class="card-body">{{.Data.Bytes}}</div>
-      </section>
-
-      <div class="dash-split">
-        <div class="stack">
-          <section class="card">
-            <h2 class="card-title">Страницы и файлы</h2>
-            <div class="card-body">
-              <ul class="rows rows-plain">
-                {{range $t.Pages}}
-                  <li class="row"><span class="row-name mono">{{.Path}}</span><span class="row-value">{{count .Hits}}</span><span class="row-value">{{bytes .Bytes}}</span></li>
-                {{else}}
-                  <li class="muted">Нет данных за период.</li>
-                {{end}}
-              </ul>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2 class="card-title">Не найдено (404)</h2>
-            <div class="card-body">
-              <ul class="rows rows-plain">
-                {{range $t.Missing}}
-                  <li class="row"><span class="row-name mono">{{.Path}}</span><span class="row-value">{{count .Hits}}</span></li>
-                {{else}}
-                  <li class="muted">Ни одного — битых ссылок нет.</li>
-                {{end}}
-              </ul>
-              {{if $t.Spikes}}
-                <h3 class="card-subtitle">Всплески</h3>
-                <ul class="rows rows-plain">
-                  {{range $t.Spikes}}
-                    <li class="row"><span class="row-name">{{time .Start}}</span><span class="row-value">{{count .NotFound}} из {{count .Requests}}</span><span class="row-value">{{if .Probes}}сканер{{else}}ссылки{{end}}</span></li>
-                  {{end}}
-                </ul>
-              {{end}}
-            </div>
-          </section>
-
-          {{if $t.Failed}}
-            <section class="card">
-              <h2 class="card-title">Ошибки сервера (5xx)</h2>
-              <div class="card-body">
-                <ul class="rows rows-plain">
-                  {{range $t.Failed}}
-                    <li class="row"><span class="row-name mono">{{.Path}}</span><span class="row-value">{{.Status}}</span><span class="row-value">{{count .Hits}}</span></li>
-                  {{end}}
-                </ul>
-              </div>
-            </section>
-          {{end}}
-        </div>
-
-        <div class="stack">
-          <section class="card">
-            <h2 class="card-title">Поисковики и боты</h2>
-            <div class="card-body">
-              <ul class="rows">
-                {{range $t.Bots}}
-                  <li class="row"><span class="row-share">{{pct .Percent}}</span><span class="row-name">{{.Agent}}</span>{{bar .Percent "cyan"}}<span class="row-value">{{count .Hits}}</span></li>
-                {{else}}
-                  <li class="muted">За период не заходили.</li>
-                {{end}}
-              </ul>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2 class="card-title">Браузеры и программы</h2>
-            <div class="card-body">
-              <ul class="rows">
-                {{range $t.Clients}}
-                  <li class="row"><span class="row-share">{{pct .Percent}}</span><span class="row-name">{{.Agent}}{{if eq .Kind "tool"}} <span class="tag">программа</span>{{end}}</span>{{bar .Percent "accent"}}<span class="row-value">{{count .Hits}}</span></li>
-                {{else}}
-                  <li class="muted">Нет данных за период.</li>
-                {{end}}
-              </ul>
-            </div>
-          </section>
-        </div>
+    <section class="tile span-2">
+      <div class="tile-head"><span>Запросы {{if $t.Hourly}}по часам{{else}}по дням{{end}} · люди / боты</span><span class="aside">передано {{bytes $t.Totals.Bytes}}</span></div>
+      <div class="hours" role="img" aria-label="Запросы к серверу: всего {{$t.Totals.Requests}}, из них от ботов и программ {{$t.Totals.Bots}}">
+        {{range $d.Requests}}<div class="hour" title="{{.Title}}"><span class="h-{{.Top}}"></span><span class="hour-bots h-{{.Bottom}}"></span></div>{{end}}
       </div>
-    </div>
+      <div class="axis">{{range $d.Axis}}<span>{{.}}</span>{{end}}</div>
+      <p class="legend"><span><span class="swatch"></span>браузеры</span><span><span class="swatch swatch-dark"></span>боты и программы</span><span>всё, что отдал nginx — в том числе без JavaScript</span></p>
+    </section>
 
-    <div class="dash-side stack">
-      <section class="card">
-        <h2 class="card-title">Итого</h2>
-        <div class="card-body">
-          <div class="figures">
-            <div><p class="figure-label">Запросов</p><p class="figure">{{count $t.Totals.Requests}}</p></div>
-            <div><p class="figure-label">Передано</p><p class="figure">{{bytes $t.Totals.Bytes}}</p></div>
+    <section class="tile">
+      <span class="label">Поисковики и боты</span>
+      <div class="lines">
+        {{range $i, $b := $t.Bots}}{{if lt $i 6}}<div class="line"><span>{{$b.Agent}}</span><span class="soft">{{count $b.Hits}}</span></div>{{end}}{{else}}<p class="empty">За период не заходили.</p>{{end}}
+      </div>
+    </section>
+
+    <section class="tile">
+      <span class="label">Коды ответа</span>
+      <div class="lines">
+        {{range $d.Statuses}}
+          <div class="line line-col">
+            <div class="num-row"><span class="{{if eq .Tone "error"}}warn{{end}}">{{.Name}}</span><span class="soft">{{pct .Percent}}</span></div>
+            <span class="hbar {{if eq .Tone "error"}}hbar-warn{{else if eq .Tone "cyan"}}hbar-beige{{else if eq .Tone "pink"}}hbar-soft{{end}}"><span class="w-{{step .Percent}}"></span></span>
           </div>
-          <dl class="facts">
-            <div><dt>От ботов и программ</dt><dd>{{count $t.Totals.Bots}} · {{pct .Data.BotShare}}</dd></div>
-            <div><dt>Не найдено (404)</dt><dd>{{count $t.Totals.NotFound}}</dd></div>
-            <div><dt>Попыток найти уязвимость</dt><dd>{{count $t.Totals.Probes}}</dd></div>
-          </dl>
-        </div>
-      </section>
+        {{end}}
+      </div>
+    </section>
 
-      <section class="card">
-        <h2 class="card-title">Коды ответов</h2>
-        <div class="card-body">
-          <ul class="rows">
-            {{range .Data.Statuses}}
-              <li class="row"><span class="row-share">{{pct .Percent}}</span><span class="row-name">{{.Name}}</span>{{bar .Percent .Tone}}<span class="row-value">{{count .Count}}</span></li>
-            {{end}}
-          </ul>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">Время ответа</h2>
-        <div class="card-body">
-          <div class="figures">
-            <div><p class="figure-label">Медиана (p50)</p><p class="figure">{{$t.Median}}</p></div>
-            <div><p class="figure-label">p95</p><p class="figure">{{$t.P95}}</p></div>
+    <section class="tile span-all">
+      <span class="label">Чаще всего запрашивают</span>
+      <div class="lines">
+        {{$top := 0}}{{range $t.Pages}}{{if gt .Hits $top}}{{$top = .Hits}}{{end}}{{end}}
+        {{range $t.Pages}}
+          <div class="line line-grid">
+            <span class="link ellipsis mono">{{.Path}}</span>
+            <span class="hbar hbar-beige bar-200"><span class="w-{{step (share .Hits $top)}}"></span></span>
+            <span class="right nowrap">{{count .Hits}} · <span class="muted">{{bytes .Bytes}}</span></span>
           </div>
-          <ul class="rows">
-            {{range $t.Latency}}
-              {{if .Count}}<li class="row"><span class="row-share">{{pct .Percent}}</span><span class="row-name">{{.Label}}</span>{{bar .Percent "accent"}}<span class="row-value">{{count .Count}}</span></li>{{end}}
-            {{end}}
-          </ul>
-        </div>
-      </section>
+        {{else}}
+          <p class="empty">Нет данных за период.</p>
+        {{end}}
+      </div>
+    </section>
 
-      <section class="card">
-        <h2 class="card-title">Сканеры: что искали</h2>
-        <div class="card-body">
-          <ul class="rows rows-plain">
-            {{range $t.Probes}}
-              <li class="row"><span class="row-name">{{.Pattern}} <span class="muted mono">{{.LastPath}}</span></span><span class="row-value">{{count .Hits}}</span><span class="row-value">{{plural .Networks "сеть" "сети" "сетей"}}</span></li>
-            {{else}}
-              <li class="muted">Никто ничего не искал.</li>
-            {{end}}
-          </ul>
-          {{if $t.Networks}}
-            <h3 class="card-subtitle">Откуда</h3>
-            <ul class="rows rows-plain">
-              {{range $t.Networks}}
-                <li class="row"><span class="row-name"><span class="mono">{{.Prefix}}</span> <span class="muted">{{.Patterns}}</span></span><span class="row-value">{{count .Hits}}</span></li>
-              {{end}}
-            </ul>
-          {{end}}
-          <p class="muted">Сайт — статические файлы: ничего из этого здесь нет, все такие запросы получают 404. Адреса усечены.</p>
-        </div>
-      </section>
-    </div>
-  </div>
+    <section class="tile span-2">
+      <div class="tile-head"><span>Передано данных</span><span class="aside">{{bytes $t.Totals.Bytes}}</span></div>
+      <div class="vbars{{if gt (len $d.Bytes) 14}} vbars-dense{{end}}" role="img" aria-label="Передано данных: всего {{bytes $t.Totals.Bytes}}">
+        {{range $d.Bytes}}
+          <div class="vbar{{if .Peak}} is-peak{{end}}" title="{{.Title}}">
+            {{if le (len $d.Bytes) 14}}<span class="vbar-v">{{.Text}}</span>{{end}}
+            <span class="vbar-fill h-{{.Height}}"></span>
+            <span class="vbar-d">{{.Label}}</span>
+          </div>
+        {{end}}
+      </div>
+    </section>
 
-  <p class="footnote muted">
-    Источник — лог nginx{{if not .Data.PolledAt.IsZero}}, прочитан {{ago .Data.PolledAt}}{{end}}. Хранятся только суммы: ни адресов, ни User-Agent. Сырой лог живёт 30 дней.
-  </p>
+    <section class="tile">
+      <span class="label">Время ответа</span>
+      <div class="num-row"><span class="num-m">{{$t.Median}}</span><span class="num-sub">медиана · p95 {{$t.P95}}</span></div>
+      <div class="lines">
+        {{range $t.Latency}}{{if .Count}}<div class="line"><span>{{.Label}}</span><span class="soft">{{pct .Percent}} · {{count .Count}}</span></div>{{end}}{{end}}
+      </div>
+    </section>
+
+    <section class="tile">
+      <span class="label">Браузеры и программы</span>
+      <div class="lines">
+        {{range $t.Clients}}<div class="line"><span>{{.Agent}}{{if eq .Kind "tool"}} <span class="pill pill-muted">программа</span>{{end}}</span><span class="soft">{{pct .Percent}} · {{count .Hits}}</span></div>{{else}}<p class="empty">Нет данных за период.</p>{{end}}
+      </div>
+    </section>
+
+    <section class="tile span-2">
+      <span class="label">Не найдено (404)</span>
+      <div class="lines">
+        {{range $t.Missing}}<div class="line"><span class="mono ellipsis">{{.Path}}</span><span class="soft">{{count .Hits}}</span></div>{{else}}<p class="empty">Ни одного — битых ссылок нет.</p>{{end}}
+      </div>
+      {{if $t.Spikes}}
+        <span class="label muted-2">Всплески</span>
+        <div class="lines">
+          {{range $t.Spikes}}<div class="line"><span>{{time .Start}}</span><span class="soft">{{count .NotFound}} из {{count .Requests}} · {{if .Probes}}сканер{{else}}ссылки{{end}}</span></div>{{end}}
+        </div>
+      {{end}}
+      {{if $t.Failed}}
+        <span class="label warn">Ошибки сервера (5xx)</span>
+        <div class="lines">
+          {{range $t.Failed}}<div class="line"><span class="mono ellipsis">{{.Path}}</span><span class="soft">{{.Status}} · {{count .Hits}}</span></div>{{end}}
+        </div>
+      {{end}}
+    </section>
+
+    <section class="tile span-2">
+      <span class="label">Сканеры: что искали</span>
+      <div class="lines">
+        {{range $t.Probes}}<div class="line"><span>{{.Pattern}} <span class="muted-2 mono">{{.LastPath}}</span></span><span class="soft">{{count .Hits}} · {{plural .Networks "сеть" "сети" "сетей"}}</span></div>{{else}}<p class="empty">Никто ничего не искал.</p>{{end}}
+      </div>
+      {{if $t.Networks}}
+        <span class="label muted-2">Откуда</span>
+        <div class="lines">
+          {{range $t.Networks}}<div class="line"><span><span class="mono">{{.Prefix}}</span> <span class="muted-2">{{.Patterns}}</span></span><span class="soft">{{count .Hits}}</span></div>{{end}}
+        </div>
+      {{end}}
+      <p class="text-xs">Сайт — статические файлы: ничего из этого здесь нет, все такие запросы получают 404. Адреса усечены.</p>
+    </section>
+  </section>
+
+  <p class="text-xs">Источник — лог nginx{{if not $d.PolledAt.IsZero}}, прочитан {{ago $d.PolledAt}}{{end}}. Хранятся только суммы: ни адресов, ни User-Agent. Сырой лог живёт 30 дней.</p>
 {{end}}

@@ -23,34 +23,40 @@ type Logins interface {
 
 var loginTexts = map[string]map[string]string{
 	"ru": {
-		"code":   "Код для входа в личный кабинет на сайте:",
-		"add":    "Код, чтобы привязать этот Telegram к личному кабинету:",
-		"where":  "Введите его на странице, с которой вы пришли. Код действует 15 минут.",
-		"button": "Войти на сайт",
-		"ignore": "Если вход начинали не вы — просто ничего не делайте.",
-		"used":   "Эта ссылка для входа устарела или уже открыта в другом аккаунте Telegram. Начните вход на сайте заново.",
-		"slow":   "Слишком много попыток входа. Попробуйте через час.",
-		"failed": "Не получилось подготовить код. Попробуйте ещё раз чуть позже.",
+		"code":       "Код для входа в личный кабинет на сайте:",
+		"add":        "Код, чтобы привязать этот Telegram к личному кабинету:",
+		"where":      "Введите его на странице, с которой вы пришли. Код действует 15 минут.",
+		"button":     "Войти на сайт",
+		"ignore":     "Если вход начинали не вы — просто ничего не делайте.",
+		"ignore_add": "Если привязку начинали не вы — ничего не делайте и никому не пересылайте этот код.",
+		"joins":      "Этот Telegram уже входит в другой кабинет на сайте: с кодом тот кабинет вместе с заявками присоединится к тому, куда вы его привязываете.",
+		"used":       "Эта ссылка для входа устарела или уже открыта в другом аккаунте Telegram. Начните вход на сайте заново.",
+		"slow":       "Слишком много попыток входа. Попробуйте через час.",
+		"failed":     "Не получилось подготовить код. Попробуйте ещё раз чуть позже.",
 	},
 	"uk": {
-		"code":   "Код для входу в особистий кабінет на сайті:",
-		"add":    "Код, щоб прив'язати цей Telegram до особистого кабінету:",
-		"where":  "Введіть його на сторінці, з якої ви прийшли. Код діє 15 хвилин.",
-		"button": "Увійти на сайт",
-		"ignore": "Якщо вхід починали не ви — просто нічого не робіть.",
-		"used":   "Це посилання для входу застаріло або вже відкрите в іншому акаунті Telegram. Почніть вхід на сайті знову.",
-		"slow":   "Забагато спроб входу. Спробуйте за годину.",
-		"failed": "Не вдалося підготувати код. Спробуйте ще раз трохи згодом.",
+		"code":       "Код для входу в особистий кабінет на сайті:",
+		"add":        "Код, щоб прив'язати цей Telegram до особистого кабінету:",
+		"where":      "Введіть його на сторінці, з якої ви прийшли. Код діє 15 хвилин.",
+		"button":     "Увійти на сайт",
+		"ignore":     "Якщо вхід починали не ви — просто нічого не робіть.",
+		"ignore_add": "Якщо прив'язку починали не ви — нічого не робіть і нікому не пересилайте цей код.",
+		"joins":      "Цей Telegram уже входить до іншого кабінету на сайті: з кодом той кабінет разом із заявками приєднається до того, куди ви його прив'язуєте.",
+		"used":       "Це посилання для входу застаріло або вже відкрите в іншому акаунті Telegram. Почніть вхід на сайті знову.",
+		"slow":       "Забагато спроб входу. Спробуйте за годину.",
+		"failed":     "Не вдалося підготувати код. Спробуйте ще раз трохи згодом.",
 	},
 	"en": {
-		"code":   "Your code to sign in to your personal account on the site:",
-		"add":    "Your code to link this Telegram account to your personal account:",
-		"where":  "Type it on the page you came from. The code is valid for 15 minutes.",
-		"button": "Sign in to the site",
-		"ignore": "If it was not you who started signing in, just do nothing.",
-		"used":   "This sign-in link has expired or was opened in another Telegram account. Please start signing in on the site again.",
-		"slow":   "Too many sign-in attempts. Please try again in an hour.",
-		"failed": "The code could not be prepared. Please try again a little later.",
+		"code":       "Your code to sign in to your personal account on the site:",
+		"add":        "Your code to link this Telegram account to your personal account:",
+		"where":      "Type it on the page you came from. The code is valid for 15 minutes.",
+		"button":     "Sign in to the site",
+		"ignore":     "If it was not you who started signing in, just do nothing.",
+		"ignore_add": "If it was not you who started linking, do nothing and do not forward this code to anybody.",
+		"joins":      "This Telegram account signs in to another account on the site now: with the code, that account and its requests join the one you are linking it to.",
+		"used":       "This sign-in link has expired or was opened in another Telegram account. Please start signing in on the site again.",
+		"slow":       "Too many sign-in attempts. Please try again in an hour.",
+		"failed":     "The code could not be prepared. Please try again a little later.",
 	},
 }
 
@@ -81,13 +87,18 @@ func (b *Bot) signIn(ctx context.Context, message *Message, token string) {
 		return
 	}
 	lang = code.Lang
-	intro := loginText(lang, "code")
+	intro, ignore := loginText(lang, "code"), loginText(lang, "ignore")
 	if code.Adding {
-		intro = loginText(lang, "add")
+		intro, ignore = loginText(lang, "add"), loginText(lang, "ignore_add")
 	}
 	// <code> makes the digits copy with a tap.
-	text := Escape(intro) + "\n\n<code>" + Escape(code.Code) + "</code>\n\n" + Escape(loginText(lang, "where")) + "\n\n" + Escape(loginText(lang, "ignore"))
-	out := Outgoing{ChatID: chatID, Text: text}
+	text := Escape(intro) + "\n\n<code>" + Escape(code.Code) + "</code>\n\n" + Escape(loginText(lang, "where"))
+	if code.Joining {
+		text += "\n\n" + Escape(loginText(lang, "joins"))
+	}
+	out := Outgoing{ChatID: chatID, Text: text + "\n\n" + Escape(ignore)}
+	// Linking a Telegram account to an account is finished by the code only, typed in the browser
+	// that asked for it (clients.VerifyLink): there is no link to press.
 	if code.LinkURL != "" {
 		out.Buttons = Keyboard{{{Text: loginText(lang, "button"), URL: code.LinkURL}}}
 	}

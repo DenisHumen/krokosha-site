@@ -1,0 +1,90 @@
+{{define "content"}}
+  {{$d := .Data}}
+  {{$t := $d.Template}}
+  {{$csrf := .Session.CSRFToken}}
+  <div class="split split-300 tpl-edit">
+    <form class="tile form" method="post" action="{{path "/templates"}}">
+      <input type="hidden" name="csrf" value="{{$csrf}}" />
+      {{if $t.ID}}<input type="hidden" name="id" value="{{$t.ID}}" />{{end}}
+      <div class="tile-head"><span>{{if $d.New}}Новый шаблон{{else}}Шаблон{{end}}</span><a class="back" href="{{path "/templates"}}?kind={{$t.Kind}}&amp;lang={{$t.Lang}}">← Все шаблоны</a></div>
+      <div class="form-grid">
+        <label class="field">Вид
+          <select class="input input-s" name="kind">{{range $d.Kinds}}<option value="{{.ID}}"{{if .Current}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+        </label>
+        <label class="field">Язык
+          <select class="input input-s" name="lang">{{range $d.Langs}}<option value="{{.ID}}"{{if .Current}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+        </label>
+        <label class="field">Что отвечает
+          <select class="input input-s" name="category">{{range $d.Categories}}<option value="{{.ID}}"{{if .Current}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+        </label>
+        <label class="field">Когда подходит
+          <select class="input input-s" name="moment">{{range $d.Moments}}<option value="{{.ID}}"{{if .Current}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+        </label>
+      </div>
+      <label class="field" for="template-title">Название</label>
+      <input class="input" id="template-title" name="title" value="{{$t.Title}}" maxlength="100" required />
+      <label class="field" for="template-body">Текст</label>
+      <textarea class="input" id="template-body" name="body" rows="10" required>{{$t.Body}}</textarea>
+      <p class="field-hint"><span class="mono">{name}</span> — имя клиента, <span class="mono">{id}</span> — номер заявки, <span class="mono">{site}</span> — сайт на языке клиента, <span class="mono">{account}</span> — заявка в личном кабинете. Шаблоны без своего приветствия складываются в один ответ: «Приветствие» + «Стоимость» + «Сроки».</p>
+      <label class="field" for="template-keywords">Слова клиента</label>
+      <textarea class="input input-s" id="template-keywords" name="keywords" rows="3" aria-describedby="keywords-hint">{{$d.Keywords}}</textarea>
+      <p class="field-hint" id="keywords-hint">Через запятую — начала слов и фразы, как их пишет клиент: «стоим» найдёт «стоимость», «сколько стоит» — фразу целиком. Слова до трёх букв («кп», «nda») ищутся целиком. Последнее сообщение клиента весит вдвое больше описания заявки.</p>
+      <fieldset class="field fieldset-plain">
+        <legend>Для направлений</legend>
+        <span class="checks">
+          {{range $d.Directions}}<label class="check"><input type="checkbox" name="direction" value="{{.ID}}"{{if .Current}} checked{{end}} /> {{.Name}}</label>{{end}}
+        </span>
+        <span class="field-hint">Ничего не отмечено — для любых. Для чужого направления шаблон опускается в списке.</span>
+      </fieldset>
+      <div class="actions">
+        <button class="btn btn-accent btn-m" type="submit">Сохранить</button>
+        {{if not $d.New}}<button class="btn btn-ghost btn-danger" type="submit" name="delete" value="1">Удалить шаблон</button>{{end}}
+      </div>
+    </form>
+
+    <div class="stack">
+      <section class="tile" id="media" aria-labelledby="media-title">
+        <span class="label" id="media-title">Файлы{{if not $d.New}} · {{len $t.Media}} из 10{{end}}</span>
+        {{if $d.New}}
+          <p class="text-s">Сохраните шаблон — после этого к нему можно добавить фото, видео и документы.</p>
+        {{else}}
+          {{if $d.Problems}}<ul class="notice notice-warn">{{range $d.Problems}}<li>{{.}}</li>{{end}}</ul>{{end}}
+          {{if $t.Media}}
+            <ul class="media-grid">
+              {{range $t.Media}}
+                <li class="media-item">
+                  {{if isPhoto .Kind}}<img class="media-preview" src="{{path "/templates/media/" (print .ID)}}" alt="{{.Filename}}" loading="lazy" />
+                  {{else if isVideo .Kind}}<video class="media-preview" src="{{path "/templates/media/" (print .ID)}}" controls preload="metadata" aria-label="{{.Filename}}"></video>
+                  {{else}}<a class="media-doc" href="{{path "/templates/media/" (print .ID)}}" download>{{.Kind}}</a>{{end}}
+                  <span class="media-meta"><span class="media-name">{{.Filename}}</span><span class="muted-2">{{bytes .Size}}</span></span>
+                  <form method="post" action="{{path "/templates/" (print $t.ID) "/media/" (print .ID) "/remove"}}">
+                    <input type="hidden" name="csrf" value="{{$csrf}}" />
+                    <button class="btn btn-s btn-ghost" type="submit" aria-label="Убрать {{.Filename}}">Убрать</button>
+                  </form>
+                </li>
+              {{end}}
+            </ul>
+          {{else}}
+            <p class="empty">Файлов нет: ответ из этого шаблона — только текст.</p>
+          {{end}}
+          {{if lt (len $t.Media) 10}}
+            <form class="form" method="post" action="{{path "/upload/templates/" (print $t.ID) "/media"}}" enctype="multipart/form-data">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <label class="field" for="media-files">Добавить фото, видео или документы</label>
+              <input class="file-input" id="media-files" type="file" name="files" multiple required accept="image/jpeg,image/png,video/mp4,application/pdf,.docx,text/plain" data-upload="{{len $t.Media}}" />
+              <button class="btn" type="submit">Загрузить</button>
+            </form>
+          {{end}}
+          <p class="text-xs">Фото JPG и PNG — до 10 МБ, видео MP4 — до 50 МБ, документы PDF, DOCX и TXT — до 20 МБ. В Telegram фото и видео уходят альбомом после текста, документы — файлами; в письме — вложениями, до 15 МБ вместе.</p>
+        {{end}}
+      </section>
+      {{if not $d.New}}
+        <section class="tile tile-beige">
+          <span class="label">Как часто</span>
+          <div class="num-row"><span class="num-m">{{$t.UsedCount}}</span><span class="num-sub">{{if $t.UsedCount}}последний раз {{when $t.UsedAt}}{{else}}ещё не отправлялся{{end}}</span></div>
+          <p class="text-s">Из двух одинаково подходящих шаблонов карточка поднимает тот, что отправляют чаще. Уже отправленный в этой заявке опускается вниз.</p>
+        </section>
+      {{end}}
+    </div>
+  </div>
+{{end}}

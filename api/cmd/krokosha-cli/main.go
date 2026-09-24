@@ -21,6 +21,7 @@ import (
 
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/githubsync"
+	"github.com/DenisHumen/krokosha-site/api/internal/hardening"
 )
 
 const usage = `krokosha-cli — maintenance tool of krokosha-site
@@ -47,6 +48,11 @@ Environment:
 `
 
 func main() {
+	// The CLI runs with the secrets of /etc/krokosha/env too (the map's timer, the bot's commands).
+	if err := hardening.PrivateEnvironment(); err != nil {
+		fmt.Fprintln(os.Stderr, "krokosha-cli: cannot keep the environment private:", err)
+		os.Exit(1)
+	}
 	os.Exit(run())
 }
 

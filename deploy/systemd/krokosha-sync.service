@@ -25,7 +25,19 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/krokosha/repo /var/lib/krokosha /var/www/krokosha
+# npm and the site build run third-party code. They may write what the build makes and nothing
+# that anything else runs: root runs deploy/ (backup, certificates, updates), the programs are built
+# from api/ and the Go caches, git reads .git/ and ~/.gitconfig. Found by tracing a whole build:
+# web/ (node_modules, dist, .astro), content/generated (the GitHub data), the npm and GitHub caches,
+# status/ (the report, the lock), requests/ (the rebuild button), the releases.
+ReadWritePaths=/opt/krokosha/repo/web /opt/krokosha/repo/content/generated
+ReadWritePaths=/var/lib/krokosha/cache/npm /var/lib/krokosha/cache/github /var/lib/krokosha/status /var/lib/krokosha/requests
+ReadWritePaths=/var/www/krokosha
+# …and read nothing it has no business with: the mailbox requests (password hashes), the processes
+# of other users, the files of requests (their place depends on --data-dir: install.sh adds it in
+# krokosha-sync.service.d/data-dir.conf).
+InaccessiblePaths=-/var/lib/krokosha/requests/mail -/var/lib/krokosha/mail
+ProtectProc=invisible
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/server"
 )
 
 // How updates reach the bot (brief B10.3).
@@ -26,8 +28,9 @@ const (
 	ModePolling = "polling"
 )
 
-// WebhookPrefix is where nginx hands Telegram's calls over; the secret part follows it.
-const WebhookPrefix = "/api/telegram/"
+// WebhookPrefix is where nginx hands Telegram's calls over; the secret part follows it. The API's
+// log writes it without the secret (server.loggedPath).
+const WebhookPrefix = server.TelegramWebhookPrefix
 
 // Secrets derives the two secrets of the webhook from the secret of the installation: the end
 // of the address Telegram calls, and the header it proves itself with. Nothing to configure,
@@ -69,10 +72,13 @@ type Runner struct {
 	pathSecret, headerSecret string
 	queue                    chan Update
 
-	mu     sync.Mutex
-	status Status
-	seen   [256]int64 // the last update ids: Telegram repeats a delivery it thinks has failed
-	seenAt int
+	mu      sync.Mutex
+	status  Status
+	seen    [256]int64 // the last update ids: Telegram repeats a delivery it thinks has failed
+	seenAt  int
+	closing bool          // the service is stopping: nothing new is taken (drain)
+	offset  int64         // polling: the update to confirm to Telegram — the last one taken, plus one
+	polled  chan struct{} // closed when polling has stopped
 }
 
 // NewRunner builds the receiver.
@@ -80,7 +86,7 @@ func NewRunner(bot *Bot, opts RunnerOptions) *Runner {
 	if opts.RetryPause <= 0 {
 		opts.RetryPause = 5 * time.Second
 	}
-	r := &Runner{bot: bot, opts: opts, queue: make(chan Update, 256), status: Status{Mode: opts.Mode}}
+	r := &Runner{bot: bot, opts: opts, queue: make(chan Update, 256), status: Status{Mode: opts.Mode}, polled: make(chan struct{})}
 	r.pathSecret, r.headerSecret = Secrets(opts.Secret)
 	return r
 }
@@ -140,26 +146,27 @@ func (r *Runner) webhook(w http.ResponseWriter, request *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// accept queues an update unless it was seen already; false means «no room, come again».
+// accept queues an update unless it was seen already; false means «no room, come again» — or
+// «stopping, come to the next process».
 func (r *Runner) accept(update Update) bool {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closing {
+		return false
+	}
 	for _, id := range r.seen {
 		if id == update.UpdateID && id != 0 {
-			r.mu.Unlock()
 			return true
 		}
 	}
-	r.mu.Unlock()
 	select {
 	case r.queue <- update:
 	default:
 		return false
 	}
-	r.mu.Lock()
 	r.seen[r.seenAt%len(r.seen)] = update.UpdateID
 	r.seenAt++
 	r.status.LastUpdateAt = time.Now()
-	r.mu.Unlock()
 	return true
 }
 
@@ -235,6 +242,7 @@ func (r *Runner) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			r.drain()
 			return
 		case update := <-r.queue:
 			// One update must not hold up the rest for long, whatever Telegram is doing.
@@ -245,10 +253,60 @@ func (r *Runner) Run(ctx context.Context) {
 	}
 }
 
+// drainFor is how long a stopping service goes on handling what it has taken.
+const drainFor = 20 * time.Second
+
+// drain: the service is stopping — every update.sh restarts it. What was taken is handled before
+// it goes: Telegram counts it as delivered and would not bring it again, and a client's message
+// would be lost. Nothing new is taken meanwhile: a webhook answers «busy», and Telegram brings the
+// update to the next process. In polling mode Telegram is then told what was handled.
+func (r *Runner) drain() {
+	r.mu.Lock()
+	r.closing = true
+	r.mu.Unlock()
+	deadline := time.Now().Add(drainFor)
+	for more := true; more && time.Now().Before(deadline); {
+		select {
+		case update := <-r.queue:
+			handling, cancel := context.WithDeadline(context.Background(), deadline)
+			r.bot.Handle(handling, update)
+			cancel()
+		default:
+			more = false
+		}
+	}
+	if r.opts.Mode == ModePolling {
+		r.confirm()
+	}
+}
+
+// confirm tells Telegram which updates are handled: getUpdates with an offset confirms all before it.
+// Without this the next process would get them again.
+func (r *Runner) confirm() {
+	select {
+	case <-r.polled: // the long poll has returned: two at once make Telegram answer «conflict»
+	case <-time.After(5 * time.Second):
+	}
+	r.mu.Lock()
+	offset := r.offset
+	r.mu.Unlock()
+	if offset == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := r.bot.opts.API.GetUpdates(ctx, offset, 0); err != nil {
+		r.opts.Log.Warn("telegram: cannot confirm the last updates; the next start may see them again", "error", err)
+	}
+}
+
 // poll asks Telegram for updates and waits up to 50 seconds for an answer, again and again.
 func (r *Runner) poll(ctx context.Context) {
-	var offset int64
+	defer close(r.polled)
 	for ctx.Err() == nil {
+		r.mu.Lock()
+		offset := r.offset
+		r.mu.Unlock()
 		updates, err := r.bot.opts.API.GetUpdates(ctx, offset, 50*time.Second)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -271,7 +329,9 @@ func (r *Runner) poll(ctx context.Context) {
 					return
 				}
 			}
-			offset = update.UpdateID + 1 // confirms the update to Telegram with the next request
+			r.mu.Lock()
+			r.offset = update.UpdateID + 1 // confirms the update to Telegram with the next request
+			r.mu.Unlock()
 		}
 	}
 }

@@ -150,6 +150,13 @@ func TestOverviewOfLongerPeriods(t *testing.T) {
 	if saturday := overview.Timeline[5]; saturday.Organic != 1 || saturday.Ads != 1 {
 		t.Errorf("Saturday the 19th: %+v", saturday)
 	}
+	totals, err := reports.Totals(ctx, week)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Totals{Visitors: overview.Totals.Visitors, Visits: overview.Totals.Visits, Pageviews: overview.Totals.Pageviews, AvgViewMs: overview.Totals.AvgViewMs}); totals != want || totals.Visits == 0 {
+		t.Errorf("the totals alone = %+v, the dashboard's = %+v", totals, overview.Totals)
+	}
 
 	month := reports.ParsePeriod("month", "2026-02-10", "", "")
 	if month.From.Format(time.DateOnly) != "2026-02-01" || month.To.Format(time.DateOnly) != "2026-02-28" {

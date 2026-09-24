@@ -132,6 +132,9 @@ check "unknown page is a 404" test "$(status "https://$DOMAIN/nope/")" = 404
 check "404 under /uk/ is in Ukrainian" grep -q '<html lang="uk"' <(body "https://$DOMAIN/uk/nope/")
 check "404 under /ru/ is in Russian" grep -q '<html lang="ru"' <(body "https://$DOMAIN/ru/nope/")
 check "robots.txt" grep -q "^Sitemap: https://$DOMAIN/sitemap.xml" <(body "https://$DOMAIN/robots.txt")
+# Google Search asks for the icon the home page links; browsers and crawlers ask for /favicon.ico.
+check "the icon for Google Search is a PNG" test "$(header "https://$DOMAIN/favicon-96.png" content-type)" = image/png
+check "favicon.ico is served" test "$(header "https://$DOMAIN/favicon.ico" content-type)" = image/x-icon
 # Let's Encrypt checks every name of the certificate over plain HTTP — mail.<domain> included,
 # at issue and at every renewal. A name that port 80 does not answer fails the whole certificate.
 acme_probe=/var/www/krokosha/acme/.well-known/acme-challenge/ci-probe
@@ -274,7 +277,7 @@ check "the overview opens after signing in" grep -q 'ci-admin' <(admin_get "$ADM
 # midnight the visit recorded above may belong to either day, so both are asked for.
 # (grep -q stops reading at the first match; curl's complaint about the closed pipe is noise.)
 both_days() { { admin_get "$ADMIN$1" && admin_get "$ADMIN$1?p=day&d=$(date -u +%F)"; } 2>/dev/null || true; }
-check "the overview shows the visit recorded above" grep -q '<title>[0-9:]* — 1 визит, из них по рекламе: 1[;<]' <(both_days /)
+check "the overview shows the visit recorded above" grep -q 'title="[0-9:]* — 1 визит, из них по рекламе: 1[;"]' <(both_days /)
 check "the list of visits" grep -q 'google.com' <(both_days /visits)
 check "CSV export of page views" grep -q ',/uk/,uk,search,google.com,google,cpc,' <(both_days /export/pageviews.csv)
 check "CSV export of events" grep -q ',click,cta-telegram,' <(both_days /export/events.csv)
@@ -301,13 +304,18 @@ check "the admin area stays out of the traffic statistics" test "$(sql "SELECT C
 check "the scanner-like requests of this test are noticed" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE pattern = '.env'")" -ge 1
 check "networks of scanners are truncated" test "$(sql "SELECT COUNT(*) FROM traffic_probes WHERE ip_prefix NOT LIKE '%/24' AND ip_prefix NOT LIKE '%/48'")" = 0
 check "the traffic screen" grep -q 'curl' <(both_days /traffic)
-check "the overview's timeline shows bots from the server log" grep -q 'chart-bar-bots' <(both_days /)
+check "the overview's timeline shows bots from the server log" grep -q 'Боты и программы (по логу сервера): [1-9]' <(both_days /)
 
 check "the build left its report" python3 -c "import json; r = json.load(open('/var/lib/krokosha/status/sync.json')); assert r['ok'] and r['step'] == 'done' and r['release'], r"
 status_page=$(admin_get "$ADMIN/status")
 check "the status screen names the live release" grep -q "$(basename "$(readlink -f /var/www/krokosha/current)")" <<<"$status_page"
 check "…and describes the certificate nginx serves" grep -q 'не доверенный' <<<"$status_page"
 check "the API may write rebuild requests, and only there" bash -c "systemctl show krokosha-api.service -p ReadWritePaths | grep -q /var/lib/krokosha/requests && systemctl show krokosha-api.service -p ProtectSystem | grep -q strict"
+# npm runs third-party code in the build: nothing it may write is run by root or built into a program.
+build_writes=$(systemctl show krokosha-sync.service -p ReadWritePaths --value)
+check "the build may write web/ of the repository, not the rest of it" bash -c "grep -qw /opt/krokosha/repo/web <<<'$build_writes' && ! grep -qE '(^| )/opt/krokosha/repo( |$)' <<<'$build_writes' && ! grep -qE '(^| )/var/lib/krokosha( |$)' <<<'$build_writes'"
+check "…nor read the files of requests" bash -c "systemctl show krokosha-sync.service -p InaccessiblePaths --value | grep -q /srv/krokosha/attachments"
+check "the API's environment is root's to read, not its own user's" test "$(stat -c %U "/proc/$(systemctl show krokosha-api.service -p MainPID --value)/environ")" = root
 before_rebuild=$(readlink -f /var/www/krokosha/current)
 check "the «rebuild now» button is accepted" test "$(admin_post /status/rebuild --data-urlencode "csrf=$(csrf)")" = 303
 site_was_rebuilt() { [[ $(readlink -f /var/www/krokosha/current) != "$before_rebuild" && ! -e /var/lib/krokosha/requests/rebuild ]]; }
@@ -404,7 +412,7 @@ reply_left() { [[ $(sql "SELECT CONCAT(l.status, ' ', o.status) FROM leads l JOI
 check "…leaves through the site's own mail server" wait_for 30 reply_left
 check "a note for colleagues" test "$(admin_post /leads/1/note --data-urlencode "csrf=$(csrf)" --data-urlencode 'text=Клиент из теста установки.')" = 303
 check "the status screen shows the queue of notifications" grep -q 'Уведомления (outbox)' <(admin_get "$ADMIN/status")
-check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates")
+check "the templates editor" grep -q 'Not my field' <(admin_get "$ADMIN/templates?kind=reject&lang=en")
 check "requests as CSV" grep -q '^K-0002,' <(admin_get "$ADMIN/leads/export.csv")
 check "deleting a client's data needs the number typed in" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0001')" = 400
 check "…and then removes everything about the request" test "$(admin_post /leads/2/delete --data-urlencode "csrf=$(csrf)" --data-urlencode 'confirm=K-0002')" = 303
@@ -455,6 +463,16 @@ check "nobody else gets it" test "$(status "$ADMIN/leads/$file_lead/files/$file_
 check "files are never reachable as pages of the site" test "$(status "https://$DOMAIN/attachments/")" = 404
 check "deleting the client's data" test "$(admin_post "/leads/$file_lead/delete" --data-urlencode "csrf=$(csrf)" --data-urlencode "confirm=K-$(printf '%04d' "$file_lead")")" = 303
 check "…removes the files too" test "$(find /srv/krokosha/attachments -type f | wc -l)" = 0
+# Quick answers: the files of a template come through a location of their own (…/upload/), the
+# only one in the admin area that takes more than a small form.
+# (By its category: the mysql client in the container speaks latin1, a Cyrillic title would match nothing.)
+template_id=$(sql "SELECT id FROM reply_templates WHERE kind = 'reply' AND lang = 'ru' AND category = 'portfolio' ORDER BY id LIMIT 1")
+check "a template takes a file bigger than a form, through nginx" \
+  test "$(admin_post "/upload/templates/$template_id/media" --form "csrf=$(csrf)" --form "files=@$megabyte;filename=notes.txt")" = 303
+check "…kept next to the files of requests, for the service's eyes only" \
+  test "$(find /srv/krokosha/attachments/templates -type f -perm 600 | wc -l) $(sql "SELECT CONCAT(kind, ' ', size) FROM template_media WHERE template_id = $template_id")" = "1 txt 1048576"
+check "the rest of the admin area still takes small forms only" \
+  test "$(admin_post /leads/1/note --form "csrf=$(csrf)" --form "text=<$megabyte")" = 413
 sed -i 's/^\( *attachments:\) true /\1 false/' /opt/krokosha/repo/content/site.yaml
 check "the content is as it was" test -z "$(runuser -u krokosha -- git -C /opt/krokosha/repo status --porcelain)"
 rm -f "$pdf" "$program" "$megabyte" "$toobig" "$downloaded"
@@ -662,6 +680,7 @@ check "a second mailbox" bash -c "printf '%s\n' 'another long password' | krokos
 check "…a short password is refused" bash -c "! printf 'short\n' | krokosha-mailbox add third@$DOMAIN --password-stdin 2>/dev/null"
 check "…and the site's own mailbox cannot be removed" bash -c "! krokosha-mailbox del leads@$DOMAIN 2>/dev/null"
 check "…nor one whose name only looks like it" bash -c "! krokosha-mailbox del l.ads@$DOMAIN 2>/dev/null && krokosha-mailbox list | grep -qx 'leads@$DOMAIN'"
+check "…not even as «lead.@»: addresses are strings, not patterns" bash -c "! krokosha-mailbox del lead.@$DOMAIN 2>/dev/null && krokosha-mailbox list | grep -qx 'leads@$DOMAIN'"
 # The «Почта» screen of the admin area: the API drops a request into its own directory, and the root
 # helper (krokosha-mailbox.path → krokosha-mailbox apply) checks it as a stranger's and applies it.
 mail_request() { # mail_request ACTION ADDRESS [HASH] — written as the API writes it, by the site user
@@ -673,7 +692,7 @@ requests_taken() { ! compgen -G '/var/lib/krokosha/requests/mail/*.req' >/dev/nu
 staff_known() { docker exec krokosha-mail-1 doveadm user "staff@$DOMAIN" >/dev/null 2>&1 && docker exec krokosha-mail-1 postmap -q "staff@$DOMAIN" texthash:/etc/postfix/vmailbox >/dev/null 2>&1; }
 staff_gone() { requests_taken && ! krokosha-mailbox list | grep -qx "staff@$DOMAIN"; }
 STAFF_PASSWORD='ci: the password of a colleague'
-check "the service writes requests, and can only read what the helper answers" bash -c "[[ \$(stat -c '%U %a' /var/lib/krokosha/requests/mail) == 'krokosha 750' && \$(stat -c '%U:%G %a' /var/lib/krokosha/mail) == 'root:krokosha 750' ]]"
+check "the requests and the helper's answers live in the site user's own directories" bash -c "[[ \$(stat -c '%U %a' /var/lib/krokosha/requests/mail) == 'krokosha 750' && \$(stat -c '%U %a' /var/lib/krokosha/mail) == 'krokosha 750' ]]"
 mail_request add "staff@$DOMAIN" "{SHA512-CRYPT}$(openssl passwd -6 "$STAFF_PASSWORD")"
 check "a mailbox asked for by the admin area is taken by the root helper" wait_for 30 requests_taken
 check "…which makes it" bash -c "krokosha-mailbox list | grep -qx 'staff@$DOMAIN' && tail -n 1 /var/lib/krokosha/mail/log | grep -qP '\\tadd\\tstaff@$DOMAIN\\tok\\t'"
@@ -686,8 +705,8 @@ mail_request del "l.ads@$DOMAIN"
 mail_request passwd "s.cond@$DOMAIN" "{SHA512-CRYPT}$(openssl passwd -6 'ci: some other long password')"
 check "…a request about an address that only looks like another one" wait_for 30 requests_taken
 check "…changes nobody's mailbox" bash -c "krokosha-mailbox list | grep -qx 'leads@$DOMAIN' && grep -qxF '$second_line' /srv/krokosha/mail/config/postfix-accounts.cf && [[ \$(tail -n 2 /var/lib/krokosha/mail/log | grep -c 'такого ящика нет') == 2 ]]"
-# The helper runs as root: a link in place of a request must not be read, or the first line of
-# /etc/shadow would come back to the service in the helper's log.
+# The helper runs as root and reads requests as the site user: a link in place of a request must not
+# be followed, or the first line of /etc/shadow would come back to the service in the helper's log.
 runuser -u krokosha -- ln -s /etc/shadow "/var/lib/krokosha/requests/mail/$(date +%s%N)-$(openssl rand -hex 4).req"
 check "…a link in place of a request is dropped" wait_for 30 requests_taken
 check "…unread" bash -c "! grep -q 'root:' /var/lib/krokosha/mail/log"
@@ -708,7 +727,13 @@ fi
 
 echo "Backups and the certificate watch"
 check "the nightly backup and the daily look at the certificates are scheduled" bash -c "systemctl is-enabled --quiet krokosha-backup.timer && systemctl is-enabled --quiet krokosha-certwatch.timer"
+# The site user may put a link in the place of any name in status/ — of the report, of the
+# temporary file root used to write it under a fixed name: root must not write where they point.
+runuser -u krokosha -- ln -sfn /etc/krokosha-ci-canary /var/lib/krokosha/status/backup.json.tmp
+runuser -u krokosha -- ln -sfn /etc/krokosha-ci-canary /var/lib/krokosha/status/backup.json
 check "a backup by hand" bash -c "'$SOURCE/deploy/backup.sh' >/dev/null 2>&1"
+check "…writes its report as the site user, not through a link the site user put there" bash -c "[[ ! -e /etc/krokosha-ci-canary && ! -L /var/lib/krokosha/status/backup.json && \$(stat -c %U /var/lib/krokosha/status/backup.json) == krokosha ]]"
+rm -f /var/lib/krokosha/status/backup.json.tmp
 first_backup=/srv/krokosha/backups/$(readlink /srv/krokosha/backups/latest)
 check "…has the database, the settings, the mail and the files of requests" bash -c "gzip -t '$first_backup/mysql.sql.gz' && zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .leads.' && tar -tzf '$first_backup/config.tar.gz' | grep -qx config/env && test -s '$first_backup/mail/config/postfix-accounts.cf' && test -d '$first_backup/attachments' && test -s '$first_backup/MANIFEST'"
 check "…with the tables of the map but not their rows: they are built again every night" bash -c "zcat '$first_backup/mysql.sql.gz' | grep -q 'CREATE TABLE .netmap_link.' && ! zcat '$first_backup/mysql.sql.gz' | grep -q 'INSERT INTO .netmap_'"
@@ -721,6 +746,20 @@ a_letter=$(cd "$first_backup" && find mail/data -type f -path '*/cur/*' -o -type
 check "…shares the letters that did not change with the first: a month of backups takes the room of one" bash -c "[[ -n '$a_letter' && '$first_backup' != '$second_backup' && \$(stat -c %i '$first_backup/$a_letter') == \$(stat -c %i '$second_backup/$a_letter') ]]"
 check "…without being the same file as the live letter" bash -c "[[ \$(stat -c %i '/srv/krokosha/$a_letter') != \$(stat -c %i '$second_backup/$a_letter') ]]"
 check "old backups go: --keep-daily 1 leaves one" bash -c "sleep 1; '$SOURCE/deploy/backup.sh' --keep-daily 1 --keep-weekly 0 >/dev/null 2>&1 && [[ \$(find /srv/krokosha/backups -mindepth 1 -maxdepth 1 -type d | wc -l) == 1 ]]"
+# The «backup now» button: the web service leaves a request, root makes the very nightly backup.
+sleep 1
+before_backup=$(readlink /srv/krokosha/backups/latest)
+# This test signed out long ago (and ran into the limit of sign-ins): the session kept for the checks
+# after the second run asks for it.
+geo_get() { "${CURL[@]}" --cookie "$GEO_JAR" --user-agent "$BROWSER" "$ADMIN$1"; }
+geo_csrf() { geo_get /account | sed -n 's/.*name="csrf" value="\([^"]*\)".*/\1/p' | head -n 1; }
+check "the «backup now» button is accepted" test "$("${CURL[@]}" --output /dev/null --write-out '%{http_code}' --cookie "$GEO_JAR" --user-agent "$BROWSER" \
+  --request POST "$ADMIN/status/backup" --data-urlencode "csrf=$(geo_csrf)")" = 303
+backup_was_made() { [[ $(readlink /srv/krokosha/backups/latest) != "$before_backup" && ! -e /var/lib/krokosha/requests/backup ]]; }
+check "…and a backup is made within two minutes, the request removed" wait_for 120 backup_was_made
+check "…in the audit log" test "$(sql "SELECT COUNT(*) FROM audit_log WHERE action = 'admin.backup'")" = 1
+check "fail2ban's bans are counted for the status screen, as the site user" bash -c "systemctl is-enabled --quiet krokosha-fail2ban.timer && systemctl start krokosha-fail2ban.service && grep -q '\"name\":\"krokosha-admin\"' /var/lib/krokosha/status/fail2ban.json && [[ \$(stat -c %U /var/lib/krokosha/status/fail2ban.json) == krokosha ]]"
+check "…and shown there" grep -q 'krokosha-admin: ' <(geo_get /status)
 check "the certificate watch finds what the site and the mail server really serve" bash -c "'$SOURCE/deploy/bin/krokosha-certwatch' >/dev/null 2>&1 && grep -q '\"name\":\"site\",\"host\":\"$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"name\":\"mail\",\"host\":\"mail.$DOMAIN\",\"days_left\":[0-9]' /var/lib/krokosha/status/certwatch.json && grep -q '\"ok\":true' /var/lib/krokosha/status/certwatch.json"
 # A certificate «about to expire» that nothing renews (this one is self-signed): the watch
 # fails, says so on the status screen, and the owner hears about it — once.
@@ -873,6 +912,7 @@ check "the map's timer is gone" bash -c "! systemctl cat krokosha-netmap.timer >
 check "containers are gone" bash -c "! docker ps -a --format '{{.Names}}' | grep -q '^krokosha-'"
 check "API unit is gone" bash -c "! systemctl cat krokosha-api.service >/dev/null 2>&1"
 check "the rebuild unit is gone" bash -c "! systemctl cat krokosha-rebuild.path >/dev/null 2>&1"
+check "…and so are «backup now» and the count of bans" bash -c "! systemctl cat krokosha-backup-now.path >/dev/null 2>&1 && ! systemctl cat krokosha-fail2ban.timer >/dev/null 2>&1"
 check "the CLI link and the fail2ban filter are gone" bash -c "[[ ! -e /usr/local/bin/krokosha-cli && ! -L /usr/local/bin/krokosha-cli && ! -e /etc/fail2ban/filter.d/krokosha-admin.conf ]]"
 check "fail2ban still runs" systemctl is-active --quiet fail2ban
 check "user is gone" bash -c "! id krokosha >/dev/null 2>&1"

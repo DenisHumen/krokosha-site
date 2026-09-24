@@ -54,9 +54,9 @@ func TestTrafficScreen(t *testing.T) {
 		t.Fatalf("traffic: %d", page.status)
 	}
 	for _, want := range []string{
-		"Трафик сервера · Суббота, 19 сентября 2026",
-		"<title>09:00 — 4 запроса, из них боты и программы: 3; не найдено: 2; ошибок сервера: 0</title>",
-		"<title>09:00 — 2,4 МБ</title>",
+		"Трафик · лог сервера", `title="Суббота, 19 сентября 2026"`,
+		`title="09:00 — 4 запроса, из них боты и программы: 3; не найдено: 2; ошибок сервера: 0"`,
+		`title="09:00 — 2,4 МБ"`,
 		"Googlebot", "curl", "Chrome", ".env", "198.51.100.0/24",
 		"2xx — отдано", "≤ 5 мс",
 		"прочитан только что",
@@ -70,13 +70,13 @@ func TestTrafficScreen(t *testing.T) {
 		t.Error("a requested path reached the page unescaped, or a full address is shown")
 	}
 
-	// The overview's timeline gets its third colour from the same data.
+	// The overview's visits know about the bots from the same data: in the tooltips and below the chart.
 	overview := s.do(http.MethodGet, prefix+"/", nil, nil)
-	if !strings.Contains(overview.body, "chart-bar-bots") || !strings.Contains(overview.body, "ботов: 2</title>") || !strings.Contains(overview.body, "Боты и программы (по логу сервера)") {
+	if !strings.Contains(overview.body, `ботов: 2"`) || !strings.Contains(overview.body, "Боты и программы (по логу сервера): 2") {
 		t.Error("the overview does not show the bots that the server log knows about")
 	}
-	if empty := s.do(http.MethodGet, prefix+"/?p=day&d=2026-09-10", nil, nil); strings.Contains(empty.body, "chart-bar-bots") {
-		t.Error("bots are drawn for a day the log says nothing about")
+	if empty := s.do(http.MethodGet, prefix+"/?p=day&d=2026-09-10", nil, nil); strings.Contains(empty.body, "Боты и программы (по логу сервера)") {
+		t.Error("bots are counted for a day the log says nothing about")
 	}
 
 	s.cookie = ""
@@ -118,10 +118,29 @@ func TestStatusScreenAndRebuildButton(t *testing.T) {
 	if page.status != http.StatusOK {
 		t.Fatalf("status with the reports of the night: %d", page.status)
 	}
-	for _, want := range []string{"сайт: 61 день", "почта: не отвечает", "3,4 МБ", "только на этом диске"} {
+	if err := os.WriteFile(filepath.Join(s.state, "status", "fail2ban.json"),
+		[]byte(`{"checked_at":"2026-09-22T04:40:00Z","ok":true,"jails":[{"name":"sshd","banned":2,"total":40},{"name":"krokosha-admin","banned":1,"total":3}],"error":""}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page = s.do(http.MethodGet, prefix+"/status", nil, nil)
+	for _, want := range []string{"сайт: 61 день", "почта: не отвечает", "3,4 МБ", "только на этом диске", "3 адреса в бане · sshd: 2 сейчас, 40 всего · krokosha-admin: 1 сейчас, 3 всего"} {
 		if !strings.Contains(page.body, want) {
 			t.Errorf("the status screen lacks %q", want)
 		}
+	}
+
+	// «Backup now» leaves a request for krokosha-backup-now.path, and the button waits for it.
+	if got := s.do(http.MethodPost, prefix+"/status/backup", url.Values{"csrf": {s.csrf()}}, nil); got.status != http.StatusSeeOther || got.location != prefix+"/status?ok=backup" {
+		t.Fatalf("backup now: %d %s", got.status, got.location)
+	}
+	if _, err := os.Stat(filepath.Join(s.state, "requests", "backup")); err != nil {
+		t.Errorf("no request for a backup: %v", err)
+	}
+	if after := s.do(http.MethodGet, prefix+"/status?ok=backup", nil, nil); !strings.Contains(after.body, "Резервная копия запрошена") || !strings.Contains(after.body, "Запрошена…") {
+		t.Error("the page does not say the backup was asked for")
+	}
+	if got := s.do(http.MethodPost, prefix+"/status/backup", url.Values{"csrf": {"forged"}}, nil); got.status != http.StatusForbidden {
+		t.Errorf("backup without the CSRF token: %d", got.status)
 	}
 
 	request := filepath.Join(s.state, "requests", "rebuild")
@@ -230,11 +249,6 @@ func TestFormatting(t *testing.T) {
 	for value, want := range map[int64]string{950: "950", 12_500: "12,5 тыс", 40_000: "40 тыс", 2_300_000: "2,3 млн"} {
 		if got := compactCount(value); got != want {
 			t.Errorf("compactCount(%d) = %q, want %q", value, got, want)
-		}
-	}
-	for value, want := range map[int64]int64{0: 4, 900: 1000, 1500: 4 << 10, 3 << 20: 4 << 20, 7 << 20: 10 << 20, 900 << 20: 1000 << 20} {
-		if got := niceCeilBytes(value); got != want {
-			t.Errorf("niceCeilBytes(%d) = %d, want %d", value, got, want)
 		}
 	}
 	for elapsed, want := range map[time.Duration]string{5 * time.Second: "только что", 3 * time.Minute: "3 мин назад", 5 * time.Hour: "5 ч назад", 72 * time.Hour: "3 дн. назад", -time.Hour: "—"} {

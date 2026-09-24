@@ -30,6 +30,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
+	"github.com/DenisHumen/krokosha-site/api/internal/hardening"
 	"github.com/DenisHumen/krokosha-site/api/internal/imap"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
@@ -46,6 +47,10 @@ import (
 )
 
 func main() {
+	if err := hardening.PrivateEnvironment(); err != nil {
+		fmt.Fprintln(os.Stderr, "krokosha-api: cannot keep the environment private:", err)
+		os.Exit(1)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "krokosha-api:", err)
 		os.Exit(1)
@@ -133,7 +138,11 @@ func run() error {
 	leadStore.UseLoyalty(form.Loyalty, location)
 	// Files that come with requests live in the data root, outside anything nginx serves.
 	attachments := leads.NewFiles(filepath.Join(env.DataDir, "attachments"))
+	// The files of templates (quick answers) live next to them: the same sandbox, the same backup,
+	// and an answer gets its copy as a hard link.
+	templateMedia := leads.NewFiles(filepath.Join(env.DataDir, "attachments", "templates"))
 	leadStore.UseFiles(attachments)
+	leadStore.UseMedia(templateMedia)
 	deliveries := outbox.NewWorker(pool, log)
 	// «Continue in Telegram» on the «thank you» page and in the confirmation letter: the link of
 	// the request's own token (brief B10.5). There is one only while the bot is connected.
@@ -327,13 +336,15 @@ func run() error {
 		Active: func(ctx context.Context, window time.Duration) int {
 			return store.CountActive(ctx, analytics.ActiveSet, window)
 		},
-		Traffic:   nginxlog.NewReports(pool, location),
-		System:    system,
-		LogPolled: accessLog.LastPoll,
-		Leads:     leadStore,
-		Form:      form.Current,
-		Kick:      deliveries.Kick,
-		BotAccess: botAccess,
+		Traffic:        nginxlog.NewReports(pool, location),
+		System:         system,
+		LogPolled:      accessLog.LastPoll,
+		Leads:          leadStore,
+		Form:           form.Current,
+		Kick:           deliveries.Kick,
+		BotAccess:      botAccess,
+		BotRemindAfter: time.Duration(env.Telegram.RemindMinutes) * time.Minute,
+		BotDigestAt:    env.Telegram.DigestAt,
 		BotStatus: func() (telegram.Status, bool) {
 			if botRunner == nil {
 				return telegram.Status{}, false
@@ -348,6 +359,14 @@ func run() error {
 		Loyalty:         form.Loyalty,
 		Achievements:    eggs,
 		Mailboxes:       staffMail,
+		MailFrom:        env.Mail.From,
+		SMTPAddr:        env.Mail.SMTPAddr,
+		Deliveries: func(ctx context.Context, limit int) ([]outbox.Entry, error) {
+			return outbox.Recent(ctx, pool, limit)
+		},
+		SentSince: func(ctx context.Context, channel string, since time.Time) (int, error) {
+			return outbox.SentSince(ctx, pool, channel, since)
+		},
 	})
 	if err != nil {
 		return err
@@ -360,7 +379,7 @@ func run() error {
 	go func() {
 		defer workers.Done()
 		leads.Retention{
-			Store: leadStore, Files: attachments, Log: log,
+			Store: leadStore, Files: attachments, Media: templateMedia, Log: log,
 			KeepMonths: env.Retention.KeepMonths, Delete: env.Retention.Delete, SpamDays: env.Retention.SpamDays,
 		}.Run(ctx)
 	}()
