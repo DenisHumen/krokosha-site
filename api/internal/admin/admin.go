@@ -416,6 +416,11 @@ func (h *Handler) guarded(limit int64, next http.HandlerFunc) http.Handler {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			if limit > formLimit {
+				// Only a form with files may be big: a url-encoded body is read into memory whole,
+				// so anything else is held to the limit of a small form before a byte is read.
+				if media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); media != "multipart/form-data" {
+					r.Body = http.MaxBytesReader(w, r.Body, formLimit)
+				}
 				err := r.ParseMultipartForm(1 << 20) // the body is capped by MaxBytesReader above
 				if r.MultipartForm != nil {
 					defer func() { _ = r.MultipartForm.RemoveAll() }()

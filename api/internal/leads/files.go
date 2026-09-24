@@ -339,6 +339,12 @@ func (f *Files) Link(from *Files, storedAs string, upload Upload) (Upload, error
 	upload.StoredAs = hex.EncodeToString(random)
 	target := filepath.Join(f.dir, upload.StoredAs)
 	if err := os.Link(source, target); err == nil {
+		// A link keeps the template file's old time, and the nightly sweep judges files older than
+		// a day by whether the database knows them: until the answer's transaction commits it does
+		// not, and the fresh link would go. A new time keeps it out of the sweep for the day (the
+		// file of the template shares it, which does it no harm).
+		now := time.Now()
+		_ = os.Chtimes(target, now, now)
 		return upload, nil
 	}
 	in, err := os.Open(source) // checked by where: 32 hex digits inside the other directory

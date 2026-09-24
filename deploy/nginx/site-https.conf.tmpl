@@ -113,8 +113,10 @@ server {
         include snippets/krokosha-admin.conf;
     }
 
-    # Forms with files: an answer with photos and videos, the files of a template. The API checks
-    # the session and the CSRF token before it reads a byte of them, and caps the body at 110 MB.
+    # Forms with files: an answer with photos and videos, the files of a template. nginx takes the
+    # body first (buffered, so that a slow upload does not hold the API's reading of it); the API
+    # then checks the session and the origin before it parses a byte, the CSRF token after, and
+    # caps the body at 110 MB. Only who knows the secret path gets here, two uploads at a time.
     location ^~ @@ADMIN_PATH@@/upload/ {
         limit_req zone=krokosha_admin burst=40 nodelay;
         limit_conn krokosha_uploads 2;
