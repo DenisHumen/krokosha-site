@@ -842,9 +842,13 @@ export function initAccount(): void {
     change.textContent = client.email ? A.access.change_email : A.access.add_email;
     $(access, '[data-telegram-link]').hidden = Boolean(client.telegram) || !me.bot;
     $(access, '[data-telegram-unlink]').hidden = !client.telegram;
+    // One person, one account: a way in that opens another account makes the two one.
+    $(access, '[data-access-hint]').hidden =
+      Boolean(client.email) && (Boolean(client.telegram) || !me.bot);
     accessEmailForm.hidden = step !== 'email';
     accessCodeForm.hidden = step !== 'code';
     if (step === 'idle') accessError.textContent = '';
+    else $(access, '[data-access-status]').hidden = true;
   }
 
   $(access, '[data-email-change]').addEventListener('click', () => {
@@ -923,13 +927,16 @@ export function initAccount(): void {
       return;
     }
     void busy(accessCodeForm, async () => {
-      const { data } = await api('POST', '/api/account/login/code', { code });
+      const { data } = await api<Answer & { merged?: boolean }>('POST', '/api/account/login/code', {
+        code,
+      });
       if (!data.ok) {
         accessError.textContent = error(data.error);
         return;
       }
       input.value = '';
       await load();
+      $(access, '[data-access-status]').hidden = data.merged !== true;
       $(access, '[data-access-email]').closest('dl')?.scrollIntoView({ block: 'nearest' });
     });
   });

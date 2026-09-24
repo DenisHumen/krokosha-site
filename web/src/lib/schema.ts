@@ -273,6 +273,8 @@ const accountSchema = z.strictObject({
     unlink: localized,
     linked: localized,
     cancel: localized,
+    join_hint: localized,
+    merged: localized,
   }),
   sessions: z.strictObject({
     title: localized,

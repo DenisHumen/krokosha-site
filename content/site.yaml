@@ -511,7 +511,7 @@ account:
     bad_code: { en: "The code does not fit or has expired", uk: "Код не підходить або застарів", ru: "Код не подходит или устарел" }
     throttled: { en: "Too many attempts. Please try again in an hour.", uk: "Забагато спроб. Спробуйте за годину.", ru: "Слишком много попыток. Попробуйте через час." }
     no_bot: { en: "Signing in with Telegram is not available now: please use email.", uk: "Вхід через Telegram зараз недоступний — скористайтеся поштою.", ru: "Вход через Telegram сейчас недоступен — воспользуйтесь почтой." }
-    taken: { en: "This email or Telegram belongs to another account already.", uk: "Ця пошта чи Telegram уже належить іншому кабінету.", ru: "Эта почта или Telegram уже принадлежит другому кабинету." }
+    taken: { en: "This email or Telegram belongs to a disabled account. Please write to me.", uk: "Ця пошта чи Telegram належить вимкненому кабінету. Напишіть мені.", ru: "Эта почта или Telegram принадлежит отключённому кабинету. Напишите мне." }
     disabled: { en: "This account is disabled. Please write to me.", uk: "Цей кабінет вимкнено. Напишіть мені.", ru: "Этот кабинет отключён. Напишите мне." }
     signed_out: { en: "The session has ended: please sign in again.", uk: "Сесія завершилася — увійдіть знову.", ru: "Сессия завершилась — войдите снова." }
     bad_contact: { en: "This does not look like a contact of this kind", uk: "Це не схоже на контакт такого типу", ru: "Это не похоже на контакт такого типа" }
@@ -656,6 +656,15 @@ account:
     unlink: { en: "Unlink", uk: "Відв'язати", ru: "Отвязать" }
     linked: { en: "Linked", uk: "Прив'язано", ru: "Привязано" }
     cancel: { en: "Cancel", uk: "Скасувати", ru: "Отмена" }
+    # Один человек — один кабинет: способ входа, который уже открывает другой кабинет, объединяет их.
+    join_hint:
+      en: "Signed in before with another email or with Telegram? Add that way here: the two accounts become one, with all requests and achievements."
+      uk: "Входили раніше з іншою поштою чи через Telegram? Додайте цей спосіб тут: кабінети об'єднаються з усіма заявками та досягненнями."
+      ru: "Входили раньше с другой почтой или через Telegram? Добавьте этот способ здесь: кабинеты объединятся со всеми заявками и достижениями."
+    merged:
+      en: "Done: your other account joined this one — its requests and achievements are here now."
+      uk: "Готово: ваш другий кабінет приєднано до цього — його заявки та досягнення тепер тут."
+      ru: "Готово: ваш второй кабинет объединён с этим — его заявки и достижения теперь здесь."
   sessions:
     title: { en: "Devices", uk: "Пристрої", ru: "Устройства" }
     current: { en: "this device", uk: "цей пристрій", ru: "это устройство" }

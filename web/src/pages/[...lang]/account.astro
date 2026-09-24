@@ -566,6 +566,12 @@ const scriptTexts = JSON.stringify({
               </p>
             </form>
             <p class="field-error" role="alert" data-error></p>
+            <p class="sent" role="status" data-access-status hidden>
+              {account.access.merged}
+            </p>
+            <p class="note sent" data-access-hint hidden>
+              {account.access.join_hint}
+            </p>
           </section>
 
           <section class="card" aria-labelledby="sessions-title" data-sessions>

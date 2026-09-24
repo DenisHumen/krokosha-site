@@ -309,7 +309,8 @@ func (h *Handler) answerVerified(w http.ResponseWriter, result Result, err error
 		if result.Token != "" {
 			setCookie(w, SessionCookie, result.Token, SessionLifetime)
 		}
-		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "lang": result.Lang, "created": result.Created, "linked": result.Linked})
+		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "lang": result.Lang, "created": result.Created, "linked": result.Linked,
+			"merged": result.Merged})
 	}
 }
 
