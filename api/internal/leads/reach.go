@@ -242,13 +242,37 @@ func (s *Store) MarkTarget(ctx context.Context, id int64, status, emailMessageID
 		status, emailMessageID, now, id); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `
+	var messageID int64
+	if err := s.db.QueryRowContext(ctx, `SELECT message_id FROM lead_deliveries WHERE id = ?`, id).Scan(&messageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // the request was deleted meanwhile
+		}
+		return err
+	}
+	if emailMessageID != "" {
+		// The Message-ID of the letter keeps the conversation in one thread in the client's mail.
+		if _, err := s.db.ExecContext(ctx, `UPDATE lead_messages SET email_message_id = COALESCE(email_message_id, ?) WHERE id = ?`,
+			emailMessageID, messageID); err != nil {
+			return err
+		}
+	}
+	return sumUp(ctx, s.db, messageID)
+}
+
+// execer runs a statement: the pool or a transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// sumUp sums an answer's deliveries up into lead_messages.delivery — all of them, whatever channel.
+func sumUp(ctx context.Context, q execer, messageID int64) error {
+	_, err := q.ExecContext(ctx, `
 		UPDATE lead_messages m JOIN (
 			SELECT message_id,
 			       CASE WHEN SUM(status = 'sent') > 0 THEN 'sent' WHEN SUM(status = 'queued') > 0 THEN 'queued' ELSE 'failed' END AS summary
-			FROM lead_deliveries WHERE message_id = (SELECT message_id FROM lead_deliveries WHERE id = ?) GROUP BY message_id
+			FROM lead_deliveries WHERE message_id = ? GROUP BY message_id
 		) d ON d.message_id = m.id
-		SET m.delivery = d.summary, m.email_message_id = COALESCE(m.email_message_id, NULLIF(?, ''))`, id, emailMessageID)
+		SET m.delivery = d.summary`, messageID)
 	return err
 }
 

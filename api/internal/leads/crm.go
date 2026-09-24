@@ -349,6 +349,41 @@ func (s *Store) AttachFiles(ctx context.Context, id, messageID int64, files []Up
 	return nil
 }
 
+// bounced records a letter that came back. An answer of deliveries loses the delivery to the address
+// that refused it — or the one address it went to, when the report names none it knows — and sums
+// its deliveries up again: Telegram may well have taken the same answer. An answer from before
+// deliveries is failed as a whole.
+func bounced(ctx context.Context, tx *sql.Tx, now time.Time, id int64, emailMessageID, recipient string) error {
+	var messageID sql.NullInt64
+	var letters int
+	if err := tx.QueryRowContext(ctx, `SELECT MIN(message_id), COUNT(*) FROM lead_deliveries WHERE lead_id = ? AND channel = 'email' AND email_message_id = ?`,
+		id, emailMessageID).Scan(&messageID, &letters); err != nil {
+		return err
+	}
+	if letters == 0 {
+		_, err := tx.ExecContext(ctx, `UPDATE lead_messages SET delivery = 'failed' WHERE lead_id = ? AND direction = 'out' AND email_message_id = ?`, id, emailMessageID)
+		return err
+	}
+	failed := int64(0)
+	if recipient != "" {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE lead_deliveries SET status = 'failed', updated_at = ?
+			WHERE lead_id = ? AND channel = 'email' AND email_message_id = ? AND LOWER(target) = LOWER(?)`, now, id, emailMessageID, recipient)
+		if err != nil {
+			return err
+		}
+		failed, _ = result.RowsAffected()
+	}
+	if failed == 0 && letters == 1 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lead_deliveries SET status = 'failed', updated_at = ? WHERE lead_id = ? AND channel = 'email' AND email_message_id = ?`,
+			now, id, emailMessageID); err != nil {
+			return err
+		}
+	}
+	return sumUp(ctx, tx, messageID.Int64)
+}
+
 // Take assigns a new request to whoever asks first. A second «take» — from the admin area or
 // from the bot, a moment later — gets ErrAlreadyTaken and learns who was faster.
 func (s *Store) Take(ctx context.Context, id int64, actor string) (takenBy string, err error) {
@@ -789,28 +824,7 @@ func (s *Store) UndeliveredTo(ctx context.Context, id int64, emailMessageID, rec
 		return err
 	}
 	if emailMessageID != "" {
-		failed := int64(0)
-		if recipient != "" {
-			result, err := tx.ExecContext(ctx, `
-				UPDATE lead_deliveries SET status = 'failed', updated_at = ?
-				WHERE lead_id = ? AND channel = 'email' AND email_message_id = ? AND LOWER(target) = LOWER(?)`, now, id, emailMessageID, recipient)
-			if err != nil {
-				return err
-			}
-			failed, _ = result.RowsAffected()
-		}
-		if failed > 0 {
-			// The answer sums its deliveries up again, the way MarkTarget does.
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE lead_messages m JOIN (
-					SELECT message_id,
-					       CASE WHEN SUM(status = 'sent') > 0 THEN 'sent' WHEN SUM(status = 'queued') > 0 THEN 'queued' ELSE 'failed' END AS summary
-					FROM lead_deliveries WHERE lead_id = ? AND email_message_id = ? GROUP BY message_id
-				) d ON d.message_id = m.id
-				SET m.delivery = d.summary`, id, emailMessageID); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, `UPDATE lead_messages SET delivery = 'failed' WHERE lead_id = ? AND direction = 'out' AND email_message_id = ?`, id, emailMessageID); err != nil {
+		if err := bounced(ctx, tx, now, id, emailMessageID, recipient); err != nil {
 			return err
 		}
 	}
