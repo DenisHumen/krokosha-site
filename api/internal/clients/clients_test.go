@@ -466,10 +466,13 @@ func TestLookAlikeAddresses(t *testing.T) {
 	if other := same.me()["client"].(map[string]any)["id"]; other != id {
 		t.Errorf("the address in capitals opened account %v, not %v", other, id)
 	}
-	// A request left with a look-alike joins no account.
-	lead, err := f.leads.Get(context.Background(), mustNumber(t, f.submit(f.browser("198.51.100.25"), "ánna@example.com", nil)["id"].(string)))
-	if err != nil || lead.ClientID != 0 {
-		t.Errorf("a request with a look-alike joined account %d (%v)", lead.ClientID, err)
+	// The form takes no look-alike either (addresses are ASCII): no request of one can join the account.
+	form := url.Values{
+		"name": {"Анна"}, "contact_method": {"email"}, "contact_value": {"ánna@example.com"}, "direction": {"networks"},
+		"description": {"Нужно перестроить сеть офиса на 40 мест: MikroTik и два VLAN."}, "consent": {"on"}, "lang": {"ru"},
+	}
+	if got := f.browser("198.51.100.25").send(http.MethodPost, "/api/leads", form); got.status != http.StatusUnprocessableEntity {
+		t.Errorf("the form took a look-alike address: %d %s", got.status, got.raw)
 	}
 }
 
