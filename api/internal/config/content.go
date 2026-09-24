@@ -27,6 +27,8 @@ type Site struct {
 	Contacts struct {
 		Form Form `yaml:"form"`
 	} `yaml:"contacts"`
+	// Loyalty: the discounts of clients and the levels of regular ones.
+	Loyalty Loyalty `yaml:"loyalty"`
 }
 
 // SenderName is the name letters are signed with when the installer was given none: the owner
@@ -107,6 +109,9 @@ func LoadContent(dir string) (*Content, error) {
 	}
 	if content.Site.GitHub.User == "" {
 		return nil, errors.New("content/site.yaml: github.user is required")
+	}
+	if err := content.Site.Loyalty.Validate(); err != nil {
+		return nil, fmt.Errorf("content/site.yaml: %w", err)
 	}
 	for name, override := range content.Projects.Overrides {
 		switch override.Tier {

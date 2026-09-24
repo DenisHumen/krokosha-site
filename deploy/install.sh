@@ -1057,6 +1057,16 @@ RECORDS
   rm -f "$tmp"
 
   install_if_changed "$DEPLOY/bin/krokosha-mailbox" /usr/local/bin/krokosha-mailbox 0755 || true
+  # The «Почта» screen of the admin area: the API drops requests into requests/mail (its own), the
+  # root helper applies them and lists the mailboxes in mail/ (root's, the site user reads it).
+  install -d -m 0750 -o "$KROKOSHA_USER" -g "$KROKOSHA_USER" "$KROKOSHA_STATE/requests/mail"
+  install -d -m 0750 -o root -g "$KROKOSHA_USER" "$KROKOSHA_STATE/mail"
+  for unit in krokosha-mailbox.service krokosha-mailbox.path; do
+    install_if_changed "$DEPLOY/systemd/$unit" "/etc/systemd/system/$unit" || true
+  done
+  systemctl daemon-reload
+  /usr/local/bin/krokosha-mailbox publish
+  systemctl enable --quiet --now krokosha-mailbox.path
   # The API started with the new addresses before its mailbox moved there, and signs in to it once
   # only (a wrong password is not retried: the mail server's fail2ban would ban the host). Again now.
   if [[ ${#moved[@]} -gt 0 ]]; then

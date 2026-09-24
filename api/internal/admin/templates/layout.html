@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <meta name="color-scheme" content="dark" />
     <title>{{.Title}} · Krokosha</title>
+    {{if .Refresh}}<meta http-equiv="refresh" content="3" />{{end}}
     <link rel="stylesheet" href="{{path "/static/admin.css"}}" />
     {{if .Session}}<script src="{{path "/static/admin.js"}}" defer></script>{{end}}
   </head>
@@ -16,8 +17,10 @@
         <nav aria-label="Разделы">
           <a href="{{path "/"}}" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Обзор</a>
           <a href="{{path "/leads"}}" {{if eq .Nav "leads"}}aria-current="page"{{end}}>Заявки{{if .NewLeads}} <span class="badge">{{.NewLeads}}</span>{{end}}</a>
+          {{if .HasClients}}<a href="{{path "/clients"}}" {{if eq .Nav "clients"}}aria-current="page"{{end}}>Клиенты</a>{{end}}
           {{if .HasInbox}}<a href="{{path "/inbox"}}" {{if eq .Nav "inbox"}}aria-current="page"{{end}}>Входящие{{if .Letters}} <span class="badge">{{.Letters}}</span>{{end}}</a>{{end}}
           <a href="{{path "/bot"}}" {{if eq .Nav "bot"}}aria-current="page"{{end}}>Бот</a>
+          {{if .HasMail}}<a href="{{path "/mail"}}" {{if eq .Nav "mail"}}aria-current="page"{{end}}>Почта</a>{{end}}
           <a href="{{path "/visits"}}" {{if eq .Nav "visits"}}aria-current="page"{{end}}>Визиты</a>
           <a href="{{path "/traffic"}}" {{if eq .Nav "traffic"}}aria-current="page"{{end}}>Трафик</a>
           <a href="{{path "/status"}}" {{if eq .Nav "status"}}aria-current="page"{{end}}>Статус</a>

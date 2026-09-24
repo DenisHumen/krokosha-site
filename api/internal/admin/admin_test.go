@@ -18,9 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
@@ -28,6 +30,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/imap/imaptest"
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/sysstatus"
@@ -57,6 +60,11 @@ type site struct {
 	// With mail: the service mailbox (a test IMAP server) and what reads it.
 	mailbox *imaptest.Server
 	letters *inbox.Service
+	// Personal accounts and the achievements of the easter eggs.
+	clients *clients.Service
+	eggs    *achievements.Service
+	// «Почта»: the mail server exists once its list of mailboxes is written (s.mailServer).
+	mail *mailboxes.Service
 }
 
 // The dashboards are tested on a fixed day, so that the numbers on the page are known.
@@ -87,9 +95,17 @@ func newSiteWith(t *testing.T, withMail bool) *site {
 	}
 
 	s := &site{t: t, db: pool, feed: make(chan analytics.Live, 4), state: t.TempDir(), leads: leads.NewStore(pool, nil)}
-	if err := os.MkdirAll(filepath.Join(s.state, "requests"), 0o755); err != nil {
-		t.Fatal(err)
+	s.leads.UseLoyalty(testLoyalty, time.UTC)
+	s.clients = clients.New(clients.Options{DB: pool, Cache: store, Leads: s.leads, Log: quiet, Secret: []byte("a secret of the test, long enough"),
+		SiteURL: "https://krokosha.xyz"})
+	s.eggs = achievements.New(achievements.Options{DB: pool, Cache: store, Log: quiet, Secret: []byte("a secret of the test, long enough")})
+	for _, dir := range []string{filepath.Join(s.state, "requests", "mail"), filepath.Join(s.state, "mail")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	s.mail = mailboxes.New(mailboxes.Options{Requests: filepath.Join(s.state, "requests", "mail"), Status: filepath.Join(s.state, "mail"),
+		Domain: "krokosha.xyz", Service: testMailbox, Owner: "denis@krokosha.xyz"})
 	systemOptions := sysstatus.Options{StateDir: s.state, WWWDir: t.TempDir(), ContentDir: t.TempDir(), DB: pool, Cache: store,
 		Version: "test", Started: time.Now(), Now: func() time.Time { return reportDay },
 		Geo: func() geo.Info { return s.geo }}
@@ -123,6 +139,8 @@ func newSiteWith(t *testing.T, withMail bool) *site {
 		BotAccess: telegram.NewAccess(pool, nil),
 		BotStatus: func() (telegram.Status, bool) { return s.bot, s.bot.Mode != "" },
 		Geo:       func() geo.Info { return s.geo },
+		Clients:   s.clients, Loyalty: testLoyalty, Achievements: s.eggs,
+		Mailboxes: s.mail,
 	})
 	if err != nil {
 		t.Fatal(err)

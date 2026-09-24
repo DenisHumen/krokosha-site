@@ -1,0 +1,88 @@
+{{define "content"}}
+  {{$d := .Data}}
+  {{$csrf := .Session.CSRFToken}}
+  <div class="page-head">
+    <h1>Клиенты</h1>
+    <div class="period">
+      <form class="range" method="get" action="{{path "/clients"}}" role="search">
+        <label class="visually-hidden" for="clients-search">Поиск по клиентам</label>
+        <input id="clients-search" type="search" name="q" value="{{$d.Search}}" placeholder="Имя, компания, почта, @telegram, телефон, #12" />
+        <button class="button button-ghost" type="submit">Найти</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="grid grid-funnel">
+    <section class="card">
+      <h2 class="card-title">{{plural $d.Total "клиент" "клиента" "клиентов"}}</h2>
+      <div class="card-body">
+        <div class="table-scroll">
+          <table class="table table-wide">
+            <thead>
+              <tr><th>№</th><th>Клиент</th><th>Вход</th><th>Уровень</th><th>Заявки</th><th>Скидка</th><th>Активность</th></tr>
+            </thead>
+            <tbody>
+              {{range $d.Items}}
+                <tr>
+                  <td class="mono"><a href="{{path "/clients/" (print .ID)}}">#{{.ID}}</a></td>
+                  <td>
+                    <a href="{{path "/clients/" (print .ID)}}">{{if .Name}}{{.Name}}{{else}}<span class="muted">без имени</span>{{end}}</a>
+                    {{if .Company}}<span class="cell-sub">{{.Company}}</span>{{end}}
+                    {{if .Disabled}}<span class="tag tag-warn">заблокирован</span>{{end}}
+                  </td>
+                  <td>{{if .Email}}{{.Email}}{{end}}{{if .Telegram}}<span class="cell-sub">{{.Telegram}}</span>{{end}}</td>
+                  <td>{{if .HasTier}}{{.Tier}}{{else}}<span class="muted">—</span>{{end}}<span class="cell-sub">{{plural .Orders "заказ" "заказа" "заказов"}}{{if .Spent}} · {{money .Spent}}{{end}}</span></td>
+                  <td>{{.Requests}}{{if .Open}} <span class="tag">открыто: {{.Open}}</span>{{end}}</td>
+                  <td>{{if .Personal}}{{.Personal}}%{{else}}<span class="muted">—</span>{{end}}</td>
+                  <td class="mono">{{time .LastActivity}}</td>
+                </tr>
+              {{else}}
+                <tr><td colspan="7" class="muted">{{if $d.Search}}Никого не нашлось.{{else}}Клиентов с личным кабинетом пока нет: аккаунт появляется, когда клиент впервые входит на сайте, — или создайте его справа.{{end}}</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{if or $d.Prev $d.Next}}
+          <p class="pager">
+            {{if $d.Prev}}<a class="button button-ghost" href="{{href "/clients" $d.Prev}}">← Назад</a>{{end}}
+            <span class="muted">страница {{$d.Page}}</span>
+            {{if $d.Next}}<a class="button button-ghost" href="{{href "/clients" $d.Next}}">Дальше →</a>{{end}}
+          </p>
+        {{end}}
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="card">
+        <h2 class="card-title">Новый клиент</h2>
+        <form class="card-body" method="post" action="{{path "/clients"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <p class="muted">Для клиента, который пришёл по телефону или лично. Заявки с этим адресом привяжутся к нему сразу; остальные — кнопкой в карточке.</p>
+          <label for="client-name">Имя</label>
+          <input id="client-name" name="name" maxlength="100" autocomplete="off" />
+          <label for="client-email">Почта <span class="muted">— станет адресом входа</span></label>
+          <input id="client-email" name="email" type="email" maxlength="200" autocomplete="off" />
+          <label for="client-phone">Телефон</label>
+          <input id="client-phone" name="phone" type="tel" maxlength="30" autocomplete="off" />
+          <button class="button" type="submit">Создать</button>
+        </form>
+      </section>
+
+      {{if $d.Rules.Enabled}}
+        <section class="card">
+          <h2 class="card-title">Скидки и уровни</h2>
+          <div class="card-body">
+            <dl class="facts">
+              <div><dt>Первая заявка</dt><dd>{{$d.Rules.Welcome}}%</dd></div>
+              <div><dt>Все пасхалки, один раз</dt><dd>{{$d.Rules.Eggs}}%</dd></div>
+              {{range $d.Rules.Tiers}}
+                <div><dt>{{.Name.In "ru"}}</dt><dd>{{.Discount}}% <span class="muted">— {{if .Orders}}{{plural .Orders "заказ" "заказа" "заказов"}}{{end}}{{if and .Orders .Spent}} или {{end}}{{if .Spent}}{{money .Spent}}{{end}}</span></dd></div>
+              {{end}}
+            </dl>
+            <p class="muted">Скидки не складываются: действует наибольшая. Правила — в content/site.yaml → loyalty.</p>
+          </div>
+        </section>
+      {{end}}
+    </div>
+  </div>
+{{end}}

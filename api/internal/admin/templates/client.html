@@ -1,0 +1,234 @@
+{{define "content"}}
+  {{$d := .Data}}
+  {{$c := $d.Client}}
+  {{$csrf := .Session.CSRFToken}}
+  {{$base := print "/clients/" $c.ID}}
+  <div class="page-head">
+    <h1>{{if $c.Name}}{{$c.Name}}{{else}}Клиент без имени{{end}} <span class="muted mono">#{{$c.ID}}</span>
+      {{if $c.DisabledAt.Valid}}<span class="status status-rejected">Заблокирован</span>{{end}}
+      {{if $d.HasTier}}<span class="status status-done">{{$d.Tier.Name.In "ru"}}</span>{{end}}</h1>
+    <a class="button button-ghost" href="{{path "/clients"}}">← К списку</a>
+  </div>
+
+  <div class="dashboard lead-layout">
+    <div class="stack lead-facts">
+      {{/* How to write to the client: the proven ways first, then what they wrote themselves. */}}
+      <section class="card">
+        <h2 class="card-title">Как связаться</h2>
+        <div class="card-body">
+          <dl class="facts">
+            <div><dt>Почта <span class="muted">· вход, подтверждена</span></dt><dd>{{if $c.Email}}<a href="mailto:{{$c.Email}}">{{$c.Email}}</a>{{else}}—{{end}}</dd></div>
+            <div><dt>Telegram <span class="muted">· вход, подтверждён</span></dt><dd>{{if $d.TelegramLink}}<a href="{{safeURL $d.TelegramLink}}" rel="noreferrer noopener">{{if $c.TelegramUsername}}@{{$c.TelegramUsername}}{{else}}id {{$c.TelegramID}}{{end}}</a>{{else}}—{{end}}</dd></div>
+            {{range $d.Contacts}}
+              <div><dt>{{kindName .Kind}} <span class="muted">· со слов клиента</span></dt>
+                <dd>{{with contactLink .}}<a href="{{.}}" rel="noreferrer noopener">{{end}}{{.Value}}{{if .Link}}</a>{{end}}
+                  <form class="inline" method="post" action="{{path $base "/contacts/" (print .ID) "/remove"}}">
+                    <input type="hidden" name="csrf" value="{{$csrf}}" />
+                    <button class="button button-ghost" type="submit" aria-label="Удалить контакт {{.Value}}">×</button>
+                  </form>
+                </dd></div>
+            {{end}}
+            <div><dt>Предпочитает</dt><dd>{{if $c.Preferred}}{{if eq $c.Preferred "email"}}почту{{else}}{{kindName $c.Preferred}}{{end}}{{else}}—{{end}}</dd></div>
+          </dl>
+          <form class="template-picker" method="post" action="{{path $base "/contacts"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="contact-kind">Добавить контакт</label>
+            <span class="inline">
+              <select id="contact-kind" name="kind">
+                {{range $d.Kinds}}<option value="{{.}}">{{kindName .}}</option>{{end}}
+              </select>
+              <label class="visually-hidden" for="contact-value">Значение</label>
+              <input id="contact-value" name="value" maxlength="200" placeholder="+380…, @name, ссылка" required />
+              <button class="button button-ghost" type="submit">Добавить</button>
+            </span>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Профиль</h2>
+        <form class="card-body" method="post" action="{{path $base "/profile"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <label for="profile-name">Имя</label>
+          <input id="profile-name" name="name" value="{{$c.Name}}" maxlength="100" />
+          <label for="profile-company">Компания</label>
+          <input id="profile-company" name="company" value="{{$c.Company}}" maxlength="120" />
+          <label for="profile-lang">Язык писем</label>
+          <select id="profile-lang" name="lang">
+            <option value="ru" {{if eq $c.Lang "ru"}}selected{{end}}>русский</option>
+            <option value="uk" {{if eq $c.Lang "uk"}}selected{{end}}>украинский</option>
+            <option value="en" {{if eq $c.Lang "en"}}selected{{end}}>английский</option>
+          </select>
+          <label for="profile-preferred">Как предпочитает связь</label>
+          <select id="profile-preferred" name="preferred">
+            <option value="">не указано</option>
+            <option value="email" {{if eq $c.Preferred "email"}}selected{{end}}>почта</option>
+            {{range $d.Kinds}}<option value="{{.}}" {{if eq $c.Preferred .}}selected{{end}}>{{kindName .}}</option>{{end}}
+          </select>
+          <button class="button button-ghost" type="submit">Сохранить</button>
+          <p class="muted">Аккаунт с {{time $c.CreatedAt}}{{if $c.LastSeenAt.Valid}} · последний вход {{time $c.LastSeenAt.Time}}{{end}}</p>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Заметка</h2>
+        <form class="card-body" method="post" action="{{path $base "/note"}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}" />
+          <label for="client-note">Внутренняя <span class="muted">— клиент её не видит</span></label>
+          <textarea id="client-note" name="note" rows="4">{{$c.Note}}</textarea>
+          <button class="button button-ghost" type="submit">Сохранить заметку</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="stack lead-chat">
+      <section class="card">
+        <h2 class="card-title">Уровень и скидки</h2>
+        <div class="card-body">
+          <div class="figures">
+            <div><p class="figure-label">Уровень</p><p class="figure">{{if $d.HasTier}}{{$d.Tier.Name.In "ru"}}{{else}}—{{end}}</p></div>
+            <div><p class="figure-label">Заказов</p><p class="figure">{{$d.History.Orders}}</p></div>
+            <div><p class="figure-label">На сумму</p><p class="figure">{{money $d.History.Spent}}</p></div>
+            <div><p class="figure-label">Следующая заявка</p><p class="figure">{{$d.Offer.Percent}}%</p></div>
+          </div>
+          <dl class="facts">
+            <div><dt>Скидка следующей заявки</dt><dd>{{discount $d.Offer}}</dd></div>
+            {{if $d.HasNext}}<div><dt>До «{{$d.Next.Tier.Name.In "ru"}}»</dt><dd>{{if $d.Next.Orders}}{{plural $d.Next.Orders "заказ" "заказа" "заказов"}}{{end}}{{if and $d.Next.Orders $d.Next.Spent}} или {{end}}{{if $d.Next.Spent}}{{money $d.Next.Spent}}{{end}}</dd></div>{{end}}
+            <div><dt>Пасхалки</dt><dd>{{len $d.Eggs}} из {{$d.EggsTotal}}{{if $d.History.EggsUsed}} · скидка за них использована{{end}}</dd></div>
+            {{if $c.OrdersCarried}}<div><dt>Из обезличенных заявок</dt><dd>{{plural $c.OrdersCarried "заказ" "заказа" "заказов"}} · {{money $c.SpentCarried}}</dd></div>{{end}}
+          </dl>
+          {{if $d.Eggs}}
+            <ul class="rows rows-plain">
+              {{range $d.Eggs}}<li class="row"><span class="row-name">{{eggName .ID}}</span><span class="row-value mono">{{time .At}}</span></li>{{end}}
+            </ul>
+          {{end}}
+          <form method="post" action="{{path $base "/discount"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <h3 class="card-subtitle">Персональная скидка</h3>
+            <p class="muted">Любой процент этому клиенту. Как и остальные скидки, действует, если она наибольшая. 0 — убрать.</p>
+            <span class="inline">
+              <label class="visually-hidden" for="personal-percent">Процент</label>
+              <input id="personal-percent" name="percent" type="number" min="0" max="100" step="1" value="{{$c.Personal.Percent}}" required />
+              <label class="visually-hidden" for="personal-until">Действует до</label>
+              <input id="personal-until" name="until" type="date" min="{{$d.Today}}" {{if $c.Personal.Until.Valid}}value="{{$c.Personal.Until.Time.Format "2006-01-02"}}"{{end}} />
+            </span>
+            <label for="personal-note">Подпись <span class="muted">— её видит клиент: «партнёрская», «за отзыв»</span></label>
+            <input id="personal-note" name="note" value="{{$c.Personal.Note}}" maxlength="100" />
+            <label class="choice"><input type="checkbox" name="once" {{if $c.Personal.Once}}checked{{end}} /> только на одну заявку</label>
+            <button class="button" type="submit">Сохранить скидку</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Заявки и обращения</h2>
+        <div class="card-body">
+          <div class="table-scroll">
+            <table class="table">
+              <thead><tr><th>Номер</th><th>Статус</th><th>Скидка</th><th>Сумма</th><th>Получена</th></tr></thead>
+              <tbody>
+                {{range $d.Leads}}
+                  <tr>
+                    <td class="mono"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a>{{if eq .Kind "inquiry"}} <span class="tag">обращение</span>{{end}}{{if .Subject}}<span class="cell-sub">{{.Subject}}</span>{{end}}</td>
+                    <td><span class="status status-{{.Status}}">{{statusName .Status}}</span></td>
+                    <td>{{if .Discount.Percent}}{{.Discount.Percent}}%{{else}}<span class="muted">—</span>{{end}}</td>
+                    <td>{{if .Amount}}{{money .Amount}}{{else}}<span class="muted">—</span>{{end}}</td>
+                    <td class="mono">{{time .Created}}</td>
+                  </tr>
+                {{else}}
+                  <tr><td colspan="5" class="muted">Заявок нет.</td></tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          <form class="template-picker" method="post" action="{{path $base "/attach"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="attach-lead">Привязать заявку <span class="muted">— например, оставленную по телефону</span></label>
+            <span class="inline">
+              <input id="attach-lead" name="lead" placeholder="K-0042" required />
+              <button class="button button-ghost" type="submit">Привязать</button>
+            </span>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack lead-more">
+      <section class="card">
+        <h2 class="card-title">Вход</h2>
+        <div class="card-body actions-stack">
+          <p class="muted">Паролей нет: клиент входит одноразовым кодом из письма или от бота. Потерял доступ к почте — смените адрес входа; не приходит код — отправьте ссылку.</p>
+          <form method="post" action="{{path $base "/email"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="login-email">Адрес входа</label>
+            <input id="login-email" name="email" type="email" value="{{$c.Email}}" maxlength="200" />
+            <button class="button button-ghost" type="submit">Сменить адрес</button>
+          </form>
+          {{if $c.Email}}
+            <form method="post" action="{{path $base "/link"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <button class="button button-ghost" type="submit">Отправить ссылку для входа</button>
+            </form>
+          {{end}}
+          {{if $c.TelegramID}}
+            <form method="post" action="{{path $base "/telegram/unlink"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <button class="button button-ghost" type="submit">Отвязать Telegram</button>
+            </form>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Сеансы</h2>
+        <div class="card-body">
+          <ul class="rows rows-plain">
+            {{range $d.Sessions}}
+              <li class="row"><span class="row-name">{{.Device}} <span class="muted mono">{{.Network}}</span></span><span class="row-value">{{since .LastSeen}}</span></li>
+            {{else}}
+              <li class="muted">Клиент сейчас нигде не вошёл.</li>
+            {{end}}
+          </ul>
+          {{if $d.Sessions}}
+            <form method="post" action="{{path $base "/sessions/end"}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}" />
+              <button class="button button-ghost" type="submit">Завершить все сеансы</button>
+            </form>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Аккаунт</h2>
+        <div class="card-body actions-stack">
+          <form method="post" action="{{path $base "/block"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            {{if $c.DisabledAt.Valid}}
+              <input type="hidden" name="block" value="0" />
+              <p class="muted">Заблокирован {{time $c.DisabledAt.Time}}.</p>
+              <button class="button button-ghost" type="submit">Разблокировать</button>
+            {{else}}
+              <input type="hidden" name="block" value="1" />
+              <button class="button button-ghost" type="submit">Заблокировать</button>
+            {{end}}
+          </form>
+          <form method="post" action="{{path $base "/merge"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="merge-other">Влить другой аккаунт этого человека <span class="muted">— заявки, контакты и пасхалки перейдут сюда</span></label>
+            <span class="inline">
+              <input id="merge-other" name="other" placeholder="#12" required />
+              <button class="button button-ghost" type="submit">Объединить</button>
+            </span>
+          </form>
+          <form method="post" action="{{path $base "/delete"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <p class="muted">Удаляются аккаунт, контакты, сеансы и пасхалки. Заявки остаются — без клиента; их данные удаляются отдельно, в карточке заявки.</p>
+            <label for="client-delete">Введите номер клиента для подтверждения</label>
+            <input id="client-delete" name="confirm" placeholder="{{$c.ID}}" autocomplete="off" required />
+            <button class="button button-danger" type="submit">Удалить аккаунт</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+{{end}}

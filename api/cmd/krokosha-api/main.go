@@ -21,10 +21,12 @@ import (
 	"time"
 	_ "time/tzdata" // the owner's time zone must resolve even on a system without tzdata
 
+	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
 	"github.com/DenisHumen/krokosha-site/api/internal/admin"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/db"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
@@ -32,6 +34,7 @@ import (
 	"github.com/DenisHumen/krokosha-site/api/internal/inbox"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 	krokoshamail "github.com/DenisHumen/krokosha-site/api/internal/mail"
+	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
 	"github.com/DenisHumen/krokosha-site/api/internal/netmap"
 	"github.com/DenisHumen/krokosha-site/api/internal/nginxlog"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
@@ -115,10 +118,19 @@ func run() error {
 	})
 	stats.Register(srv.Mux())
 
+	// The achievements of the easter eggs: how many players found each, and receipts of the finds
+	// that claim the eggs' discount (docs/architecture.md, 2026-09-24).
+	eggs := achievements.New(achievements.Options{
+		DB: pool, Cache: store, Log: log, Secret: []byte(env.Secret), Location: location, IgnoreCookie: admin.CookieName,
+	})
+	eggs.Register(srv.Mux())
+
 	// Requests from the contact form: stored together with the notifications to send, which a
 	// worker then delivers with retries (brief B10.1, B10.2).
 	form := config.WatchForm(env.ContentDir, log)
 	leadStore := leads.NewStore(pool, nil)
+	// Discounts of requests and the levels of regular clients (content/site.yaml → loyalty).
+	leadStore.UseLoyalty(form.Loyalty, location)
 	// Files that come with requests live in the data root, outside anything nginx serves.
 	attachments := leads.NewFiles(filepath.Join(env.DataDir, "attachments"))
 	leadStore.UseFiles(attachments)
@@ -140,6 +152,21 @@ func run() error {
 		}
 		return strings.TrimRight(env.SiteURL, "/") + leads.TelegramPath + lead.PublicToken
 	}
+	// Personal accounts of clients: signing in with a code by mail or from the bot, their requests,
+	// their discounts (docs/architecture.md, 2026-09-24).
+	accounts := clients.New(clients.Options{
+		DB: pool, Cache: store, Leads: leadStore, Log: log, Secret: []byte(env.Secret), SiteURL: env.SiteURL,
+		BotUsername: func() string {
+			if bot == nil {
+				return ""
+			}
+			return bot.Username()
+		},
+		Kick: deliveries.Kick, Location: location,
+	})
+	accountAPI := clients.NewHandler(accounts, form.Loyalty)
+	accountAPI.Register(srv.Mux())
+
 	if env.Mail.SMTPAddr != "" {
 		from, _ := mail.ParseAddress(env.Mail.From) // both validated by LoadEnv
 		notifyTo, _ := mail.ParseAddress(env.Mail.NotifyTo)
@@ -147,11 +174,19 @@ func run() error {
 			from.Name = senderName(env.ContentDir) // a letter from a bare address looks like a robot's
 		}
 		smtp := &krokoshamail.Sender{Addr: env.Mail.SMTPAddr, User: env.Mail.User, Password: env.Mail.Password, Hello: siteURL.Hostname(), Envelope: env.Mail.Inbox}
-		deliveries.Register(outbox.ChannelEmail, &leads.Mailer{
+		leadLetters := &leads.Mailer{
 			Store: leadStore, Deliver: smtp.Send, From: *from, NotifyTo: *notifyTo, SiteHost: siteURL.Hostname(),
 			AdminURL: env.SiteURL + env.AdminPath, Form: form.Current, Location: location, TelegramURL: letterTelegramURL,
 			Inbox: env.Mail.Inbox, Secret: []byte(env.Secret),
-		})
+		}
+		codeLetters := &clients.Mailer{Service: accounts, Deliver: smtp.Send, From: *from, SiteHost: siteURL.Hostname()}
+		// One channel, two writers: the codes of the personal account, and everything about requests.
+		deliveries.Register(outbox.ChannelEmail, outbox.SenderFunc(func(ctx context.Context, task outbox.Task) error {
+			if task.Kind == clients.TaskLogin {
+				return codeLetters.Send(ctx, task)
+			}
+			return leadLetters.Send(ctx, task)
+		}))
 	} else {
 		log.Warn("SMTP_ADDR is not set: notifications about requests wait in the outbox until mail is configured")
 	}
@@ -166,7 +201,7 @@ func run() error {
 	})
 	leads.NewHandler(leads.Options{
 		Store: leadStore, Cache: store, Sessions: stats, Log: log, Secret: []byte(env.Secret), Files: attachments,
-		Form: form.Current, WWWDir: env.WWWDir, TelegramURL: telegramURL,
+		Form: form.Current, WWWDir: env.WWWDir, TelegramURL: telegramURL, Accounts: accountAPI,
 		OnCreated: func(*leads.Lead) { deliveries.Kick() },
 	}).Register(srv.Mux())
 
@@ -208,7 +243,7 @@ func run() error {
 		Geo:        geoInfo,
 	})
 
-	accounts := auth.New(pool, store, log)
+	admins := auth.New(pool, store, log)
 
 	// The map of the internet of /map (docs/netmap.md): the map `krokosha-cli netmap sync` leaves in
 	// MySQL every night, loaded again whenever a newer one is there; routes are kept in Redis.
@@ -242,8 +277,9 @@ func run() error {
 				return letters.Status(ctx).Unmatched
 			},
 			Audit: func(ctx context.Context, actor, action, subject, details string) {
-				accounts.Audit(ctx, actor, action, subject, details, "telegram")
+				admins.Audit(ctx, actor, action, subject, details, "telegram")
 			},
+			Logins: accounts,
 		})
 		// New requests reach the bot through the outbox; whatever then happens to a request — in
 		// the bot or in the admin area — redraws its cards, and erasing one wipes them.
@@ -258,10 +294,22 @@ func run() error {
 
 	reports := analytics.NewReports(pool, location, nil)
 	reports.KeepRaw(env.AnalyticsKeepMonths)
+	// «Почта»: requests for the root helper (krokosha-mailbox apply) and what it reports back.
+	var owner string
+	if from, err := mail.ParseAddress(env.Mail.From); err == nil {
+		owner = from.Address
+	}
+	staffMail := mailboxes.New(mailboxes.Options{
+		Requests: filepath.Join(env.StateDir, "requests", "mail"),
+		Status:   filepath.Join(env.StateDir, "mail"),
+		Domain:   siteURL.Hostname(),
+		Service:  env.Mail.Inbox,
+		Owner:    owner,
+	})
 	panel, err := admin.New(admin.Options{
 		Prefix:   env.AdminPath,
 		SiteHost: siteURL.Hostname(),
-		Auth:     accounts,
+		Auth:     admins,
 		Log:      log,
 		Version:  version(),
 		Reports:  reports,
@@ -287,6 +335,10 @@ func run() error {
 		Mailbox:         env.Mail.Inbox,
 		KeepLettersDays: env.Retention.SpamDays,
 		Geo:             geoInfo,
+		Clients:         accounts,
+		Loyalty:         form.Loyalty,
+		Achievements:    eggs,
+		Mailboxes:       staffMail,
 	})
 	if err != nil {
 		return err
@@ -326,6 +378,15 @@ func run() error {
 			letters.Run(ctx)
 		}()
 	}
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		eggs.Run(ctx)
+	}()
+	go func() {
+		defer workers.Done()
+		accounts.Run(ctx, env.Retention.KeepMonths)
+	}()
 	// Finished days are summed up for good; raw page views older than the storage period go (brief B5).
 	workers.Add(1)
 	go func() {

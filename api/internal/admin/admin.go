@@ -17,11 +17,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/auth"
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/geo"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
+	"github.com/DenisHumen/krokosha-site/api/internal/loyalty"
+	"github.com/DenisHumen/krokosha-site/api/internal/mailboxes"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 	"github.com/DenisHumen/krokosha-site/api/internal/telegram"
 )
@@ -84,6 +88,14 @@ type Options struct {
 	// Geo describes the GeoIP database; nil — geolocation is off. Its maker is credited at the
 	// bottom of every page, as the licence of the data asks (DB-IP: CC BY 4.0).
 	Geo func() geo.Info
+
+	// Clients are the personal accounts; Loyalty the rules of discounts (content/site.yaml → loyalty);
+	// Achievements the statistics of the easter eggs.
+	Clients      *clients.Service
+	Loyalty      func() config.Loyalty
+	Achievements *achievements.Service
+	// Mailboxes of the site's own mail server (the «Почта» screen); nil — the screen is not there.
+	Mailboxes *mailboxes.Service
 }
 
 // Handler serves the admin area.
@@ -106,6 +118,9 @@ func New(opts Options) (*Handler, error) {
 	}
 	if opts.Form == nil {
 		opts.Form = func() config.Form { return config.Form{} }
+	}
+	if opts.Loyalty == nil {
+		opts.Loyalty = func() config.Loyalty { return config.Loyalty{} }
 	}
 	h := &Handler{opts: opts, templates: map[string]*template.Template{}}
 	funcs := template.FuncMap{
@@ -148,8 +163,18 @@ func New(opts Options) (*Handler, error) {
 		"tone": func(index int) string { // the accents of the reference dashboard, in turn
 			return [...]string{"accent", "cyan", "pink"}[index%3]
 		},
+		"discount":    func(offer loyalty.Offer) string { return h.discountText(offer) },
+		"tierName":    func(id string) string { return h.tierName(id) },
+		"money":       func(value any) string { return h.money(value) },
+		"contactLink": contactLink,
+		"kindName":    named(clients.KindNames, "—"),
+		"leadKind":    named(map[string]string{leads.KindRequest: "Заявка", leads.KindInquiry: "Обращение"}, "Заявка"),
+		"eggName":     named(eggNames, "—"),
+		"percentOf":   func(part, whole float64) float64 { return 100 * part / max(whole, 1) },
+		"since":       func(t time.Time) string { return ago(time.Since(t)) },
 	}
-	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error"} {
+	for _, page := range []string{"login", "overview", "visits", "visit", "traffic", "status", "leads", "lead", "inbox", "templates", "bot", "account", "error",
+		"clients", "client", "mail"} {
 		parsed, err := template.New("layout.html").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -187,6 +212,33 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/leads/{id}/note", h.private(h.leadNote))
 	mux.Handle("POST "+p+"/leads/{id}/reply", h.private(h.leadReply))
 	mux.Handle("POST "+p+"/leads/{id}/delete", h.private(h.leadDelete))
+	mux.Handle("POST "+p+"/leads/{id}/discount", h.private(h.leadDiscount))
+	mux.Handle("POST "+p+"/leads/{id}/amount", h.private(h.leadAmount))
+	mux.Handle("POST "+p+"/leads/{id}/client", h.private(h.leadClient))
+	if h.opts.Mailboxes != nil {
+		mux.Handle("GET "+p+"/mail", h.private(h.mailPage))
+		mux.Handle("POST "+p+"/mail", h.private(h.mailAdd))
+		mux.Handle("POST "+p+"/mail/password", h.private(h.mailPassword))
+		mux.Handle("POST "+p+"/mail/delete", h.private(h.mailDelete))
+	}
+	if h.opts.Clients != nil {
+		mux.Handle("GET "+p+"/clients", h.private(h.clientsList))
+		mux.Handle("POST "+p+"/clients", h.private(h.clientCreate))
+		mux.Handle("GET "+p+"/clients/{id}", h.private(h.clientCard))
+		mux.Handle("POST "+p+"/clients/{id}/profile", h.private(h.clientProfile))
+		mux.Handle("POST "+p+"/clients/{id}/note", h.private(h.clientNote))
+		mux.Handle("POST "+p+"/clients/{id}/contacts", h.private(h.clientContactAdd))
+		mux.Handle("POST "+p+"/clients/{id}/contacts/{contact}/remove", h.private(h.clientContactRemove))
+		mux.Handle("POST "+p+"/clients/{id}/discount", h.private(h.clientDiscount))
+		mux.Handle("POST "+p+"/clients/{id}/email", h.private(h.clientEmail))
+		mux.Handle("POST "+p+"/clients/{id}/telegram/unlink", h.private(h.clientUnlinkTelegram))
+		mux.Handle("POST "+p+"/clients/{id}/sessions/end", h.private(h.clientEndSessions))
+		mux.Handle("POST "+p+"/clients/{id}/link", h.private(h.clientSendLink))
+		mux.Handle("POST "+p+"/clients/{id}/block", h.private(h.clientBlock))
+		mux.Handle("POST "+p+"/clients/{id}/merge", h.private(h.clientMerge))
+		mux.Handle("POST "+p+"/clients/{id}/attach", h.private(h.clientAttach))
+		mux.Handle("POST "+p+"/clients/{id}/delete", h.private(h.clientDelete))
+	}
 	mux.Handle("GET "+p+"/inbox", h.private(h.inboxPage))
 	mux.Handle("POST "+p+"/inbox/{id}/attach", h.private(h.inboxAttach))
 	mux.Handle("POST "+p+"/inbox/{id}/discard", h.private(h.inboxDiscard))
@@ -310,8 +362,13 @@ type view struct {
 	// HasInbox: the service reads a mailbox; Letters — how many letters wait for a decision.
 	HasInbox bool
 	Letters  int
-	Session  *auth.Session
-	Version  string
+	// HasClients: the site has personal accounts — the menu shows «Клиенты». HasMail: «Почта».
+	HasClients bool
+	HasMail    bool
+	// Refresh: the page reloads itself in a few seconds (a mailbox request is being applied).
+	Refresh bool
+	Session *auth.Session
+	Version string
 	// GeoSource is the maker of the GeoIP database whom the footer credits: «DB-IP», «MaxMind» or "".
 	GeoSource string
 	Flash     string // a message about what just happened
@@ -326,6 +383,11 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 		if counts, err := h.opts.Leads.Counts(r.Context()); err == nil {
 			v.NewLeads = counts[leads.StatusNew]
 		}
+	}
+	v.HasClients = v.Session != nil && h.opts.Clients != nil
+	v.HasMail = v.Session != nil && h.opts.Mailboxes != nil
+	if data, ok := v.Data.(mailData); ok && data.Waiting && data.Issued == "" {
+		v.Refresh = true
 	}
 	if v.Session != nil && h.opts.Inbox != nil {
 		v.HasInbox, v.Letters = true, h.opts.Inbox.Status(r.Context()).Unmatched
@@ -360,6 +422,21 @@ var flashText = map[string]string{ //nolint:gosec // messages about a changed pa
 	"letter-discarded": "Письмо удалено.",
 	"template-saved":   "Шаблон сохранён.",
 	"template-deleted": "Шаблон удалён.",
+	"lead-discount":    "Скидка заявки изменена.",
+	"lead-amount":      "Сумма заказа сохранена: она учитывается в уровне клиента.",
+	"lead-client":      "Клиент заявки изменён.",
+
+	"client-created":   "Клиент создан.",
+	"client-saved":     "Сохранено.",
+	"client-discount":  "Персональная скидка сохранена.",
+	"client-sessions":  "Все сеансы клиента завершены.",
+	"client-link":      "Ссылка для входа отправлена на адрес клиента: она действует сутки.",
+	"client-blocked":   "Аккаунт заблокирован: сеансы завершены, войти нельзя.",
+	"client-unblocked": "Аккаунт разблокирован.",
+	"client-merged":    "Аккаунты объединены.",
+	"client-attached":  "Заявка привязана к клиенту.",
+	"client-deleted":   "Аккаунт удалён. Его заявки остались — без клиента.",
+	"mail-request":     "Запрос отправлен: почтовый сервер применит его через несколько секунд.",
 
 	"bot-invite-revoked": "Приглашение отозвано.",
 	"bot-disabled":       "Доступ отключён: бот больше не отвечает этому человеку и не присылает ему заявки.",

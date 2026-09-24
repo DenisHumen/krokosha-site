@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 )
 
@@ -110,6 +111,9 @@ type overviewData struct {
 	Feed     []feedLine
 	IsToday  bool
 	HasBots  bool // the traffic reader has counted automated clients for this period
+	// Rarity of the easter eggs' achievements, for all time (achievements.Service); nil — none yet.
+	Rarity        []achievements.Stat
+	RarityUpdated time.Time
 }
 
 func (h *Handler) feedLine(at time.Time, visitor, path, kind, target string) feedLine {
@@ -139,6 +143,14 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range recent {
 		data.Feed = append(data.Feed, h.feedLine(item.At, item.Visitor, item.Path, item.Type, item.Target))
+	}
+	if h.opts.Achievements != nil {
+		stats, updated, err := h.opts.Achievements.Stats(r.Context())
+		if err != nil {
+			h.opts.Log.Warn("cannot read the rarity of achievements", "error", err)
+		} else if len(stats) > 0 && stats[0].Players > 0 {
+			data.Rarity, data.RarityUpdated = stats, updated
+		}
 	}
 	// Ids become words here, so that one template draws every breakdown.
 	rename(overview.Sources, named(sourceNames, "—"))

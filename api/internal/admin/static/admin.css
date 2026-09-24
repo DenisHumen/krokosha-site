@@ -280,6 +280,33 @@ textarea {
   resize: vertical;
   line-height: 1.45;
 }
+/* A checkbox or a radio button with its words, on one line. */
+.choice {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0 0;
+  color: var(--fg);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.choice input:not([type='hidden']) {
+  flex: none;
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.choices {
+  min-width: 0;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  border: 0;
+}
+.choices legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
 
 .button {
   display: inline-flex;

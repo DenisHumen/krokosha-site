@@ -5,10 +5,17 @@
 #   sudo krokosha-mailbox add    ADDRESS     asks for the password (or: --password-stdin)
 #   sudo krokosha-mailbox passwd ADDRESS
 #   sudo krokosha-mailbox del    ADDRESS     the letters stay on disk until removed by hand
+#   sudo krokosha-mailbox apply              what the «Почта» screen of the admin area asked for
 #
 # Mailboxes live in one file of the data root (docker-mailserver's postfix-accounts.cf); the mail
 # server notices a change within seconds. A password is never an argument of any command: it
 # would be visible to everybody on the machine for as long as the command runs.
+#
+# The admin area cannot touch that file and must not be able to: the web service drops a request
+# into $KROKOSHA_STATE/requests/mail — the action, the address, the hash of the password — and
+# krokosha-mailbox.path starts `krokosha-mailbox apply`, which checks every request again as if it
+# came from a stranger. What it did, and the list of addresses (never the hashes), go to
+# $KROKOSHA_STATE/mail, which the web service can read and not write.
 set -euo pipefail
 
 ENV_FILE=/etc/krokosha/env
@@ -16,10 +23,16 @@ ENV_FILE=/etc/krokosha/env
 [[ -r $ENV_FILE ]] || { echo "$ENV_FILE not found: is the site installed?" >&2; exit 1; }
 data=$(sed -n 's/^KROKOSHA_DATA=//p' "$ENV_FILE" | tail -n 1)
 domain=$(sed -n 's/^DOMAIN=//p' "$ENV_FILE" | tail -n 1)
+state=$(sed -n 's/^KROKOSHA_STATE=//p' "$ENV_FILE" | tail -n 1)
+state=${state:-/var/lib/krokosha}
+site_user=$(sed -n 's/^KROKOSHA_USER=//p' "$ENV_FILE" | tail -n 1)
+site_user=${site_user:-krokosha}
 accounts=$data/mail/config/postfix-accounts.cf
+requests=$state/requests/mail
+status=$state/mail
 [[ -f $accounts ]] || { echo "no mail server here (installed with --no-mail?)" >&2; exit 1; }
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 command=${1:-}
 address=${2:-}
@@ -27,10 +40,58 @@ address=${address,,}
 from_stdin=no
 [[ ${3:-} == --password-stdin ]] && from_stdin=yes
 
-valid_address() {
-  [[ $address =~ ^[a-z0-9][a-z0-9._-]*@${domain//./\.}$ ]] || { echo "the address must be at $domain, e.g. denis@$domain" >&2; exit 1; }
+# --- the file of mailboxes -----------------------------------------------------------------------
+
+is_address() { [[ $1 =~ ^[a-z0-9][a-z0-9._-]*@${domain//./\\.}$ && $1 != *..* && ${#1} -le 200 ]]; }
+exists() { grep -q "^$1|" "$accounts"; }
+
+# write_hash ADDRESS SCHEME_AND_HASH — replaces or adds the line of the address.
+write_hash() {
+  local tmp
+  tmp=$(mktemp "$accounts.XXXXXX")
+  grep -v "^$1|" "$accounts" >"$tmp" || true
+  printf '%s|%s\n' "$1" "$2" >>"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$accounts"
 }
-exists() { grep -q "^$address|" "$accounts"; }
+
+remove_line() {
+  local tmp
+  tmp=$(mktemp "$accounts.XXXXXX")
+  grep -v "^$1|" "$accounts" >"$tmp" || true
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$accounts"
+}
+
+# publish: the list the admin area shows — addresses only. Written by rename into a directory that
+# belongs to root: the site user can read it and cannot put anything in its place.
+publish() {
+  install -d -m 0750 -o root -g "$site_user" "$status"
+  local tmp
+  tmp=$(mktemp "$status/.mailboxes.XXXXXX")
+  cut -d'|' -f1 "$accounts" | sort >"$tmp"
+  chgrp "$site_user" "$tmp"
+  chmod 0640 "$tmp"
+  mv -f "$tmp" "$status/mailboxes"
+}
+
+# note ID ACTION ADDRESS ok|error MESSAGE — a line of the log the admin area reads; the last 50 stay.
+note() {
+  local tmp
+  tmp=$(mktemp "$status/.log.XXXXXX")
+  { tail -n 49 "$status/log" 2>/dev/null || true
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" "$5"
+  } >"$tmp"
+  chgrp "$site_user" "$tmp"
+  chmod 0640 "$tmp"
+  mv -f "$tmp" "$status/log"
+}
+
+# --- by hand ----------------------------------------------------------------------------------------
+
+valid_address() {
+  is_address "$address" || { echo "the address must be at $domain, e.g. denis@$domain" >&2; exit 1; }
+}
 
 read_password() { # → $password
   if [[ $from_stdin == yes ]]; then
@@ -44,15 +105,55 @@ read_password() { # → $password
   ((${#password} >= 12)) || { echo "the password must be at least 12 characters long" >&2; exit 1; }
 }
 
-write_line() { # replaces or adds the line of $address
-  local hash tmp
-  hash=$(printf '%s' "$password" | openssl passwd -6 -stdin)
-  tmp=$(mktemp "$accounts.XXXXXX")
-  grep -v "^$address|" "$accounts" >"$tmp" || true
-  printf '%s|{SHA512-CRYPT}%s\n' "$address" "$hash" >>"$tmp"
-  chmod 0600 "$tmp"
-  mv -f "$tmp" "$accounts"
+hash_password() { printf '{SHA512-CRYPT}%s' "$(printf '%s' "$password" | openssl passwd -6 -stdin)"; }
+
+# --- what the admin area asked for ------------------------------------------------------------------
+
+# A hash the web service made (api/internal/mailboxes): SHA-512 crypt, nothing else.
+# shellcheck disable=SC2016 # a regular expression: its dollars are literal
+readonly hash_pattern='^\{SHA512-CRYPT\}\$6\$(rounds=[0-9]{4,9}\$)?[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}$'
+
+apply_one() { # FILE — never trusts it: the web service faces the internet
+  local file=$1 name action='' target='' hash=''
+  name=$(basename "$file" .req)
+  if [[ -L $file || ! -f $file || ! $name =~ ^[0-9]{19}-[0-9a-f]{8}$ ]]; then
+    rm -f -- "$file"
+    return
+  fi
+  { IFS= read -r action; IFS= read -r target; IFS= read -r hash; } < <(head -c 1024 -- "$file") || true
+  rm -f -- "$file"
+  target=${target,,}
+  if ! is_address "$target"; then
+    note "$name" "$action" "-" error "не адрес домена $domain"
+    return
+  fi
+  case $action in
+    add)
+      if exists "$target"; then note "$name" add "$target" error "ящик уже есть"; return; fi
+      [[ $hash =~ $hash_pattern ]] || { note "$name" add "$target" error "неверный формат пароля"; return; }
+      write_hash "$target" "$hash"
+      note "$name" add "$target" ok "ящик создан"
+      ;;
+    passwd)
+      [[ $target != "leads@$domain" ]] || { note "$name" passwd "$target" error "служебный ящик сайта: его пароль меняет установщик"; return; }
+      exists "$target" || { note "$name" passwd "$target" error "такого ящика нет"; return; }
+      [[ $hash =~ $hash_pattern ]] || { note "$name" passwd "$target" error "неверный формат пароля"; return; }
+      write_hash "$target" "$hash"
+      note "$name" passwd "$target" ok "пароль изменён"
+      ;;
+    del)
+      [[ $target != "leads@$domain" ]] || { note "$name" del "$target" error "служебный ящик сайта нельзя удалить"; return; }
+      exists "$target" || { note "$name" del "$target" error "такого ящика нет"; return; }
+      remove_line "$target"
+      note "$name" del "$target" ok "ящик удалён; письма остались на диске: $data/mail/data/$domain/${target%@*}"
+      ;;
+    *)
+      note "$name" "-" "$target" error "неизвестное действие"
+      ;;
+  esac
 }
+
+# --- commands ---------------------------------------------------------------------------------------
 
 case $command in
   list)
@@ -60,28 +161,39 @@ case $command in
     ;;
   add)
     valid_address
-    ! exists || { echo "$address exists already; to change its password: krokosha-mailbox passwd $address" >&2; exit 1; }
+    ! exists "$address" || { echo "$address exists already; to change its password: krokosha-mailbox passwd $address" >&2; exit 1; }
     read_password
-    write_line
+    write_hash "$address" "$(hash_password)"
+    publish
     echo "$address created" >&2
     ;;
   passwd)
     valid_address
-    exists || { echo "no such mailbox: $address" >&2; exit 1; }
+    exists "$address" || { echo "no such mailbox: $address" >&2; exit 1; }
     [[ $address != "leads@$domain" ]] || { echo "leads@$domain is the site's own mailbox: its password lives in $ENV_FILE and is managed by install.sh" >&2; exit 1; }
     read_password
-    write_line
+    write_hash "$address" "$(hash_password)"
+    publish
     echo "the password of $address is changed" >&2
     ;;
   del)
     valid_address
-    exists || { echo "no such mailbox: $address" >&2; exit 1; }
+    exists "$address" || { echo "no such mailbox: $address" >&2; exit 1; }
     [[ $address != "leads@$domain" ]] || { echo "leads@$domain is the site's own mailbox: requests could neither be announced nor answered without it" >&2; exit 1; }
-    tmp=$(mktemp "$accounts.XXXXXX")
-    grep -v "^$address|" "$accounts" >"$tmp" || true
-    chmod 0600 "$tmp"
-    mv -f "$tmp" "$accounts"
+    remove_line "$address"
+    publish
     echo "$address removed; its letters are still in $data/mail/data/$domain/${address%@*}" >&2
+    ;;
+  apply)
+    install -d -m 0750 -o root -g "$site_user" "$status"
+    shopt -s nullglob
+    for file in "$requests"/*.req; do
+      apply_one "$file"
+    done
+    publish
+    ;;
+  publish)
+    publish
     ;;
   *) usage ;;
 esac

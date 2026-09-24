@@ -73,7 +73,14 @@ func (b *Bot) renderCard(card *leads.Card) (string, Keyboard) {
 	if lead.Status == leads.StatusNew {
 		icon = "🆕"
 	}
-	lines := []string{icon + " <b>Заявка #" + lead.Number() + "</b> · " + Escape(direction), cardRule}
+	kind := "Заявка"
+	if lead.Kind == leads.KindInquiry {
+		kind = "Обращение"
+	}
+	lines := []string{icon + " <b>" + kind + " #" + lead.Number() + "</b> · " + Escape(direction), cardRule}
+	if lead.Subject != "" {
+		lines = append(lines, "📌 "+Escape(lead.Subject))
+	}
 
 	if card.AnonymizedAt.Valid {
 		lines = append(lines, "Срок хранения истёк: данные клиента и переписка удалены.")
@@ -88,6 +95,12 @@ func (b *Bot) renderCard(card *leads.Card) (string, Keyboard) {
 		}
 		if len(terms) > 0 {
 			lines = append(lines, strings.Join(terms, "   "))
+		}
+		if words := leads.DiscountWords(b.opts.Leads.Rules(), lead.Discount, "ru", true); words != "" {
+			lines = append(lines, "🏷 скидка "+Escape(words))
+		}
+		if lead.ClientID > 0 {
+			lines = append(lines, fmt.Sprintf("🪪 личный кабинет: клиент #%d", lead.ClientID))
 		}
 		description, shortened := cut(lead.Description, cardDescription)
 		description = Escape(description)
@@ -224,7 +237,9 @@ func (b *Bot) Send(ctx context.Context, task outbox.Task) error {
 	case leads.TaskNotify:
 		return b.announce(ctx, payload.LeadID)
 	case leads.TaskReply:
-		return b.answerClient(ctx, payload.LeadID, payload.MessageID)
+		return b.answerClient(ctx, payload.LeadID, payload.MessageID, false)
+	case leads.TaskSiteReply:
+		return b.answerClient(ctx, payload.LeadID, payload.MessageID, true)
 	case leads.TaskClientMessage:
 		return b.clientWrote(ctx, payload.LeadID, payload.MessageID)
 	case leads.TaskUndelivered:

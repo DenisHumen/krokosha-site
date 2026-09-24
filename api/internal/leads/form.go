@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -59,7 +60,28 @@ type Submission struct {
 	// files are not kept at all: FilesDropped says how many there were.
 	Files        []Upload
 	FilesDropped int
+
+	// Beyond the form's fields (docs/architecture.md, 2026-09-24).
+	Kind     string // KindRequest — the form; KindInquiry — a question written in the personal account
+	ClientID int64  // the personal account it comes from; 0 — the visitor was not signed in
+	ParentID int64  // an inquiry about this request
+	Subject  string // of an inquiry
+	// EggsReceipt is the receipt of every easter egg, already verified by the caller: it claims the
+	// one-time discount. EggsSpan is how long the eggs took, from the first to the last.
+	EggsReceipt string
+	EggsSpan    time.Duration
+	// EggsByAccount: the signed-in client's account found every egg, on whatever devices.
+	EggsByAccount bool
+	// Trusted: a signed-in client wrote it. The spam score is kept for the record, but a person
+	// who proved an address or a Telegram account is not put among robots.
+	Trusted bool
 }
+
+// Kinds of requests.
+const (
+	KindRequest = "request" // «discuss a project»: an order, it gets a discount and counts towards the level
+	KindInquiry = "inquiry" // a question from the personal account: support, a follow-up, anything else
+)
 
 // FieldErrors maps a field of the form to an error code.
 type FieldErrors map[string]string
@@ -218,3 +240,18 @@ func normalizePhone(value string) string {
 	}
 	return digits
 }
+
+// The form's own rules, for the personal account: an address, a Telegram name and a phone number
+// are the same thing there as here.
+
+// NormalizeEmail returns the address as the form keeps it, or "" when it is not one.
+func NormalizeEmail(value string) string { return normalizeEmail(strings.TrimSpace(value)) }
+
+// NormalizeTelegram returns «@name», or "" when the value is not a Telegram name.
+func NormalizeTelegram(value string) string { return normalizeTelegram(strings.TrimSpace(value)) }
+
+// NormalizePhone returns the digits with an optional «+», or "" when the value is not a number.
+func NormalizePhone(value string) string { return normalizePhone(strings.TrimSpace(value)) }
+
+// Clean removes control characters and, unless multiline, line breaks.
+func Clean(text string, multiline bool) string { return clean(text, multiline) }

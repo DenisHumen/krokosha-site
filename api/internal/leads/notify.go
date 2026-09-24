@@ -97,6 +97,11 @@ func (m *Mailer) Send(ctx context.Context, task outbox.Task) error {
 		}
 	case TaskUndelivered:
 		message, err = m.undelivered(lead, task.ID, payload.Note)
+	case TaskSiteReply:
+		message, err = m.siteReply(ctx, lead, payload.MessageID)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrNoClient) {
+			return outbox.Permanent(errors.New("the answer or the account is gone"))
+		}
 	default:
 		return outbox.Permanent(fmt.Errorf("the mailer does not know the task %q", task.Kind))
 	}
@@ -170,6 +175,10 @@ type view struct {
 	Signature string // the sender's name
 	Lang      string // of the letter: <html lang>
 	Title     string // the subject, as the HTML's <title>
+
+	// Discount: «10% — первая заявка», "" — none. Kind: «Заявка» or «Обращение», for the owner.
+	Discount string
+	Kind     string
 }
 
 func (m *Mailer) view(lead *Lead, lang string) view {
@@ -279,7 +288,12 @@ func localizedChoice(options []config.Localized, english, lang string) string {
 func (m *Mailer) notification(lead *Lead, files []Attachment) (mail.Message, error) {
 	v := m.view(lead, "ru")
 	v.Files = fileList(files)
-	v.Title = fmt.Sprintf("Заявка #%s · %s · %s", v.Number, v.Direction, lead.Name)
+	v.Kind = "Заявка"
+	if lead.Kind == KindInquiry {
+		v.Kind = "Обращение"
+	}
+	v.Discount = DiscountWords(m.Store.Rules(), lead.Discount, "ru", true)
+	v.Title = fmt.Sprintf("%s #%s · %s · %s", v.Kind, v.Number, v.Direction, lead.Name)
 	text, html, err := render(notifyText, notifyHTML, v)
 	if err != nil {
 		return mail.Message{}, err
@@ -310,6 +324,8 @@ func (m *Mailer) autoReply(lead *Lead, files []Attachment) (mail.Message, error)
 	}
 	v := m.view(lead, lang)
 	v.FileCount = len(files)
+	// The letter goes to the owner of the address: whatever discount the request got is theirs to know.
+	v.Discount = DiscountWords(m.Store.Rules(), lead.Discount, lang, false)
 	v.Title = strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["subject"])
 	text, html, err := render(autoReplyText, autoReplyHTML, v)
 	if err != nil {
@@ -339,7 +355,7 @@ func (m *Mailer) clientWrote(ctx context.Context, lead *Lead, messageID int64) (
 		return mail.Message{}, err
 	}
 	v := m.view(lead, "ru")
-	v.Body, v.Author = body, map[string]string{ChannelTelegram: "в Telegram", ChannelEmail: "письмом"}[channel]
+	v.Body, v.Author = body, map[string]string{ChannelTelegram: "в Telegram", ChannelEmail: "письмом", ChannelSite: "в личном кабинете"}[channel]
 	v.Files = fileList(files)
 	v.Title = fmt.Sprintf("Re: Заявка #%s · %s · %s", v.Number, v.Direction, lead.Name)
 	text, html, err := render(clientWroteText, clientWroteHTML, v)
@@ -459,6 +475,53 @@ func (m *Mailer) sendReply(ctx context.Context, lead *Lead, messageID int64) err
 	}
 }
 
+// siteReply tells the owner of a personal account that an answer waits there — with the answer
+// itself, so that the letter is of use without a click. It goes to the address the account proved,
+// in the account's language, and answering it lands in the same request.
+func (m *Mailer) siteReply(ctx context.Context, lead *Lead, messageID int64) (mail.Message, error) {
+	account, err := m.Store.AccountOf(ctx, lead.ClientID)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	if account.Email == "" {
+		return mail.Message{}, ErrNoClient
+	}
+	body, _, err := m.Store.Message(ctx, lead.ID, messageID)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	lang := account.Lang
+	if texts[lang] == nil {
+		lang = "en"
+	}
+	v := m.view(lead, lang)
+	v.Body, v.Author = body, m.From.Name
+	v.Name = greetingName(account.Name)
+	v.AdminURL = "https://" + m.SiteHost + accountPath(lang) + "#" + v.Number // the client's own page, not the admin's
+	v.Title = strings.NewReplacer("{id}", "#"+v.Number, "{host}", m.SiteHost).Replace(v.T["site_subject"])
+	text, html, err := render(siteReplyText, siteReplyHTML, v)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	return mail.Message{
+		From: m.From, To: netmail.Address{Name: v.Name, Address: account.Email},
+		Subject:   v.Title,
+		Text:      text,
+		HTML:      html,
+		MessageID: m.messageID(lead.ID, fmt.Sprintf("site-%d", messageID)),
+		ReplyTo:   m.replyTo(lead),
+		Headers:   map[string]string{"X-Krokosha-Lead": v.Number},
+	}, nil
+}
+
+// accountPath is the personal account's page in a language (web/src/pages/[...lang]/account.astro).
+func accountPath(lang string) string {
+	if lang == "uk" || lang == "ru" {
+		return "/" + lang + "/account/"
+	}
+	return "/account/"
+}
+
 // fileList names the files of a request in one line.
 func fileList(files []Attachment) string {
 	names := make([]string, 0, len(files))
@@ -494,6 +557,9 @@ func render(text *texttemplate.Template, html *htmltemplate.Template, v view) (s
 // texts of the automatic reply. The client reads them, so they follow the language of the page.
 var texts = map[string]map[string]string{
 	"en": {
+		"discount":     "Discount",
+		"site_subject": "Reply to your request {id} — {host}", "site_intro": "There is a reply to your request",
+		"site_open": "Open in your account", "site_note": "The whole conversation is in your personal account on the site.",
 		"subject": "Request {id} received — {host}", "hello": "Hello", "thanks": "Thank you for your request. Its number is",
 		"reply": "I'll reply within", "hours": "h.", "summary": "Your request", "contact": "Contact",
 		"area": "Area", "budget": "Budget", "timeline": "Timeline", "files": "Files", "telegram": "Continue in Telegram",
@@ -501,6 +567,9 @@ var texts = map[string]map[string]string{
 		"auto":  "This is an automatic confirmation. If you did not send this request, simply ignore this email.",
 	},
 	"uk": {
+		"discount":     "Знижка",
+		"site_subject": "Відповідь щодо заявки {id} — {host}", "site_intro": "Є відповідь щодо вашої заявки",
+		"site_open": "Відкрити в кабінеті", "site_note": "Уся переписка — в особистому кабінеті на сайті.",
 		"subject": "Заявку {id} прийнято — {host}", "hello": "Вітаю", "thanks": "Дякую за заявку. Її номер —",
 		"reply": "Відповім протягом", "hours": "год.", "summary": "Ваша заявка", "contact": "Контакт",
 		"area": "Напрям", "budget": "Бюджет", "timeline": "Терміни", "files": "Файли", "telegram": "Продовжити в Telegram",
@@ -508,6 +577,9 @@ var texts = map[string]map[string]string{
 		"auto":  "Це автоматичне підтвердження. Якщо ви не надсилали заявку, просто проігноруйте цей лист.",
 	},
 	"ru": {
+		"discount":     "Скидка",
+		"site_subject": "Ответ по заявке {id} — {host}", "site_intro": "Есть ответ по вашей заявке",
+		"site_open": "Открыть в кабинете", "site_note": "Вся переписка — в личном кабинете на сайте.",
 		"subject": "Заявка {id} принята — {host}", "hello": "Здравствуйте", "thanks": "Спасибо за заявку. Её номер —",
 		"reply": "Отвечу в течение", "hours": "ч.", "summary": "Ваша заявка", "contact": "Контакт",
 		"area": "Направление", "budget": "Бюджет", "timeline": "Сроки", "files": "Файлы", "telegram": "Продолжить в Telegram",
@@ -516,11 +588,16 @@ var texts = map[string]map[string]string{
 	},
 }
 
-var notifyText = texttemplate.Must(texttemplate.New("notify.txt").Parse(`Заявка #{{.Number}} · {{.Direction}}
+var notifyText = texttemplate.Must(texttemplate.New("notify.txt").Parse(`{{.Kind}} #{{.Number}} · {{.Direction}}
 {{.Created}}
-
+{{if .Lead.Subject}}
+Тема: {{.Lead.Subject}}{{end}}
 Имя: {{.Lead.Name}}
 Контакт: {{.Lead.ContactValue}}
+{{- if .Discount}}
+Скидка: {{.Discount}}{{end}}
+{{- if .Lead.ClientID}}
+Личный кабинет: клиент #{{.Lead.ClientID}}{{end}}
 {{- if .Lead.Budget}}
 Бюджет: {{.Lead.Budget}}{{end}}
 {{- if .Lead.Timeline}}
@@ -550,6 +627,8 @@ var autoReplyText = texttemplate.Must(texttemplate.New("autoreply.txt").Parse(`{
 {{.T.contact}}: {{.Lead.ContactValue}}
 {{- if .FileCount}}
 {{.T.files}}: {{.FileCount}}{{end}}
+{{- if .Discount}}
+{{.T.discount}}: {{.Discount}}{{end}}
 
 {{.T.saved}}
 {{if .TelegramURL}}
@@ -563,6 +642,9 @@ var autoReplyText = texttemplate.Must(texttemplate.New("autoreply.txt").Parse(`{
 
 // The HTML versions: tables and inline styles, the only layout every mail program understands.
 // html/template escapes whatever the visitor typed.
+// MailFrame is the frame of every letter: the personal account writes its letters in it too.
+const MailFrame = mailFrame
+
 const mailFrame = `<!doctype html>
 <html lang="{{.Lang}}"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title></head>
 <body style="margin:0;padding:24px 12px;background:#f3f3f6;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a1b20;">
@@ -575,12 +657,15 @@ const mailFrame = `<!doctype html>
 var notifyHTML = htmltemplate.Must(htmltemplate.New("notify.html").Parse(mailFrame + `
 {{define "body"}}
 <p style="margin:0 0 4px;font-size:12px;color:#6b6f7e;">{{.Created}}</p>
-<h1 style="margin:0 0 16px;font-size:20px;">Заявка #{{.Number}} · {{.Direction}}</h1>
+<h1 style="margin:0 0 16px;font-size:20px;">{{.Kind}} #{{.Number}} · {{.Direction}}</h1>
 <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;line-height:1.55;">
+{{if .Lead.Subject}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Тема</td><td>{{.Lead.Subject}}</td></tr>{{end}}
 <tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Имя</td><td>{{.Lead.Name}}</td></tr>
 <tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Контакт</td><td><a href="{{.Contact}}" style="color:#5b3fc4;">{{.Lead.ContactValue}}</a></td></tr>
 {{if .Lead.Budget}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Бюджет</td><td>{{.Lead.Budget}}</td></tr>{{end}}
 {{if .Lead.Timeline}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Сроки</td><td>{{.Lead.Timeline}}</td></tr>{{end}}
+{{if .Discount}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Скидка</td><td><b>{{.Discount}}</b></td></tr>{{end}}
+{{if .Lead.ClientID}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">Кабинет</td><td>клиент #{{.Lead.ClientID}}</td></tr>{{end}}
 </table>
 <p style="margin:16px 0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Lead.Description}}</p>
 {{if .Files}}<p style="margin:0 0 12px;font-size:14px;">Вложения <span style="color:#6b6f7e;">(скачать — в админке)</span>: {{.Files}}</p>{{end}}
@@ -602,6 +687,7 @@ var autoReplyHTML = htmltemplate.Must(htmltemplate.New("autoreply.html").Parse(m
 {{if .Timeline}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">{{.T.timeline}}</td><td>{{.Timeline}}</td></tr>{{end}}
 <tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">{{.T.contact}}</td><td>{{.Lead.ContactValue}}</td></tr>
 {{if .FileCount}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">{{.T.files}}</td><td>{{.FileCount}}</td></tr>{{end}}
+{{if .Discount}}<tr><td style="padding:2px 16px 2px 0;color:#6b6f7e;">{{.T.discount}}</td><td><b>{{.Discount}}</b></td></tr>{{end}}
 </table>
 <p style="margin:16px 0 0;">{{.T.saved}}</p>
 {{if .TelegramURL}}<p style="margin:20px 0 0;"><a href="{{.TelegramURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.telegram}}</a></p>{{end}}
@@ -667,6 +753,30 @@ var replyText = texttemplate.Must(texttemplate.New("reply.txt").Parse(`{{.Body}}
 {{.Author}}
 https://{{.Host}} · #{{.Number}}
 `))
+
+var siteReplyText = texttemplate.Must(texttemplate.New("site.txt").Parse(`{{.T.hello}}{{if .Name}}, {{.Name}}{{end}}!
+
+{{.T.site_intro}} #{{.Number}}:
+
+{{.Body}}
+
+— {{.Author}}
+
+{{.T.site_open}}: {{.AdminURL}}
+{{.T.site_note}}
+--
+https://{{.Host}} · #{{.Number}}
+`))
+
+var siteReplyHTML = htmltemplate.Must(htmltemplate.New("site.html").Parse(mailFrame + `
+{{define "body"}}
+<p style="margin:0 0 12px;">{{.T.hello}}{{if .Name}}, {{.Name}}{{end}}!</p>
+<p style="margin:0 0 12px;">{{.T.site_intro}} <b>#{{.Number}}</b>:</p>
+<p style="margin:0;padding:12px 14px;background:#f6f5fb;border-left:3px solid #8b6fe0;border-radius:4px;white-space:pre-wrap;">{{.Body}}</p>
+<p style="margin:12px 0 0;color:#6b6f7e;">— {{.Author}}</p>
+<p style="margin:20px 0 0;"><a href="{{.AdminURL}}" style="display:inline-block;padding:10px 18px;background:#8b6fe0;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:600;">{{.T.site_open}}</a></p>
+{{end}}
+{{define "foot"}}{{.T.site_note}}<br><a href="https://{{.Host}}" style="color:#6b6f7e;">{{.Host}}</a> · #{{.Number}}{{end}}`))
 
 var replyHTML = htmltemplate.Must(htmltemplate.New("reply.html").Parse(mailFrame + `
 {{define "body"}}<p style="margin:0;white-space:pre-wrap;">{{.Body}}</p>

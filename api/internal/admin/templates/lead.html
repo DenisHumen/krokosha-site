@@ -3,7 +3,8 @@
   {{$lead := $d.Card.Lead}}
   {{$csrf := .Session.CSRFToken}}
   <div class="page-head">
-    <h1>Заявка #{{$lead.Number}} <span class="status status-{{$lead.Status}}">{{statusName $lead.Status}}</span></h1>
+    <h1>{{leadKind $lead.Kind}} #{{$lead.Number}} <span class="status status-{{$lead.Status}}">{{statusName $lead.Status}}</span>
+      {{if $lead.Discount.Percent}}<span class="tag tag-ok">−{{$lead.Discount.Percent}}%</span>{{end}}</h1>
     <a class="button button-ghost" href="{{path "/leads"}}">← К списку</a>
   </div>
 
@@ -18,7 +19,10 @@
         <h2 class="card-title">Клиент</h2>
         <div class="card-body">
           <dl class="facts">
+            {{if $lead.Subject}}<div><dt>Тема</dt><dd>{{$lead.Subject}}</dd></div>{{end}}
+            {{if $lead.ParentID}}<div><dt>По заявке</dt><dd><a href="{{path "/leads/" (print $lead.ParentID)}}">#K-{{printf "%04d" $lead.ParentID}}</a></dd></div>{{end}}
             <div><dt>Имя</dt><dd>{{$lead.Name}}</dd></div>
+            <div><dt>Личный кабинет</dt><dd>{{if $lead.ClientID}}<a href="{{path "/clients/" (print $lead.ClientID)}}">клиент #{{$lead.ClientID}}</a>{{else}}—{{end}}</dd></div>
             <div><dt>Контакт ({{methodName $lead.ContactMethod}})</dt><dd>{{if $lead.ContactValue}}<a href="{{safeURL $d.Contact}}" rel="noreferrer noopener">{{$lead.ContactValue}}</a>{{else}}—{{end}}</dd></div>
             <div><dt>Направление</dt><dd>{{$d.Direction}}</dd></div>
             <div><dt>Бюджет</dt><dd>{{if $lead.Budget}}{{$lead.Budget}}{{else}}—{{end}}</dd></div>
@@ -29,6 +33,44 @@
             {{if $d.Card.FirstResponseAt.Valid}}<div><dt>Первый ответ</dt><dd>{{time $d.Card.FirstResponseAt.Time}}</dd></div>{{end}}
             {{if $d.Card.RejectReason}}<div><dt>Причина отказа</dt><dd>{{$d.Card.RejectReason}}</dd></div>{{end}}
           </dl>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Скидка и сумма</h2>
+        <div class="card-body actions-stack">
+          <dl class="facts">
+            <div><dt>Скидка</dt><dd>{{discount $lead.Discount}}</dd></div>
+            {{if eq $lead.Discount.Reason "eggs"}}<div><dt>Пасхалки найдены за</dt><dd>{{elapsed $lead.EggsSpan}}{{if lt $lead.EggsSpan.Seconds 60.0}} <span class="tag tag-warn">подозрительно быстро: похоже, по исходникам</span>{{end}}</dd></div>{{end}}
+            <div><dt>Сумма заказа</dt><dd>{{if $lead.HasAmount}}{{money $lead.Amount}}{{else}}—{{end}}</dd></div>
+          </dl>
+          <form method="post" action="{{path "/leads/" (print $lead.ID) "/amount"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="lead-amount">Сумма заказа <span class="muted">— завершённые заказы и их суммы дают клиенту уровень</span></label>
+            <span class="inline">
+              <input id="lead-amount" name="amount" inputmode="decimal" {{if $lead.HasAmount}}value="{{$lead.Amount}}"{{end}} placeholder="1500" />
+              <button class="button button-ghost" type="submit">Сохранить</button>
+            </span>
+          </form>
+          <form method="post" action="{{path "/leads/" (print $lead.ID) "/discount"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="lead-discount">Скидка вручную <span class="muted">— заменит рассчитанную</span></label>
+            <span class="inline">
+              <input id="lead-discount" name="percent" type="number" min="0" max="100" step="1" value="{{$lead.Discount.Percent}}" required />
+              <label class="visually-hidden" for="lead-discount-note">Подпись для клиента</label>
+              <input id="lead-discount-note" name="note" maxlength="100" placeholder="подпись для клиента" />
+              <button class="button button-ghost" type="submit">Задать</button>
+            </span>
+          </form>
+          <form method="post" action="{{path "/leads/" (print $lead.ID) "/client"}}">
+            <input type="hidden" name="csrf" value="{{$csrf}}" />
+            <label for="lead-client">Клиент <span class="muted">— номер (#12) или адрес почты</span></label>
+            <span class="inline">
+              <input id="lead-client" name="client" {{if $lead.ClientID}}value="#{{$lead.ClientID}}"{{end}} maxlength="200" />
+              <button class="button button-ghost" type="submit">Привязать</button>
+              {{if $lead.ClientID}}<button class="button button-ghost" type="submit" name="detach" value="1">Отвязать</button>{{end}}
+            </span>
+          </form>
         </div>
       </section>
 
@@ -104,14 +146,17 @@
                   {{else if eq .Action "client_linked"}}клиент открыл бота{{if .Body}} — {{.Body}}{{end}}
                   {{else if eq .Action "reminded"}}напоминание в Telegram: заявку никто не взял
                   {{else if eq .Action "undelivered"}}<span class="chat-failed">письмо клиенту не доставлено</span>{{if .Body}} — {{.Body}}{{end}}
+                  {{else if eq .Action "amount"}}{{.Author}}: {{.Body}}
+                  {{else if eq .Action "discount"}}{{.Author}}: {{.Body}}
+                  {{else if eq .Action "client"}}{{.Author}}: {{.Body}}
                   {{else}}{{.Author}}: {{.Action}}{{end}}
                 </li>
               {{else}}
                 <li class="chat-message chat-{{.Direction}}">
                   <p class="chat-meta">
-                    {{if eq .Direction "in"}}{{$lead.Name}} <span class="muted">· {{if eq .Channel "form"}}форма на сайте{{else}}{{methodName .Channel}}{{end}}</span>
+                    {{if eq .Direction "in"}}{{$lead.Name}} <span class="muted">· {{if eq .Channel "form"}}форма на сайте{{else if eq .Channel "site"}}личный кабинет{{else}}{{methodName .Channel}}{{end}}</span>
                     {{else if eq .Direction "note"}}{{.Author}} <span class="muted">· заметка, клиент её не видит</span>
-                    {{else}}{{.Author}} <span class="muted">· {{if eq .Channel "phone"}}итог звонка{{else}}ответ клиенту, {{methodName .Channel}}{{end}}</span>{{end}}
+                    {{else}}{{.Author}} <span class="muted">· {{if eq .Channel "phone"}}итог звонка{{else if eq .Channel "site"}}ответ в личном кабинете{{else}}ответ клиенту, {{methodName .Channel}}{{end}}</span>{{end}}
                     <time>{{time .At}}</time>
                   </p>
                   <p class="chat-body">{{.Body}}</p>
@@ -155,6 +200,7 @@
               <button class="button" type="submit">{{if $d.ByPhone}}Записать{{else}}Отправить{{end}}</button>
               <p class="muted">
                 {{if $d.ByPhone}}Клиент оставил телефон: ответ — это звонок, а сюда записывается его итог.
+                {{else if eq $d.Card.ReplyVia "site"}}Ответ появится в личном кабинете клиента, а клиенту придёт уведомление на почту или в Telegram аккаунта.
                 {{else if eq $d.Card.ReplyVia "telegram"}}Ответ уйдёт клиенту в Telegram через бота{{if ne $lead.ContactMethod "telegram"}}: последнее сообщение клиент написал там{{end}}. Если клиент бота ещё не открывал, ответ подождёт, пока он перейдёт по ссылке «Продолжить в Telegram».
                 {{else}}Ответ уйдёт письмом на {{$lead.ContactValue}}, заявка перейдёт в «Ждём клиента».{{end}}
               </p>

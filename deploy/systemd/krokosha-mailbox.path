@@ -1,0 +1,15 @@
+[Unit]
+Description=krokosha site: mailbox requests of the admin area («Почта»)
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+
+# The web service has no right to touch the mail server. It drops a request (the action, the
+# address, the hash of a password); this unit notices it and starts krokosha-mailbox apply, which
+# checks it again and applies it. The helper removes every request it reads.
+[Path]
+PathExistsGlob=/var/lib/krokosha/requests/mail/*.req
+Unit=krokosha-mailbox.service
+TriggerLimitIntervalSec=1min
+TriggerLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target
