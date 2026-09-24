@@ -2055,7 +2055,8 @@ a.tile {
   color: var(--c-fg);
 }
 
-.chat-info-bar {
+/* Under the facts: the way to ask about the request (not in the mockup; the old screen had it). */
+.chat-ask {
   display: flex;
   justify-content: flex-end;
   padding: 8px 12px;

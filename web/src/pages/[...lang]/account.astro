@@ -614,7 +614,7 @@ const scriptTexts = JSON.stringify({
                 <span class="req-time">{A.requests.time}</span>
               </div>
               <div class="req-scroll">
-                <ul class="req-rows" data-requests-list></ul>
+                <ul data-requests-list></ul>
                 <p class="req-empty" data-requests-empty hidden>
                   {A.requests.empty}
                 </p>
@@ -651,14 +651,12 @@ const scriptTexts = JSON.stringify({
                     ▾
                   </span>
                 </summary>
-                <div class="chat-info">
-                  <dl class="facts" data-thread-facts></dl>
-                  <p class="chat-info-bar">
-                    <button class="btn btn-s" type="button" data-thread-ask>
-                      {A.requests.ask}
-                    </button>
-                  </p>
-                </div>
+                <dl class="facts" data-thread-facts></dl>
+                <p class="chat-ask">
+                  <button class="btn btn-s" type="button" data-thread-ask>
+                    {A.requests.ask}
+                  </button>
+                </p>
               </details>
               <div class="chat-feed" data-thread-scroll>
                 <ol class="thread" data-thread-feed aria-label={A.requests.conversation}></ol>
