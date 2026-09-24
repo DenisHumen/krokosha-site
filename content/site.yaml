@@ -335,6 +335,13 @@ loyalty:                                # черновик: проценты и 
       orders: 6
       spent: 15000
       discount: 15
+  # Приоритет заявки в админке — цвет полосы в «Заявках»; на сайт не попадает. Клиент становится
+  # постоянным (средний) и ключевым (высокий) по числу выполненных заказов или по их сумме — что
+  # раньше; один заказ — «низкий», ни одного — «новый». Цвет строки — середина между этим и
+  # бюджетом заявки.
+  priority:
+    middle: { orders: 2, spent: 3000 }
+    high: { orders: 4, spent: 8000 }
 
 # Общие строки интерфейса
 ui:
@@ -542,6 +549,12 @@ account:
     too_long: { en: "No more than 4000 characters", uk: "Не більше 4000 символів", ru: "Не больше 4000 символов" }
     last_way: { en: "Add an email first: without Telegram there would be no way in.", uk: "Спершу додайте пошту: без Telegram не буде як увійти.", ru: "Сначала добавьте почту: без Telegram будет не войти." }
     no_way_back: { en: "Add an email or Telegram first: there is nowhere to answer.", uk: "Спершу додайте пошту або Telegram — нікуди відповісти.", ru: "Сначала добавьте почту или Telegram — некуда ответить." }
+    closed: { en: "The request is closed: ask about it in a new inquiry.", uk: "Заявку закрито: запитайте про неї новим зверненням.", ru: "Заявка закрыта: спросите о ней новым обращением." }
+    file_type: { en: "{file} cannot be sent: photos, MP4 videos, PDF, DOCX and TXT are fine.", uk: "{file} не надіслати: підійдуть фото, відео MP4, PDF, DOCX і TXT.", ru: "{file} не отправить: подойдут фото, видео MP4, PDF, DOCX и TXT." }
+    file_too_big: { en: "{file} is too big: photos up to 10 MB, videos up to 50 MB, documents up to 20 MB.", uk: "{file} завеликий: фото до 10 МБ, відео до 50 МБ, документи до 20 МБ.", ru: "{file} слишком большой: фото до 10 МБ, видео до 50 МБ, документы до 20 МБ." }
+    files_too_big: { en: "The files are over 50 MB together: send them in two messages.", uk: "Файли разом більші за 50 МБ — надішліть їх двома повідомленнями.", ru: "Файлы вместе больше 50 МБ — отправьте их двумя сообщениями." }
+    too_many_files: { en: "No more than 5 files in a message.", uk: "Не більше 5 файлів в одному повідомленні.", ru: "Не больше 5 файлов в одном сообщении." }
+    files_disabled: { en: "Files are not accepted now: please send them by email.", uk: "Файли зараз не приймаються — надішліть їх листом.", ru: "Файлы сейчас не принимаются — отправьте их письмом." }
     server: { en: "Something went wrong. Please try again a little later.", uk: "Щось пішло не так. Спробуйте трохи згодом.", ru: "Что-то пошло не так. Попробуйте чуть позже." }
     network: { en: "No connection to the site. Check the internet and try again.", uk: "Немає зв'язку із сайтом. Перевірте інтернет і спробуйте ще раз.", ru: "Нет связи с сайтом. Проверьте интернет и попробуйте ещё раз." }
   # Левая панель кабинета: разделы (они же заголовки экранов, кроме главной и профиля).
@@ -678,6 +691,12 @@ account:
       ru: "Enter — отправить, Shift+Enter — новая строка"
     send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Sent", uk: "Надіслано", ru: "Отправлено" }
+    attach: { en: "File", uk: "Файл", ru: "Файл" }                   # кнопка «+ Файл» у поля сообщения
+    attach_hint:
+      en: "Photos, MP4 videos, PDF, DOCX and TXT: up to 5 files, 50 MB together"
+      uk: "Фото, відео MP4, PDF, DOCX і TXT: до 5 файлів, разом до 50 МБ"
+      ru: "Фото, видео MP4, PDF, DOCX и TXT: до 5 файлов, вместе до 50 МБ"
+    remove: { en: "Remove {file}", uk: "Прибрати {file}", ru: "Убрать {file}" }
     closed:
       en: "The request is closed. To go on, write an inquiry about it."
       uk: "Заявку закрито. Щоб продовжити, напишіть звернення щодо неї."

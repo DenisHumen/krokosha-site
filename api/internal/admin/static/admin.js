@@ -506,6 +506,11 @@
   var text = form && form.querySelector('textarea[data-grow]');
   var files = form && form.querySelector('input[type="file"][name="files"]');
 
+  function chosenFiles() {
+    if (!form) return 0;
+    return (files ? files.files.length : 0) + form.querySelectorAll('input[name="media"]:checked').length;
+  }
+
   function grow() {
     if (!text) return;
     text.style.height = 'auto';
@@ -520,10 +525,18 @@
     text.addEventListener('keydown', function (event) {
       if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
-      if (!text.value.trim()) return;
+      if (!text.value.trim() && !chosenFiles()) return;
       if (form.requestSubmit) form.requestSubmit();
       else form.submit();
     });
+    // Files alone are an answer too: the text is required only while there are none (a note always
+    // needs one).
+    var needText = function () {
+      var note = form.querySelector('input[name="mode"][value="note"]:checked');
+      text.required = Boolean(note) || !chosenFiles();
+    };
+    form.addEventListener('change', needText);
+    needText();
     var button = form.querySelector('.composer-send');
     form.addEventListener('submit', function () {
       // One answer per press: a second Enter while the page is on its way would send it twice.

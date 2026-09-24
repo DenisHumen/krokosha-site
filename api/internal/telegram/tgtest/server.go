@@ -87,12 +87,15 @@ type Server struct {
 	failures  map[string]*failure
 	updates   []json.RawMessage
 	messageID int64
+	// stored are files people «sent» the bot (Store), by file id: getFile tells their path, and the
+	// path downloads them.
+	stored map[string][]byte
 }
 
 // Start runs the pretend API until the test ends.
 func Start(t testing.TB) *Server {
 	t.Helper()
-	s := &Server{failures: map[string]*failure{}, messageID: 1000}
+	s := &Server{failures: map[string]*failure{}, messageID: 1000, stored: map[string][]byte{}}
 	server := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(server.Close)
 	s.URL = server.URL
@@ -100,6 +103,19 @@ func Start(t testing.TB) *Server {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	// A download of a file somebody sent: /file/bot<token>/<path>.
+	if path, ok := strings.CutPrefix(r.URL.Path, "/file/bot"+Token+"/"); ok {
+		s.mu.Lock()
+		s.calls = append(s.calls, Call{Method: "download", Params: map[string]any{"path": path}})
+		content, found := s.stored[strings.TrimPrefix(path, "files/")]
+		s.mu.Unlock()
+		if !found {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(content)
+		return
+	}
 	prefix := "/bot" + Token + "/"
 	w.Header().Set("Content-Type", "application/json")
 	if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -161,6 +177,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		result = list
 	case "getUpdates":
 		result = s.takeUpdates(r, params)
+	case "getFile":
+		id, _ := params["file_id"].(string)
+		s.mu.Lock()
+		content, found := s.stored[id]
+		s.mu.Unlock()
+		if !found {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error_code": 400, "description": "Bad Request: invalid file_id"})
+			return
+		}
+		result = map[string]any{"file_id": id, "file_size": len(content), "file_path": "files/" + id}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": result})
 }
@@ -257,6 +284,16 @@ func (s *Server) takeUpdates(r *http.Request, params map[string]any) []json.RawM
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// Store keeps a file as if somebody sent it to the bot, and returns its file id.
+func (s *Server) Store(content []byte) string {
+	sum := sha256.Sum256(content)
+	id := "in-" + hex.EncodeToString(sum[:6])
+	s.mu.Lock()
+	s.stored[id] = content
+	s.mu.Unlock()
+	return id
 }
 
 // Push queues an update for long polling.

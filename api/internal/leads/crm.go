@@ -36,7 +36,13 @@ var (
 	ErrAlreadyTaken  = errors.New("the request was taken by someone else")
 	ErrBadTransition = errors.New("the request cannot go to this status from where it is")
 	ErrEmptyText     = errors.New("the text is empty")
+	// ErrClosed: the request is done or rejected — the personal account takes no more messages into
+	// it; a new question is an inquiry of its own («Задать вопрос»).
+	ErrClosed = errors.New("the request is closed")
 )
+
+// FilesOnly is the text of a client's message that carried files and no words.
+const FilesOnly = "(без текста — только файлы)"
 
 // NextStatuses returns where a request in the given status may go.
 func NextStatuses(status string) []string { return transitions[status] }
@@ -302,6 +308,45 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 		}
 	}
 	return card, nil
+}
+
+// AttachFiles adds files to a message of the client that is there already: the rest of an album,
+// which Telegram delivers one photo at a time. The files belong to the request from now on; when
+// they cannot be added, they stay the caller's to remove.
+func (s *Store) AttachFiles(ctx context.Context, id, messageID int64, files []Upload) error {
+	if len(files) == 0 {
+		return nil
+	}
+	now := s.now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var found int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM lead_messages m JOIN leads l ON l.id = m.lead_id
+		WHERE m.id = ? AND m.lead_id = ? AND m.direction = 'in' AND l.anonymized_at IS NULL`, messageID, id).Scan(&found); err != nil {
+		return err
+	}
+	if found == 0 {
+		return ErrNotFound
+	}
+	for _, file := range files {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lead_attachments (lead_id, message_id, created_at, filename, kind, size, sha256, stored_as) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, messageID, now, cut(file.Filename, 255), file.Kind, file.Size, file.SHA256, file.StoredAs); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE leads SET updated_at = ? WHERE id = ?`, now, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed(id)
+	return nil
 }
 
 // Take assigns a new request to whoever asks first. A second «take» — from the admin area or
@@ -631,7 +676,7 @@ func (s *Store) ClientMessage(ctx context.Context, id int64, channel, text strin
 func (s *Store) ClientWrote(ctx context.Context, id int64, in Incoming) (messageID int64, err error) {
 	text := clean(in.Text, true)
 	if text == "" && len(in.Files) > 0 {
-		text = "(без текста — только файлы)"
+		text = FilesOnly
 	}
 	if text == "" {
 		return 0, ErrEmptyText

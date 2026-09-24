@@ -77,6 +77,18 @@ server {
         include snippets/krokosha-proxy.conf;
     }
 
+    # A client's message with files in the personal account: up to five, 50 MB together. nginx
+    # takes the body first (buffered); the API checks where it comes from, the session and the CSRF
+    # token before it reads a byte, then every file by its content. Two uploads at a time.
+    location ^~ /api/account/upload/ {
+        limit_req zone=krokosha_form burst=20 nodelay;
+        limit_req_status 429;
+        limit_conn krokosha_uploads 2;
+        limit_conn_status 429;
+        client_max_body_size 55m;
+        include snippets/krokosha-proxy.conf;
+    }
+
     location ~ /\. {
         return 404;
     }

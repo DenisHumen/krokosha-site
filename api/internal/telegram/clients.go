@@ -23,40 +23,46 @@ import (
 // clientTexts are in the language of the page the client wrote from.
 var clientTexts = map[string]map[string]string{
 	"ru": {
-		"linked":   "Здравствуйте! Заявка #%s у нас, статус: %s.\n\nЕсли хотите что-то добавить — напишите сюда, сообщение передадут. Ответ придёт в этот же чат.",
-		"status":   "Заявка #%s, статус: %s.\n\nНапишите сюда, если хотите что-то добавить.",
-		"relayed":  "Передано.",
-		"used":     "Эта ссылка уже открыта в другом аккаунте Telegram и второй раз не работает.",
-		"slow":     "Слишком много сообщений подряд — давайте чуть медленнее. Последнее сообщение не передано.",
-		"failed":   "Не получилось передать сообщение. Попробуйте ещё раз чуть позже.",
-		"textonly": "Пока я умею передавать только текст. Напишите словами, а файлы можно прислать письмом.",
-		"answer":   "💬 Ответ по заявке #%s:",
-		"account":  "Открыть в личном кабинете",
-		"accepted": "принята", "working": "в работе", "done": "завершена", "closed": "закрыта",
+		"linked":      "Здравствуйте! Заявка #%s у нас, статус: %s.\n\nЕсли хотите что-то добавить — напишите сюда, сообщение передадут. Ответ придёт в этот же чат.",
+		"status":      "Заявка #%s, статус: %s.\n\nНапишите сюда, если хотите что-то добавить.",
+		"relayed":     "Передано.",
+		"used":        "Эта ссылка уже открыта в другом аккаунте Telegram и второй раз не работает.",
+		"slow":        "Слишком много сообщений подряд — давайте чуть медленнее. Последнее сообщение не передано.",
+		"failed":      "Не получилось передать сообщение. Попробуйте ещё раз чуть позже.",
+		"unsupported": "Такое я не передам. Можно текст, фото, видео MP4 и файлы PDF, DOCX, TXT.",
+		"toobig":      "Файл слишком большой: через Telegram — до 20 МБ. Пришлите его письмом или ссылкой.",
+		"filetype":    "Такой файл не принимается: подойдут фото, видео MP4, PDF, DOCX и TXT.",
+		"answer":      "💬 Ответ по заявке #%s:",
+		"account":     "Открыть в личном кабинете",
+		"accepted":    "принята", "working": "в работе", "done": "завершена", "closed": "закрыта",
 	},
 	"uk": {
-		"linked":   "Вітаю! Заявка #%s у нас, статус: %s.\n\nЯкщо хочете щось додати — напишіть сюди, повідомлення передадуть. Відповідь прийде в цей самий чат.",
-		"status":   "Заявка #%s, статус: %s.\n\nНапишіть сюди, якщо хочете щось додати.",
-		"relayed":  "Передано.",
-		"used":     "Це посилання вже відкрито в іншому акаунті Telegram і вдруге не працює.",
-		"slow":     "Забагато повідомлень поспіль — трохи повільніше, будь ласка. Останнє повідомлення не передано.",
-		"failed":   "Не вдалося передати повідомлення. Спробуйте ще раз трохи згодом.",
-		"textonly": "Поки що я вмію передавати лише текст. Напишіть словами, а файли можна надіслати листом.",
-		"answer":   "💬 Відповідь щодо заявки #%s:",
-		"account":  "Відкрити в особистому кабінеті",
-		"accepted": "прийнята", "working": "в роботі", "done": "завершена", "closed": "закрита",
+		"linked":      "Вітаю! Заявка #%s у нас, статус: %s.\n\nЯкщо хочете щось додати — напишіть сюди, повідомлення передадуть. Відповідь прийде в цей самий чат.",
+		"status":      "Заявка #%s, статус: %s.\n\nНапишіть сюди, якщо хочете щось додати.",
+		"relayed":     "Передано.",
+		"used":        "Це посилання вже відкрито в іншому акаунті Telegram і вдруге не працює.",
+		"slow":        "Забагато повідомлень поспіль — трохи повільніше, будь ласка. Останнє повідомлення не передано.",
+		"failed":      "Не вдалося передати повідомлення. Спробуйте ще раз трохи згодом.",
+		"unsupported": "Таке я не передам. Можна текст, фото, відео MP4 і файли PDF, DOCX, TXT.",
+		"toobig":      "Файл завеликий: через Telegram — до 20 МБ. Надішліть його листом або посиланням.",
+		"filetype":    "Такий файл не приймається: підійдуть фото, відео MP4, PDF, DOCX і TXT.",
+		"answer":      "💬 Відповідь щодо заявки #%s:",
+		"account":     "Відкрити в особистому кабінеті",
+		"accepted":    "прийнята", "working": "в роботі", "done": "завершена", "closed": "закрита",
 	},
 	"en": {
-		"linked":   "Hello! We have your request #%s, status: %s.\n\nIf you would like to add something, write it here and it will be passed on. The answer will come to this chat.",
-		"status":   "Request #%s, status: %s.\n\nWrite here if you would like to add something.",
-		"relayed":  "Passed on.",
-		"used":     "This link has already been opened in another Telegram account and does not work twice.",
-		"slow":     "Too many messages in a row — a little slower, please. The last message was not passed on.",
-		"failed":   "The message could not be passed on. Please try again a little later.",
-		"textonly": "For now I can pass on text only. Please write it in words; files can be sent by email.",
-		"answer":   "💬 Reply to your request #%s:",
-		"account":  "Open in your account",
-		"accepted": "received", "working": "in progress", "done": "completed", "closed": "closed",
+		"linked":      "Hello! We have your request #%s, status: %s.\n\nIf you would like to add something, write it here and it will be passed on. The answer will come to this chat.",
+		"status":      "Request #%s, status: %s.\n\nWrite here if you would like to add something.",
+		"relayed":     "Passed on.",
+		"used":        "This link has already been opened in another Telegram account and does not work twice.",
+		"slow":        "Too many messages in a row — a little slower, please. The last message was not passed on.",
+		"failed":      "The message could not be passed on. Please try again a little later.",
+		"unsupported": "I cannot pass that on. Text, photos, MP4 videos and PDF, DOCX, TXT files are fine.",
+		"toobig":      "The file is too big: up to 20 MB through Telegram. Please send it by email or as a link.",
+		"filetype":    "This kind of file is not accepted: photos, MP4 videos, PDF, DOCX and TXT are.",
+		"answer":      "💬 Reply to your request #%s:",
+		"account":     "Open in your account",
+		"accepted":    "received", "working": "in progress", "done": "completed", "closed": "closed",
 	},
 }
 
@@ -143,8 +149,10 @@ func (b *Bot) clientWrites(ctx context.Context, message *Message, command string
 	case command != "":
 		// Commands are for the staff; a client gets the state of their request, whatever they typed.
 		say("status", lead.Number(), publicStatus(lead.Lang, lead.Status))
+	case hasMedia(message):
+		b.clientFile(ctx, message, lead, say) // files.go
 	case strings.TrimSpace(message.Text) == "":
-		say("textonly")
+		say("unsupported") // a location, a contact, a poll
 	case !b.opts.Cache.Allow(ctx, "tg-client:"+strconv.FormatInt(message.From.ID, 10), 20, time.Hour):
 		say("slow")
 	default:
@@ -243,7 +251,8 @@ func (b *Bot) clientWrote(ctx context.Context, leadID, messageID int64) error {
 	}
 	text := "💬 <b>#" + lead.Number() + "</b> · " + Escape(lead.Name) + " пишет " + via + ":\n\n" + Escape(shown)
 	if len(files) > 0 {
-		// The files stay on the server (brief B10.7): they are downloaded from the admin area.
+		// The files stay on the server (brief B10.7): they are downloaded from the admin area. Not
+		// even their names go to Telegram — a name may say more about the person than the text.
 		text += fmt.Sprintf("\n\n📎 файлов: %d — в админке", len(files))
 	}
 	buttons := Keyboard{{{Text: "💬 Ответить", Data: leadButtonData("reply", leadID, "")}, {Text: "📇 Карточка", Data: leadButtonData("card", leadID, "")}}}

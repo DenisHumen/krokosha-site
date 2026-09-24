@@ -305,6 +305,34 @@ export function initAccount(): void {
     return { status: response.status, data };
   }
 
+  /** Sends a message with files: a form of its own, to the path nginx lets big bodies through. */
+  async function upload(
+    number: string,
+    text: string,
+    files: File[],
+  ): Promise<{ status: number; data: Answer }> {
+    const form = new FormData();
+    form.append('text', text);
+    for (const file of files) form.append('files', file, file.name);
+    let response: Response;
+    try {
+      response = await fetch(`/api/account/upload/leads/${encodeURIComponent(number)}/messages`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'X-CSRF-Token': csrf },
+        body: form,
+        credentials: 'same-origin',
+      });
+    } catch {
+      return { status: 0, data: { ok: false, error: 'network' } };
+    }
+    // nginx says «too big» in HTML, before the API sees anything.
+    if (response.status === 413)
+      return { status: 413, data: { ok: false, error: 'files_too_big' } };
+    const data = (await response.json().catch(() => ({ ok: false, error: 'server' }))) as Answer;
+    if (response.status === 401 && view === 'app') signedOut(A.errors.signed_out);
+    return { status: response.status, data };
+  }
+
   /** Disables a form's buttons while it is being sent. */
   async function busy<R>(form: HTMLElement, work: () => Promise<R>): Promise<R> {
     const buttons = all<HTMLButtonElement>(form, 'button');
@@ -945,6 +973,10 @@ export function initAccount(): void {
   const feed = $(thread, '[data-thread-feed]');
   const replyForm = $<HTMLFormElement>(thread, '[data-thread-reply]');
   const replyField = $<HTMLTextAreaElement>(replyForm, 'textarea');
+  const replyFiles = $<HTMLInputElement>(replyForm, '[data-reply-files]');
+  const replyChosen = $(replyForm, '[data-reply-chosen]');
+  /** The files chosen for the next message of the request on the screen. */
+  let chosen: File[] = [];
   const parentSelect = $<HTMLSelectElement>(app, '[data-parent]');
   const requestTemplate = $<HTMLTemplateElement>(document, '#tpl-request');
   const messageTemplate = $<HTMLTemplateElement>(document, '#tpl-msg');
@@ -1099,6 +1131,8 @@ export function initAccount(): void {
       shown = lead.number;
       replyField.value = drafts.get(lead.number) ?? '';
       fitField();
+      chosen = [];
+      renderChosen();
       $(replyForm, '[data-done]').textContent = '';
       $(replyForm, '[data-error]').textContent = '';
     }
@@ -1393,6 +1427,85 @@ export function initAccount(): void {
     replyField.toggleAttribute('data-full', height > 160);
   }
 
+  // Files of a message: what the API takes (api/internal/leads/files.go) is checked here first, so
+  // that a video too big is named at once — not after a long upload. The API checks every file
+  // again, by what is inside it.
+  const FILE_KINDS: Record<string, 'photo' | 'video' | 'document'> = {
+    jpg: 'photo',
+    jpeg: 'photo',
+    png: 'photo',
+    mp4: 'video',
+    m4v: 'video',
+    pdf: 'document',
+    docx: 'document',
+    txt: 'document',
+  };
+  const MB = 1024 * 1024;
+  const FILE_LIMITS = { photo: 10 * MB, video: 50 * MB, document: 20 * MB };
+  const MAX_FILES = 5;
+  const MAX_TOTAL = 50 * MB;
+
+  /** Why a set of files cannot go, in the client's words; '' — it can. */
+  function filesProblem(files: File[]): string {
+    if (files.length > MAX_FILES) return A.errors.too_many_files;
+    for (const file of files) {
+      const kind = FILE_KINDS[file.name.split('.').pop()?.toLowerCase() ?? ''];
+      if (!kind || file.size === 0) return fill(A.errors.file_type, { file: file.name });
+      if (file.size > FILE_LIMITS[kind]) return fill(A.errors.file_too_big, { file: file.name });
+    }
+    if (files.reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL) return A.errors.files_too_big;
+    return '';
+  }
+
+  function renderChosen() {
+    replyChosen.replaceChildren(
+      ...chosen.map((file, index) => {
+        const item = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = file.name;
+        const weight = document.createElement('span');
+        weight.className = 'size';
+        weight.textContent = size(file.size);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', fill(A.requests.remove, { file: file.name }));
+        remove.addEventListener('click', () => {
+          chosen.splice(index, 1);
+          renderChosen();
+          $(replyForm, '[data-error]').textContent = '';
+          replyField.focus();
+        });
+        item.append(name, weight, remove);
+        return item;
+      }),
+    );
+    replyChosen.hidden = chosen.length === 0;
+  }
+
+  replyFiles.addEventListener('change', () => {
+    const next = [...chosen];
+    for (const file of Array.from(replyFiles.files ?? [])) {
+      const same = next.some(
+        (other) =>
+          other.name === file.name &&
+          other.size === file.size &&
+          other.lastModified === file.lastModified,
+      );
+      if (!same) next.push(file);
+    }
+    replyFiles.value = ''; // the same file may be chosen again after it was taken back
+    const problem = filesProblem(next);
+    $(replyForm, '[data-error]').textContent = problem;
+    $(replyForm, '[data-done]').textContent = '';
+    if (!problem) {
+      chosen = next;
+      renderChosen();
+    }
+    replyField.focus();
+  });
+
   replyField.addEventListener('input', () => {
     fitField();
     drafts.set(shown, replyField.value);
@@ -1405,7 +1518,7 @@ export function initAccount(): void {
   replyField.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
-    if (replyField.value.trim()) replyForm.requestSubmit();
+    if (replyField.value.trim() || chosen.length > 0) replyForm.requestSubmit();
   });
 
   let replying = false;
@@ -1414,7 +1527,8 @@ export function initAccount(): void {
     if (replying) return;
     const text = replyField.value.trim();
     const problem = $(replyForm, '[data-error]');
-    if (!text) {
+    const files = chosen;
+    if (!text && files.length === 0) {
       problem.textContent = A.errors.empty;
       replyField.focus();
       return;
@@ -1427,13 +1541,20 @@ export function initAccount(): void {
     replyField.value = '';
     fitField();
     drafts.delete(number);
+    chosen = [];
+    renderChosen();
     void busy(replyForm, async () => {
-      const { data } = await api(
-        'POST',
-        `/api/account/leads/${encodeURIComponent(number)}/messages`,
-        { text },
-      );
+      const { data } =
+        files.length > 0
+          ? await upload(number, text, files)
+          : await api('POST', `/api/account/leads/${encodeURIComponent(number)}/messages`, {
+              text,
+            });
       if (!data.ok) {
+        if (shown === number && files.length > 0 && chosen.length === 0) {
+          chosen = files; // the files wait to be sent again, like the text
+          renderChosen();
+        }
         const back = [draft, shown === number ? replyField.value : drafts.get(number)]
           .filter(Boolean)
           .join('\n');
@@ -1441,7 +1562,7 @@ export function initAccount(): void {
         if (shown === number) {
           replyField.value = back;
           fitField();
-          problem.textContent = error(data.error);
+          problem.textContent = fill(error(data.error), { file: String(data['file'] ?? '') });
         }
         return;
       }

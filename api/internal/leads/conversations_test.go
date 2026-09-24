@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
 )
 
 // The messenger's list: tabs, what the staff have not read, and the pulse that notices a client
@@ -120,9 +122,14 @@ func TestPriority(t *testing.T) {
 		spent  float64
 		want   int
 	}{{0, 0, 0}, {1, 100, 1}, {2, 0, 2}, {0, 3000, 2}, {3, 2999, 2}, {4, 0, 3}, {1, 8000, 3}} {
-		if got := Activity(c.orders, c.spent); got != c.want {
+		if got := Activity(config.DefaultPriority, c.orders, c.spent); got != c.want {
 			t.Errorf("activity of %d orders, $%.0f: %d, want %d", c.orders, c.spent, got, c.want)
 		}
+	}
+	// Thresholds of the content: one order is enough to be a regular client, ten to be a key one.
+	rules := config.LoyaltyPriority{Middle: config.PriorityLevel{Orders: 1}, High: config.PriorityLevel{Orders: 10, Spent: 50000}}
+	if Activity(rules, 1, 0) != PriorityMid || Activity(rules, 9, 49999) != PriorityMid || Activity(rules, 2, 50000) != PriorityHigh {
+		t.Error("the thresholds of the content are not the ones counted by")
 	}
 	// Halfway rounds up: a new client with a big budget is in the middle.
 	for _, c := range [][3]int{{0, 0, 0}, {0, 1, 1}, {0, 3, 2}, {3, 0, 2}, {3, 3, 3}, {1, 2, 2}} {

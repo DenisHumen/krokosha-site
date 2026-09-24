@@ -455,6 +455,7 @@ check "nginx lets a form with files through to the API" grep -q '"error":"rate_l
   <(body --header 'Accept: application/json' "${form_fields[@]}" --form "files=@$megabyte" "https://$DOMAIN/api/leads")
 check "…and stops what no three files add up to" test "$(status "${form_fields[@]}" --form "files=@$toobig" "https://$DOMAIN/api/leads")" = 413
 check "the rest of the API still takes small requests only" test "$(status --request POST --data-binary "@$megabyte" "https://$DOMAIN/api/e")" = 413
+check "a message with files in the account gets past nginx: the API asks who sends it" grep -q '"error":"signed_out"'   <(body --form 'text=x' --form "files=@$megabyte" "https://$DOMAIN/api/account/upload/leads/K-0001/messages")
 check "the card offers the files" grep -q "/leads/$file_lead/files/$file_id\" download title=\"Скачать Схема стойки.pdf\"" <(admin_get "$ADMIN/leads/$file_lead")
 downloaded=$(mktemp)
 check "the admin area hands a file out — as a download, whatever is inside" bash -c "grep -qi '^content-disposition: attachment' <<<\"\$1\" && grep -qi '^content-type: application/octet-stream' <<<\"\$1\"" _ \

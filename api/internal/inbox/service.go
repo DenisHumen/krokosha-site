@@ -430,8 +430,9 @@ func (s *Service) deliver(ctx context.Context, leadID int64, letter *Letter, how
 	return err
 }
 
-// saveFiles keeps the files of a letter that may come with a request — by the rules of the
-// contact form: the type is told by the content, the size is limited (brief B10.7).
+// saveFiles keeps the files of a letter that may come with a request — by the rules of a client's
+// files in every channel (leads.SaveFromClient: photos, MP4 videos, PDF, DOCX, TXT, told by the
+// content), each within the size a letter's part may have here (brief B10.7).
 func (s *Service) saveFiles(files []File) (uploads []leads.Upload, dropped []string) {
 	for _, file := range files {
 		name := leads.CleanFilename(file.Name)
@@ -445,13 +446,12 @@ func (s *Service) saveFiles(files []File) (uploads []leads.Upload, dropped []str
 		case len(uploads) >= MaxLetterFiles:
 			dropped = append(dropped, name+" (больше пяти файлов в письме)")
 		default:
-			kind, err := leads.Inspect(name, int64(len(file.Content)), bytes.NewReader(file.Content))
-			if err != nil {
+			upload, err := leads.SaveFromClient(s.opts.Files, name, int64(len(file.Content)), bytes.NewReader(file.Content))
+			switch {
+			case errors.Is(err, leads.ErrFileType), errors.Is(err, leads.ErrFileTooBig):
 				dropped = append(dropped, name+" (тип не принимается)")
 				continue
-			}
-			upload, err := s.opts.Files.Save(name, kind, bytes.NewReader(file.Content))
-			if err != nil {
+			case err != nil:
 				s.opts.Log.Warn("inbox: a file of a letter could not be saved", "error", err)
 				dropped = append(dropped, name+" (не удалось сохранить)")
 				continue

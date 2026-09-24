@@ -113,6 +113,21 @@ func check(kind string, size int64, content io.ReaderAt) error {
 
 // --- what goes to a client: the files of templates and of answers ----------------------------------
 
+// --- what a client sends after the form: in the account, to the bot, in a letter ----------------------
+
+// A message of the client may carry files the way an answer does — photos, videos and documents,
+// told by their content (InspectMedia) — five at most, and 50 MB together where one upload brings
+// them all (the account). Telegram hands a bot files up to 20 MB.
+const (
+	MaxClientFiles = 5
+	MaxClientBytes = 50 << 20
+)
+
+// SaveFromClient checks a file a client sent with a message and keeps it with the files of requests.
+func SaveFromClient(dir *Files, filename string, size int64, content Readable) (Upload, error) {
+	return SaveOutgoing(dir, filename, size, content)
+}
+
 // KindMP4 is the one kind of video: the one Telegram plays in the chat (brief of quick answers).
 const KindMP4 = "mp4"
 

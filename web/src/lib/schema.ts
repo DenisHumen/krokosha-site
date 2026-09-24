@@ -53,6 +53,12 @@ const percent = z.number().int().min(0).max(100);
  * refuses the same mistakes (api/internal/config/loyalty.go): a level that asks less than the one
  * before it, or gives less.
  */
+const priorityLevel = z
+  .strictObject({ orders: z.number().int().min(0), spent: z.number().min(0) })
+  .refine((level) => level.orders > 0 || level.spent > 0, {
+    message: 'a level needs orders or spent above zero',
+  });
+
 const loyaltySchema = z
   .strictObject({
     enabled: z.boolean(),
@@ -61,6 +67,20 @@ const loyaltySchema = z
     eggs: percent,
     // The sum from which an order earns the «big project» achievement; 0 — never.
     big_order: z.number().min(0),
+    // The admin area's priority of a client's conversations (api/internal/config/loyalty.go): the
+    // orders or their sum of a regular (middle) and a key (high) client. Not in site.json.
+    priority: z
+      .strictObject({
+        middle: priorityLevel,
+        high: priorityLevel,
+      })
+      .refine(
+        ({ middle, high }) =>
+          !(high.orders > 0 && middle.orders > 0 && high.orders <= middle.orders) &&
+          !(high.spent > 0 && middle.spent > 0 && high.spent <= middle.spent),
+        { message: 'high asks more than middle' },
+      )
+      .optional(),
     tiers: z.array(
       z
         .strictObject({
@@ -152,6 +172,13 @@ const accountSchema = z.strictObject({
     too_long: localized,
     last_way: localized,
     no_way_back: localized,
+    // A message with files ({file} — the name of the one that did not pass), a closed request.
+    closed: localized,
+    file_type: localized,
+    file_too_big: localized,
+    files_too_big: localized,
+    too_many_files: localized,
+    files_disabled: localized,
     server: localized,
     network: localized,
   }),
@@ -271,6 +298,10 @@ const accountSchema = z.strictObject({
     keys: localized,
     send: localized,
     sent: localized,
+    // «+ Файл» at the field of a message: the label, what may be sent, the button that removes one.
+    attach: localized,
+    attach_hint: localized,
+    remove: localized,
     closed: localized,
     ask: localized,
     missing: localized,

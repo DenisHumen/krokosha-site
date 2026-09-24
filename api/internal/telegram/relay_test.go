@@ -153,7 +153,7 @@ func TestAClientContinuesInTelegram(t *testing.T) {
 	if calls := f.presses(client, "l:take:1"); len(calls) != 1 || calls[0].Params["text"] != "Нет доступа." {
 		t.Errorf("a client pressed a staff button: %+v", calls)
 	}
-	if text := oneText(t, f.says(client, "")); !strings.Contains(text, "только текст") { // a sticker, a photo
+	if text := oneText(t, f.says(client, "")); !strings.Contains(text, "Такое я не передам") { // a location, a poll
 		t.Errorf("something that is not text: %q", text)
 	}
 	for range 19 { // with the one above: twenty messages this hour

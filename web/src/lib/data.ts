@@ -67,7 +67,10 @@ export interface Projects {
 type NonTextKeys =
   'url' | 'profile' | 'github' | 'timezone' | 'i18n' | 'plurals' | 'socials' | 'seo';
 
-type SiteTexts = Resolved<Omit<SiteContent, NonTextKeys>>;
+// loyalty.priority is the admin area's (api/internal/config/loyalty.go): not a text of the site either.
+type SiteTexts = Resolved<
+  Omit<SiteContent, NonTextKeys | 'loyalty'> & { loyalty: Omit<SiteContent['loyalty'], 'priority'> }
+>;
 
 export interface SiteI18n {
   locale: Locale;
@@ -175,7 +178,11 @@ export function buildSite(content: Content, lang: Locale, options: BuildOptions)
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the non-text keys
   const { url, profile, github, timezone, i18n, plurals, socials, seo, ...rest } = site;
-  const texts: SiteTexts = loc(rest, lang);
+  const resolved = loc(rest, lang);
+  // The admin area's priority of clients stays in the content: the site has no business with it.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the admin area's key
+  const { priority, ...loyalty } = resolved.loyalty;
+  const texts: SiteTexts = { ...resolved, loyalty };
   const replyWithin = texts.contacts.form.reply_within_hours;
 
   return {

@@ -191,7 +191,7 @@ func (h *Handler) priority(item leads.Conversation) int {
 			options = append(options, option.In("en"))
 		}
 	}
-	return leads.Priority(leads.Activity(item.Orders, item.Spent), leads.BudgetLevel(options, item.Budget))
+	return leads.Priority(leads.Activity(h.opts.Loyalty().PriorityRules(), item.Orders, item.Spent), leads.BudgetLevel(options, item.Budget))
 }
 
 // shortBudget: «up to $500» → «≤ $500», «over $10k» → «$10k+», «not sure yet» → «—».
@@ -303,6 +303,9 @@ func (h *Handler) feed(ctx context.Context, card *leads.Card, me string, unread 
 	var out []feedItem
 	var day, run string
 	for i, entry := range card.Feed {
+		if entry.Body == leads.FilesOnly && len(entry.Files) > 0 {
+			entry.Body = "" // files and no words: the files say it
+		}
 		item := feedItem{Entry: entry, Time: entry.At.In(h.opts.Location).Format("15:04"), Unread: i == firstUnread}
 		if title := h.dayTitle(entry.At); title != day {
 			day, item.Date, run = title, title, ""

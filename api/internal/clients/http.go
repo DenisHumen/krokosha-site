@@ -62,6 +62,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/account/leads", h.private(h.leadList))
 	mux.HandleFunc("GET /api/account/leads/{number}", h.private(h.leadView))
 	mux.HandleFunc("POST /api/account/leads/{number}/messages", h.private(h.leadMessage))
+	// A message with files: multipart, on a path of its own — nginx lets bigger bodies through there.
+	mux.HandleFunc("POST /api/account/upload/leads/{number}/messages", h.uploading(h.leadMessageFiles))
 	mux.HandleFunc("GET /api/account/leads/{number}/files/{file}", h.private(h.leadFile))
 	mux.HandleFunc("POST /api/account/inquiries", h.private(h.inquiry))
 	mux.HandleFunc("POST /api/account/eggs", h.private(h.eggs))
@@ -132,22 +134,52 @@ func (h *Handler) signedIn(next http.HandlerFunc, signedOut int) http.HandlerFun
 		if !guard(w, r) {
 			return
 		}
-		session, err := h.session(r)
-		if err != nil && !errors.Is(err, ErrNoSession) {
-			// The database did not answer: the session may be fine, and stays.
-			h.s.opts.Log.Error("account: cannot check a session", "error", err)
-			fail(w, http.StatusServiceUnavailable, "server_error")
+		if session, ok := h.checkSession(w, r, signedOut); ok {
+			next(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, session)))
+		}
+	}
+}
+
+// checkSession finds the session of a request, and for a change the CSRF token of its header.
+func (h *Handler) checkSession(w http.ResponseWriter, r *http.Request, signedOut int) (*Session, bool) {
+	session, err := h.session(r)
+	if err != nil && !errors.Is(err, ErrNoSession) {
+		// The database did not answer: the session may be fine, and stays.
+		h.s.opts.Log.Error("account: cannot check a session", "error", err)
+		fail(w, http.StatusServiceUnavailable, "server_error")
+		return nil, false
+	}
+	if err != nil {
+		clearCookie(w, SessionCookie)
+		fail(w, signedOut, "signed_out")
+		return nil, false
+	}
+	if r.Method == http.MethodPost && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+		fail(w, http.StatusForbidden, "csrf")
+		return nil, false
+	}
+	return session, true
+}
+
+// uploading is private for a form with files: multipart instead of JSON, and a body as big as the
+// files of one message may be (leads.MaxClientBytes). Where the request comes from, the session and
+// the CSRF token are checked before a byte of the body is read.
+func (h *Handler) uploading(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !fromSite(r) {
+			fail(w, http.StatusForbidden, "cross_origin")
 			return
 		}
-		if err != nil {
-			clearCookie(w, SessionCookie)
-			fail(w, signedOut, "signed_out")
+		if media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); media != "multipart/form-data" {
+			fail(w, http.StatusUnsupportedMediaType, "multipart_required")
 			return
 		}
-		if r.Method == http.MethodPost && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
-			fail(w, http.StatusForbidden, "csrf")
+		session, ok := h.checkSession(w, r, http.StatusUnauthorized)
+		if !ok {
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, leads.MaxClientBytes+1<<20)
 		next(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, session)))
 	}
 }
@@ -679,9 +711,21 @@ func (h *Handler) leadMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusTooManyRequests, "throttled")
 		return
 	}
-	switch _, err := h.s.opts.Leads.ClientPost(r.Context(), client.ID, id, body.Text); {
+	h.answerPost(w, r, client.ID, id, body.Text, nil)
+}
+
+// answerPost stores a message of the client and says how it went. Files that were not stored with
+// it are removed.
+func (h *Handler) answerPost(w http.ResponseWriter, r *http.Request, clientID, id int64, text string, uploads []leads.Upload) {
+	_, err := h.s.opts.Leads.ClientPost(r.Context(), clientID, id, text, uploads)
+	if err != nil {
+		h.discard(uploads)
+	}
+	switch {
 	case errors.Is(err, leads.ErrNotFound):
 		fail(w, http.StatusNotFound, "not_found")
+	case errors.Is(err, leads.ErrClosed):
+		fail(w, http.StatusConflict, "closed")
 	case errors.Is(err, leads.ErrEmptyText):
 		fail(w, http.StatusUnprocessableEntity, "empty")
 	case err != nil:
@@ -690,6 +734,84 @@ func (h *Handler) leadMessage(w http.ResponseWriter, r *http.Request) {
 		h.s.opts.Kick()
 		server.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
+}
+
+// discard removes files of a message that was not stored.
+func (h *Handler) discard(uploads []leads.Upload) {
+	for _, upload := range uploads {
+		if err := h.s.opts.Leads.Files().Remove(upload.StoredAs); err != nil {
+			h.s.opts.Log.Warn("account: cannot remove a file of a message that was not stored; the daily sweep will", "error", err)
+		}
+	}
+}
+
+// leadMessageFiles is a message of the client with files (multipart: «text» and up to five «files»).
+// Every file is told by its content, as with an answer (leads.InspectMedia): photos, videos in MP4,
+// PDF, DOCX and plain text; one that does not pass stops the message, and says which it was.
+func (h *Handler) leadMessageFiles(w http.ResponseWriter, r *http.Request) {
+	id, ok := number(r)
+	if !ok {
+		fail(w, http.StatusNotFound, "not_found")
+		return
+	}
+	dir := h.s.opts.Leads.Files()
+	if dir == nil {
+		fail(w, http.StatusUnprocessableEntity, "files_disabled")
+		return
+	}
+	client := sessionOf(r).Client
+	if !h.s.allow(r.Context(), "message", strconv.FormatInt(client.ID, 10), 30) {
+		fail(w, http.StatusTooManyRequests, "throttled")
+		return
+	}
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			fail(w, http.StatusRequestEntityTooLarge, "files_too_big")
+			return
+		}
+		fail(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	text := r.PostFormValue("text")
+	if utf8.RuneCountInString(text) > leads.MaxDescription {
+		fail(w, http.StatusUnprocessableEntity, "too_long")
+		return
+	}
+	headers := r.MultipartForm.File["files"]
+	if len(headers) > leads.MaxClientFiles {
+		fail(w, http.StatusUnprocessableEntity, "too_many_files")
+		return
+	}
+	var uploads []leads.Upload
+	var total int64
+	for _, header := range headers {
+		name := leads.CleanFilename(header.Filename)
+		if total += header.Size; total > leads.MaxClientBytes {
+			h.discard(uploads)
+			fail(w, http.StatusRequestEntityTooLarge, "files_too_big")
+			return
+		}
+		file, err := header.Open()
+		var upload leads.Upload
+		if err == nil {
+			upload, err = leads.SaveFromClient(dir, header.Filename, header.Size, file)
+			_ = file.Close()
+		}
+		if err != nil {
+			h.discard(uploads)
+			switch {
+			case errors.Is(err, leads.ErrFileType), errors.Is(err, leads.ErrFileTooBig):
+				server.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{"ok": false, "error": err.Error(), "file": name})
+			default:
+				h.internal(w, "cannot keep a file of a message", err)
+			}
+			return
+		}
+		uploads = append(uploads, upload)
+	}
+	h.answerPost(w, r, client.ID, id, text, uploads)
 }
 
 // inquiry is a question written in the account: it becomes a request of its own kind, with the same

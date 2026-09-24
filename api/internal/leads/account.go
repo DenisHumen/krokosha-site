@@ -158,7 +158,9 @@ func (s *Store) ClientView(ctx context.Context, clientID, id int64) (*ClientView
 	if answered.Valid {
 		view.Answered = &answered.Time
 	}
-	view.CanWrite = true
+	// A request that is over takes no more messages from the account: a new question is an inquiry
+	// of its own. A letter or a message in Telegram still lands — nothing a client writes is lost.
+	view.CanWrite = view.Status != StatusDone && view.Status != StatusRejected
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT created_at, 'message', direction, channel, body, '', id FROM lead_messages WHERE lead_id = ? AND direction IN ('in', 'out')
@@ -205,6 +207,11 @@ func (s *Store) ClientView(ctx context.Context, clientID, id int64) (*ClientView
 			view.Feed[index].Files = append(view.Feed[index].Files, ClientFile{ID: file.ID, Name: file.Filename, Kind: file.Kind, Size: file.Size})
 		}
 	}
+	for i := range view.Feed {
+		if view.Feed[i].Body == FilesOnly && len(view.Feed[i].Files) > 0 {
+			view.Feed[i].Body = "" // files and no words: the files say it
+		}
+	}
 	return view, nil
 }
 
@@ -237,7 +244,7 @@ func (s *Store) MarkSeen(ctx context.Context, clientID, id int64) error {
 
 // ClientPost stores what a client wrote in the personal account: the request goes back to work
 // if it waited for them, and everybody is told — as with a message in Telegram or a letter.
-func (s *Store) ClientPost(ctx context.Context, clientID, id int64, text string) (int64, error) {
+func (s *Store) ClientPost(ctx context.Context, clientID, id int64, text string, files []Upload) (int64, error) {
 	var owner sql.NullInt64
 	var status string
 	err := s.db.QueryRowContext(ctx, `SELECT client_id, status FROM leads WHERE id = ? AND anonymized_at IS NULL`, id).Scan(&owner, &status)
@@ -247,7 +254,10 @@ func (s *Store) ClientPost(ctx context.Context, clientID, id int64, text string)
 	if err != nil {
 		return 0, err
 	}
-	messageID, err := s.ClientWrote(ctx, id, Incoming{Channel: ChannelSite, Text: text})
+	if status == StatusDone || status == StatusRejected {
+		return 0, ErrClosed
+	}
+	messageID, err := s.ClientWrote(ctx, id, Incoming{Channel: ChannelSite, Text: text, Files: files})
 	if err == nil {
 		err = s.MarkSeen(ctx, clientID, id)
 	}

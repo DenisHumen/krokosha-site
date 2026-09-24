@@ -273,7 +273,7 @@
                       </a>
                     {{end}}
                     <div class="bubble-line">
-                      <span class="bubble-text">{{.Entry.Body}}</span>
+                      {{with .Entry.Body}}<span class="bubble-text">{{.}}</span>{{end}}
                       <span class="bubble-time"{{if .Marks}} title="{{range $i, $m := .Marks}}{{if $i}}; {{end}}{{if eq $m.Channel "telegram"}}Telegram{{else}}{{$m.To}}{{end}}: {{deliveryName $m.Status}}{{end}}"{{else if .State}} title="{{deliveryName .State}}"{{end}}>{{.Time}}{{if .State}}<span class="dlv dlv-{{.State}}"><span aria-hidden="true">{{deliveryMark .State}}</span><span class="visually-hidden"> — {{deliveryName .State}}</span></span>{{end}}</span>
                     </div>
                   </div>

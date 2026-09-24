@@ -61,10 +61,22 @@ type Message struct {
 	Date           int64    `json:"date"`
 	Text           string   `json:"text"`
 	ReplyToMessage *Message `json:"reply_to_message"`
-	// The file a sent message carries (media.go): the sizes of a photo, a video, a document.
+	// The file a message carries (media.go): the sizes of a photo, a video, a document — sent by the
+	// bot, or sent to it by a client or a member (files.go).
 	Photo    []FileRef `json:"photo"`
 	Video    *FileRef  `json:"video"`
 	Document *FileRef  `json:"document"`
+	// Caption is the text of a message with a file; MediaGroupID ties the files of an album, which
+	// Telegram delivers one message at a time.
+	Caption      string `json:"caption"`
+	MediaGroupID string `json:"media_group_id"`
+	// What the bot does not take: voice, music, stickers, round videos, animations (an animation
+	// comes with a «document» too).
+	Voice     *FileRef `json:"voice"`
+	Audio     *FileRef `json:"audio"`
+	Sticker   *FileRef `json:"sticker"`
+	VideoNote *FileRef `json:"video_note"`
+	Animation *FileRef `json:"animation"`
 }
 
 // CallbackQuery is a press of an inline button.
