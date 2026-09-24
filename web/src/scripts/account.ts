@@ -1,25 +1,41 @@
-// The personal account (pages/[...lang]/account.astro): signing in with a one-time code, then the
-// client's requests and inquiries, the discount and the level, contacts, profile, the ways in and the
-// devices. Everything comes from /api/account/* (api/internal/clients/http.go): JSON both ways, the
-// session in an HttpOnly cookie, and every change carries the session's CSRF token in a header.
+// The personal account (pages/[...lang]/account.astro; design v3): signing in with a one-time code,
+// then an application of six screens — home, requests, a new inquiry, the discount and the level,
+// achievements, the profile — switched by the address: #requests, #K-0042 (a request of the list,
+// the links of letters and of the bot lead here), #new, #loyalty, #achievements, #profile.
+// Everything comes from /api/account/* (api/internal/clients/http.go): JSON both ways, the session in
+// an HttpOnly cookie, and every change carries the session's CSRF token in a header.
 
 import type { Site } from '../lib/data.ts';
 import { accountHint, EGGS, receipts } from './achievements.ts';
+import { defineGlyphField } from './glyph-field.ts';
 
 type Texts = Site['account'];
+type Screen = 'home' | 'requests' | 'new' | 'loyalty' | 'achievements' | 'profile';
+const SCREENS: readonly Screen[] = [
+  'home',
+  'requests',
+  'new',
+  'loyalty',
+  'achievements',
+  'profile',
+];
+
+interface Tier {
+  id: string;
+  name: string;
+  discount: number;
+  orders: number;
+  spent: number;
+}
 
 interface PageTexts {
   lang: string;
   account: Texts;
-  orders: string[];
+  plurals: { orders: string[]; requests: string[]; open: string[] };
   examples: Record<string, string>;
   directions: Record<string, string>;
-  loyalty: {
-    enabled: boolean;
-    currency: string;
-    eggs: number;
-    tiers: { id: string; name: string; discount: number }[];
-  };
+  eggs: Record<string, string>;
+  loyalty: { enabled: boolean; currency: string; eggs: number; tiers: Tier[] };
 }
 
 interface Offer {
@@ -77,6 +93,7 @@ interface Summary {
   amount?: number;
   parent?: string;
   unread: boolean;
+  answered?: string;
   discount: Offer;
 }
 
@@ -89,7 +106,7 @@ interface View extends Summary {
   can_write: boolean;
   feed: {
     at: string;
-    kind: 'message' | 'status';
+    kind: 'message' | 'status' | 'call';
     direction?: 'in' | 'out';
     channel?: string;
     body?: string;
@@ -104,6 +121,8 @@ interface Answer {
   [key: string]: unknown;
 }
 
+type OrderId = 'first_order' | 'second_order' | 'big_order' | 'all_orders';
+
 const fill = (template: string, values: Record<string, string | number>) =>
   template.replace(/\{([a-z_]+)\}/g, (match, name: string) =>
     name in values ? String(values[name]) : match,
@@ -115,70 +134,125 @@ function $<T extends Element = HTMLElement>(root: ParentNode, selector: string):
   return node;
 }
 
+const all = <T extends Element = HTMLElement>(root: ParentNode, selector: string): T[] => [
+  ...root.querySelectorAll<T>(selector),
+];
+
+const OPEN_STATUSES = new Set(['new', 'in_progress', 'waiting_client']);
+
+/** The eggs this browser found (design/components/eggs/eggs.js keeps them). */
+function browserFinds(): string[] {
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem('krokosha:eggs') ?? '[]');
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export function initAccount(): void {
   const root = document.querySelector<HTMLElement>('[data-account]');
   if (!root) return;
   const T = JSON.parse(root.dataset['texts'] ?? '{}') as PageTexts;
   const A = T.account;
   const lang = T.lang;
+  defineGlyphField();
 
   // --- formatting --------------------------------------------------------------------------------
 
-  const day = new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'long', year: 'numeric' });
-  const moment = new Intl.DateTimeFormat(lang, {
-    day: 'numeric',
-    month: 'short',
+  const clock = new Intl.DateTimeFormat(lang, {
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   });
-  const date = (value: string) => day.format(new Date(value));
-  // «YYYY-MM-DD» is a day, not a moment: read as UTC midnight, it must be shown in UTC too, or a
-  // visitor west of Greenwich sees the day before.
-  const dayOnly = new Intl.DateTimeFormat(lang, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-  const when = (value: string) => moment.format(new Date(value));
-  let money = new Intl.NumberFormat(lang, {
-    style: 'currency',
-    currency: T.loyalty.currency || 'USD',
-    maximumFractionDigits: 0,
-  });
+  const time = (value: Date) => clock.format(value);
+  /** «22 Sep», «22 сент 2026»: the day, the short month without its dot, the year if asked. */
+  function shortDate(value: string | Date, year = false): string {
+    const parts = new Intl.DateTimeFormat(lang, {
+      day: 'numeric',
+      month: 'short',
+      ...(year ? { year: 'numeric' as const } : {}),
+    }).formatToParts(new Date(value));
+    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+    return [part('day'), part('month').replace(/\.$/, ''), part('year')].filter(Boolean).join(' ');
+  }
+  /** «3 March 2026» for «with us since». */
+  const longDate = (value: string) =>
+    new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'long', year: 'numeric' })
+      .format(new Date(value))
+      .replace(/\s?[гр]\.$/u, '');
+  const moment = (value: string) => `${shortDate(value)} ${time(new Date(value))}`;
+  const dayNumber = (value: Date) =>
+    Math.floor((value.getTime() - value.getTimezoneOffset() * 60_000) / 86_400_000);
+  /** «today 09:12», «yesterday 21:40», «22 Sep». */
+  function relative(value: string): string {
+    const at = new Date(value);
+    const now = new Date();
+    const days = dayNumber(now) - dayNumber(at);
+    if (days <= 0) return fill(A.ticker.today, { time: time(at) });
+    if (days === 1) return fill(A.ticker.yesterday, { time: time(at) });
+    return shortDate(at, at.getFullYear() !== now.getFullYear());
+  }
+  /** «09:12» today, «yesterday 21:40», «22 Sep»: the shortest that is still clear. */
+  function stamp(value: string): string {
+    const at = new Date(value);
+    return dayNumber(new Date()) === dayNumber(at) ? time(at) : relative(value);
+  }
+
+  let currency = T.loyalty.currency || 'USD';
+  const money = (value: number) =>
+    new Intl.NumberFormat(lang, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 0,
+    }).format(value);
   const rules = new Intl.PluralRules(lang);
-  const orders = (n: number) => {
+  function form(forms: string[], n: number): string {
     const category = rules.select(n);
-    const forms = T.orders;
-    const form =
-      forms.length === 2
+    return (
+      (forms.length === 2
         ? forms[category === 'one' ? 0 : 1]
-        : forms[category === 'one' ? 0 : category === 'few' ? 1 : 2];
-    return `${n} ${form ?? ''}`.trim();
+        : forms[category === 'one' ? 0 : category === 'few' ? 1 : 2]) ?? ''
+    );
+  }
+  const count = (forms: string[], n: number) => `${n} ${form(forms, n)}`.trim();
+  const percent = (value: number) => (value > 0 ? `−${value}%` : '0%');
+  const shareOf = (share: number) => {
+    const format = new Intl.NumberFormat(lang, {
+      style: 'percent',
+      maximumFractionDigits: share < 10 ? 1 : 0,
+    });
+    return share > 0 && share < 0.1 ? `<${format.format(0.001)}` : format.format(share / 100);
   };
-  const tierName = (id?: string) => T.loyalty.tiers.find((tier) => tier.id === id)?.name ?? '';
+  const tierOf = (id?: string) => T.loyalty.tiers.find((tier) => tier.id === id);
   const statusName = (status: string) => (A.statuses as Record<string, string>)[status] ?? status;
   const error = (code?: string) =>
     (A.errors as Record<string, string>)[code === 'server_error' ? 'server' : (code ?? '')] ??
     A.errors.server;
-  const reasonText = (offer: Offer) => {
+  function reasonText(offer: Offer): string {
     const reasons = A.loyalty.reasons as Record<string, string>;
     if (offer.reason === 'tier')
-      return fill(reasons['tier'] ?? '', { tier: tierName(offer.detail) });
+      return fill(reasons['tier'] ?? '', { tier: tierOf(offer.detail)?.name ?? '' });
     if (offer.reason === 'personal' || offer.reason === 'manual')
       return [reasons[offer.reason], offer.detail].filter(Boolean).join(' · ');
     return reasons[offer.reason ?? ''] ?? '';
-  };
+  }
+  const titleOf = (item: Summary) =>
+    item.subject || T.directions[item.direction] || item.direction || '';
+  const kindOf = (item: Summary) =>
+    item.kind === 'inquiry' ? A.requests.inquiry : A.requests.request;
+  const upper = (text: string) => text.toLocaleUpperCase(lang);
 
   // --- the API ----------------------------------------------------------------------------------
 
   let csrf = '';
 
-  async function api<T extends Answer>(
+  async function api<R extends Answer>(
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
-  ): Promise<{ status: number; data: T }> {
+  ): Promise<{ status: number; data: R }> {
     let response: Response;
     try {
       response = await fetch(path, {
@@ -193,17 +267,17 @@ export function initAccount(): void {
         credentials: 'same-origin',
       });
     } catch {
-      return { status: 0, data: { ok: false, error: 'network' } as T };
+      return { status: 0, data: { ok: false, error: 'network' } as R };
     }
-    const data = (await response.json().catch(() => ({ ok: false, error: 'server' }))) as T;
+    const data = (await response.json().catch(() => ({ ok: false, error: 'server' }))) as R;
     // A session that ended while the page was open (signed out on another device, expired).
-    if (response.status === 401 && view === 'dashboard') signedOut(A.errors.signed_out);
+    if (response.status === 401 && view === 'app') signedOut(A.errors.signed_out);
     return { status: response.status, data };
   }
 
   /** Disables a form's buttons while it is being sent. */
-  async function busy<T>(form: HTMLElement, work: () => Promise<T>): Promise<T> {
-    const buttons = [...form.querySelectorAll<HTMLButtonElement>('button')];
+  async function busy<R>(form: HTMLElement, work: () => Promise<R>): Promise<R> {
+    const buttons = all<HTMLButtonElement>(form, 'button');
     for (const button of buttons) button.disabled = true;
     try {
       return await work();
@@ -214,75 +288,109 @@ export function initAccount(): void {
 
   // --- views ------------------------------------------------------------------------------------
 
-  type ViewName = 'loading' | 'login' | 'dashboard';
+  type ViewName = 'loading' | 'login' | 'app';
   let view: ViewName = 'loading';
   function show(name: ViewName) {
     view = name;
-    for (const node of root!.querySelectorAll<HTMLElement>('[data-view]'))
-      node.hidden = node.dataset['view'] !== name;
+    for (const node of all(root!, '[data-view]')) node.hidden = node.dataset['view'] !== name;
   }
 
   // --- signing in --------------------------------------------------------------------------------
 
   const login = $(root, '[data-view="login"]');
+  const loginTitle = $(login, '[data-login-title]');
+  const loginLead = $(login, '[data-login-lead]');
+  const startStep = $(login, '[data-login-start]');
   const emailForm = $<HTMLFormElement>(login, '[data-login-email]');
+  const emailInput = $<HTMLInputElement>(emailForm, 'input');
   const telegramStep = $(login, '[data-login-telegram]');
   const botLink = $<HTMLAnchorElement>(login, '[data-bot-link]');
   const codeForm = $<HTMLFormElement>(login, '[data-login-code]');
-  const linkStep = $(login, '[data-login-link]');
+  const codeInput = $<HTMLInputElement>(codeForm, 'input[name="code"]');
+  const cells = all(codeForm, '[data-cell]');
+  const resend = $<HTMLButtonElement>(codeForm, '[data-resend]');
+  const codeBot = $<HTMLAnchorElement>(codeForm, '[data-code-bot]');
   const loginError = $(login, '[data-login-error]');
-  const methods = $(login, '[data-login-methods]');
   let botReady = false;
+  let via: 'email' | 'telegram' = 'email';
+  let sentText = '';
+  let lastEmail = '';
+  let countdown = 0;
+  let sending = false;
 
-  function loginStep(step: 'email' | 'telegram' | 'code' | 'link') {
-    methods.hidden = step === 'code' || step === 'link';
-    emailForm.hidden = step !== 'email';
+  function loginStep(step: 'start' | 'telegram' | 'code') {
+    startStep.hidden = step !== 'start';
     telegramStep.hidden = step !== 'telegram';
     codeForm.hidden = step !== 'code';
-    linkStep.hidden = step !== 'link';
-    if (step === 'code') $<HTMLInputElement>(codeForm, 'input').focus();
+    loginTitle.textContent =
+      step === 'start'
+        ? A.login.title
+        : step === 'telegram'
+          ? A.login.telegram_title
+          : via === 'email'
+            ? A.login.code_email
+            : A.login.code_telegram;
+    loginLead.textContent =
+      step === 'start' ? A.login.lead : step === 'telegram' ? A.login.telegram_text : sentText;
+    resend.hidden = step !== 'code' || via !== 'email';
+    codeBot.hidden = step !== 'code' || via !== 'telegram' || !botReady;
+    if (step !== 'code') stopCountdown();
+    if (step === 'code') {
+      codeInput.value = '';
+      codeInput.removeAttribute('aria-invalid');
+      paintCells();
+      codeInput.focus();
+    }
+  }
+
+  function paintCells() {
+    const value = codeInput.value;
+    const focused = document.activeElement === codeInput;
+    cells.forEach((cell, index) => {
+      cell.textContent = value[index] ?? '';
+      cell.classList.toggle('is-current', focused && index === Math.min(value.length, 5));
+    });
+  }
+
+  function stopCountdown() {
+    window.clearInterval(countdown);
+    countdown = 0;
+  }
+
+  /** «Send again in 0:59»: the address gets five codes an hour, so the button waits a minute. */
+  function startCountdown(seconds = 60) {
+    stopCountdown();
+    let left = seconds;
+    const tick = () => {
+      resend.disabled = left > 0;
+      resend.textContent =
+        left > 0
+          ? fill(A.login.resend_in, {
+              time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`,
+            })
+          : A.login.resend;
+      if (left <= 0) stopCountdown();
+      left -= 1;
+    };
+    tick();
+    countdown = window.setInterval(tick, 1000);
   }
 
   function signedOut(message = '') {
     csrf = '';
+    me = null;
+    open = '';
     accountHint(false);
     show('login');
-    loginStep(method());
+    loginStep('start');
     loginError.textContent = message;
-    // The Telegram way needs a fresh link into the bot: the last one is spent or was never made.
-    if (method() === 'telegram') void startTelegram();
   }
-
-  /** Asks whether to sign in to the account a link opens; true — the visitor agreed. */
-  function askLink(account: string): Promise<boolean> {
-    show('login');
-    loginStep('link');
-    loginError.textContent = '';
-    $(linkStep, '[data-link-account]').textContent = fill(A.login.link_ask, { account });
-    const yes = $<HTMLButtonElement>(linkStep, '[data-link-yes]');
-    const no = $<HTMLButtonElement>(linkStep, '[data-link-no]');
-    yes.focus();
-    return new Promise((resolve) => {
-      const answer = (agreed: boolean) => {
-        yes.removeEventListener('click', onYes);
-        no.removeEventListener('click', onNo);
-        resolve(agreed);
-      };
-      const onYes = () => answer(true);
-      const onNo = () => answer(false);
-      yes.addEventListener('click', onYes);
-      no.addEventListener('click', onNo);
-    });
-  }
-
-  const method = () =>
-    (login.querySelector<HTMLInputElement>('input[name="login-method"]:checked')?.value ??
-      'email') as 'email' | 'telegram';
 
   async function startTelegram() {
     botReady = false;
     botLink.classList.add('is-waiting');
     botLink.setAttribute('aria-disabled', 'true');
+    for (const label of all(login, '[data-bot-label]')) label.textContent = A.login.telegram_open;
     const { data } = await api<Answer & { bot_url?: string }>('POST', '/api/account/login', {
       method: 'telegram',
       lang,
@@ -291,19 +399,22 @@ export function initAccount(): void {
       loginError.textContent = error(data.error);
       return;
     }
-    botLink.href = data.bot_url;
+    botLink.href = codeBot.href = data.bot_url;
+    const bot = new URL(data.bot_url).pathname.split('/')[1] ?? '';
+    if (/^\w{3,64}$/.test(bot)) {
+      for (const label of all(login, '[data-bot-label]'))
+        label.textContent = fill(A.login.telegram_open_named, { bot });
+    }
     botLink.classList.remove('is-waiting');
     botLink.removeAttribute('aria-disabled');
     botReady = true;
   }
 
-  for (const radio of login.querySelectorAll<HTMLInputElement>('input[name="login-method"]')) {
-    radio.addEventListener('change', () => {
-      loginError.textContent = '';
-      loginStep(method());
-      if (method() === 'telegram') void startTelegram();
-    });
-  }
+  $(login, '[data-login-telegram-start]').addEventListener('click', () => {
+    loginError.textContent = '';
+    loginStep('telegram');
+    void startTelegram();
+  });
 
   botLink.addEventListener('click', (event) => {
     if (!botReady) {
@@ -311,72 +422,109 @@ export function initAccount(): void {
       return;
     }
     // The bot opens in its own tab or app; the code comes back to this page.
-    $(codeForm, '[data-sent]').textContent = A.login.sent_telegram;
+    via = 'telegram';
+    sentText = A.login.sent_telegram;
     window.setTimeout(() => loginStep('code'), 300);
   });
 
+  async function sendEmail(email: string): Promise<boolean> {
+    const { data } = await api<Answer & { sent_to?: string }>('POST', '/api/account/login', {
+      method: 'email',
+      email,
+      lang,
+    });
+    if (!data.ok) {
+      loginError.textContent = error(data.error);
+      return false;
+    }
+    loginError.textContent = '';
+    via = 'email';
+    lastEmail = email;
+    sentText = fill(A.login.sent_email, { address: data.sent_to ?? email });
+    return true;
+  }
+
   emailForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const input = $<HTMLInputElement>(emailForm, 'input');
-    const email = input.value.trim();
+    const email = emailInput.value.trim();
     if (!/^[^\s@<>()[\],;:"]+@[^\s@]+\.[^\s@.]+$/.test(email)) {
-      input.setAttribute('aria-invalid', 'true');
+      emailInput.setAttribute('aria-invalid', 'true');
       loginError.textContent = A.errors.bad_email;
-      input.focus();
+      emailInput.focus();
       return;
     }
-    input.removeAttribute('aria-invalid');
+    emailInput.removeAttribute('aria-invalid');
     void busy(emailForm, async () => {
-      const { data } = await api<Answer & { sent_to?: string }>('POST', '/api/account/login', {
-        method: 'email',
-        email,
-        lang,
-      });
-      if (!data.ok) {
-        loginError.textContent = error(data.error);
-        return;
-      }
-      loginError.textContent = '';
-      $(codeForm, '[data-sent]').textContent = fill(A.login.sent_email, {
-        address: data.sent_to ?? email,
-      });
+      if (!(await sendEmail(email))) return;
       loginStep('code');
+      startCountdown();
     });
   });
+
+  resend.addEventListener('click', () => {
+    if (!lastEmail) return;
+    resend.disabled = true;
+    void sendEmail(lastEmail).then((sent) => {
+      if (sent) {
+        loginLead.textContent = sentText;
+        startCountdown();
+      } else resend.disabled = false;
+    });
+  });
+
+  codeInput.addEventListener('input', () => {
+    const digits = codeInput.value.replace(/\D/g, '').slice(0, 6);
+    if (digits !== codeInput.value) codeInput.value = digits;
+    codeInput.removeAttribute('aria-invalid');
+    paintCells();
+    // Six digits typed or pasted: no need to reach for the button.
+    if (digits.length === 6) codeForm.requestSubmit();
+  });
+  codeInput.addEventListener('focus', paintCells);
+  codeInput.addEventListener('blur', paintCells);
 
   codeForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const input = $<HTMLInputElement>(codeForm, 'input');
-    const code = input.value.replace(/\D/g, '');
+    if (sending) return;
+    const code = codeInput.value.replace(/\D/g, '');
     if (code.length !== 6) {
-      input.setAttribute('aria-invalid', 'true');
+      codeInput.setAttribute('aria-invalid', 'true');
       loginError.textContent = A.errors.bad_code;
+      codeInput.focus();
       return;
     }
-    input.removeAttribute('aria-invalid');
+    sending = true;
     void busy(codeForm, async () => {
       const { data } = await api('POST', '/api/account/login/code', { code });
       if (!data.ok) {
+        codeInput.setAttribute('aria-invalid', 'true');
         loginError.textContent = error(data.error);
+        codeInput.focus();
         return;
       }
-      input.value = '';
+      codeInput.value = '';
       loginError.textContent = '';
+      stopCountdown();
       await load();
-    });
+    }).finally(() => (sending = false));
   });
 
-  $(codeForm, '[data-login-back]').addEventListener('click', () => {
-    loginError.textContent = '';
-    loginStep(method());
-    if (method() === 'telegram') void startTelegram();
-  });
+  for (const back of all(login, '[data-login-back]')) {
+    back.addEventListener('click', () => {
+      loginError.textContent = '';
+      loginStep('start');
+      emailInput.focus();
+    });
+  }
 
   // --- the account --------------------------------------------------------------------------------
 
-  const board = $(root, '[data-view="dashboard"]');
+  const app = $(root, '[data-view="app"]');
+  const heading = $(app, '[data-title]');
+  const menu = $<HTMLDetailsElement>(app, '[data-menu]');
   let me: Me | null = null;
   let list: Summary[] = [];
+  let eggsFound = 0;
 
   async function load() {
     const { data } = await api<Me & Answer>('GET', '/api/account/me');
@@ -388,106 +536,340 @@ export function initAccount(): void {
     me = data;
     csrf = data.csrf;
     accountHint(true);
-    if (data.loyalty.currency) {
-      money = new Intl.NumberFormat(lang, {
-        style: 'currency',
-        currency: data.loyalty.currency,
-        maximumFractionDigits: 0,
-      });
-    }
-    show('dashboard');
-    renderHead();
+    if (data.loyalty.currency) currency = data.loyalty.currency;
+    show('app');
     renderLoyalty();
-    renderContacts();
     renderProfile();
     renderAccess();
+    renderContacts();
     renderSessions();
     await Promise.all([loadRequests(), syncEggs(), renderOrders()]);
-    route();
+    renderFrame();
+    route(false);
   }
 
-  function renderHead() {
+  const firstName = () => me?.client.name.trim().split(/\s+/)[0] ?? '';
+
+  /** The header, the ticker and the title row: who, what discount, what is open, when answered. */
+  function renderFrame() {
     if (!me) return;
-    const { client } = me;
-    $(board, '[data-hello]').textContent = client.name
-      ? fill(A.home.hello, { name: client.name })
-      : A.home.hello_plain;
-    $(board, '[data-since]').textContent = fill(A.home.since, { date: date(client.since) });
+    const { client, loyalty } = me;
+    const name = firstName() || client.email.split('@')[0] || client.telegram;
+    $(app, '[data-who-name]').textContent = name;
+    $(app, '[data-who-id]').textContent = `#${client.id}`;
+    const words = client.name.trim().split(/\s+/).filter(Boolean);
+    $(app, '[data-initials]').textContent = upper(
+      words.length > 0
+        ? words
+            .slice(0, 2)
+            .map((word) => Array.from(word)[0] ?? '')
+            .join('')
+        : (Array.from(name)[0] ?? 'K'),
+    );
+    $(app, '[data-since]').textContent = fill(A.home.since, { date: longDate(client.since) });
+    $(app, '[data-tick="discount"]').textContent = percent(loyalty.offer.percent);
+    $(app, '[data-tick="level"]').textContent = tierOf(loyalty.tier)?.name ?? A.loyalty.base;
+    const opened = list.filter((item) => OPEN_STATUSES.has(item.status)).length;
+    $(app, '[data-tick="open"]').textContent = count(T.plurals.requests, opened);
+    const answered = latestAnswer(list);
+    $(app, '[data-tick="answer"]').textContent = answered?.answered
+      ? relative(answered.answered)
+      : '—';
+    $(app, '[data-menu-discount]').textContent = percent(loyalty.offer.percent);
+    $(app, '[data-unread-dot]').hidden = !list.some((item) => item.unread);
+    heading.textContent = screenTitle(screen);
   }
 
-  $(board, '[data-logout]').addEventListener('click', () => {
-    void api('POST', '/api/account/logout').then(() => signedOut());
+  const latestAnswer = (items: Summary[]) =>
+    items
+      .filter((item) => item.answered)
+      .sort((a, b) => Date.parse(b.answered ?? '') - Date.parse(a.answered ?? ''))[0];
+
+  function screenTitle(name: Screen): string {
+    if (name === 'home') {
+      const first = firstName();
+      return first ? fill(A.home.hello, { name: first }) : A.home.hello_plain;
+    }
+    if (name === 'profile') return A.profile.heading;
+    return A.nav[name];
+  }
+
+  // --- screens and the address --------------------------------------------------------------------
+
+  let screen: Screen = 'home';
+  let focusAfter: HTMLElement | null = null;
+  const wide = matchMedia('(min-width: 901px)');
+
+  function showScreen(next: Screen, focus: boolean) {
+    const changed = next !== screen;
+    screen = next;
+    for (const section of all(app, '[data-screen]'))
+      section.hidden = section.dataset['screen'] !== next;
+    for (const link of all(app, '[data-nav]')) {
+      if (link.dataset['nav'] === next) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
+    heading.textContent = screenTitle(next);
+    menu.open = false;
+    if (!focus) return;
+    if (focusAfter) {
+      focusAfter.focus();
+      focusAfter = null;
+    } else if (changed) {
+      heading.focus({ preventScroll: true });
+      window.scrollTo({ top: 0 });
+    }
+  }
+
+  /** The address says the screen; «#K-0042» opens that request. */
+  function route(focus = true) {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    const number = /^K-\d{1,10}$/i.test(hash) ? hash.toUpperCase() : '';
+    const next: Screen = number
+      ? 'requests'
+      : SCREENS.includes(hash as Screen)
+        ? (hash as Screen)
+        : 'home';
+    if (next === 'loyalty' && me && !me.loyalty.enabled) {
+      showScreen('home', focus);
+      return;
+    }
+    showScreen(next, focus);
+    if (next !== 'requests') return;
+    if (number) {
+      if (number !== open) void openThread(number);
+    } else if (wide.matches && list[0]) {
+      // A wide screen has room for both: the newest request opens next to the list.
+      history.replaceState(null, '', `#${list[0].number}`);
+      if (list[0].number !== open) void openThread(list[0].number);
+    } else closeThread();
+  }
+
+  window.addEventListener('hashchange', () => {
+    if (view === 'app') route();
   });
+
+  // The menu of the header: closed by a click elsewhere and by Escape.
+  document.addEventListener('click', (event) => {
+    if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && menu.open) {
+      menu.open = false;
+      $(menu, 'summary').focus();
+    }
+  });
+  // Another language keeps the screen: the address goes along (a sign-in token never does).
+  for (const link of all<HTMLAnchorElement>(app, '[data-lang-link]')) {
+    link.addEventListener('click', () => {
+      const hash = location.hash.startsWith('#login=') ? '' : location.hash;
+      link.href = `${link.pathname}${hash}`;
+    });
+  }
+
+  for (const button of all(root, '[data-logout]')) {
+    button.addEventListener('click', () => {
+      void api('POST', '/api/account/logout').then(() => {
+        history.replaceState(null, '', location.pathname + location.search);
+        signedOut();
+      });
+    });
+  }
+
+  // --- home ---------------------------------------------------------------------------------------
+
+  const home = $(app, '[data-screen="home"]');
+  const rowTemplate = $<HTMLTemplateElement>(document, '#tpl-row');
+
+  function renderHome() {
+    if (!me) return;
+    const { loyalty, client } = me;
+    const offer = loyalty.offer;
+    $(home, '[data-offer]').textContent = percent(offer.percent);
+    $(home, '[data-offer-reason]').textContent =
+      offer.percent > 0 ? reasonText(offer) : A.loyalty.none;
+
+    // Requests: how many, how many open, the answer that waits to be read.
+    $(home, '[data-count]').textContent = String(list.length);
+    const opened = list.filter((item) => OPEN_STATUSES.has(item.status)).length;
+    $(home, '[data-open]').textContent = `/ ${opened} ${form(T.plurals.open, opened)}`;
+    const unread = latestAnswer(list.filter((item) => item.unread));
+    const last = unread ?? latestAnswer(list);
+    const tile = $<HTMLAnchorElement>(home, '[data-home-requests]');
+    tile.href = last ? `#${last.number}` : '#requests';
+    $(home, '[data-answer-label]').textContent = unread
+      ? A.home.new_answer
+      : last
+        ? A.home.last_answer
+        : A.home.no_answers;
+    $(home, '[data-answer-at]').textContent = last?.answered
+      ? `#${last.number} · ${stamp(last.answered)}`
+      : '';
+
+    $(home, '[data-spent]').textContent = money(loyalty.spent);
+    $(home, '[data-orders]').textContent = `/ ${count(T.plurals.orders, loyalty.orders)}`;
+    renderLevel();
+
+    $(home, '[data-latest]').replaceChildren(
+      ...list.slice(0, 4).map((item) => {
+        const row = rowTemplate.content.cloneNode(true) as DocumentFragment;
+        $<HTMLAnchorElement>(row, 'a').href = `#${item.number}`;
+        $(row, '[data-number]').textContent = `#${item.number}`;
+        $(row, '[data-title]').textContent = titleOf(item);
+        $(row, '[data-sub]').textContent =
+          `${upper(kindOf(item))} · ${shortDate(item.created, true)}`;
+        $(row, '[data-unread]').hidden = !item.unread;
+        statusPill($(row, '[data-status]'), item.status);
+        return row;
+      }),
+    );
+    $(home, '[data-latest-empty]').hidden = list.length > 0;
+
+    const telegram = client.preferred === 'telegram' && Boolean(client.telegram);
+    $(home, '[data-ask-text]').textContent = fill(A.home.ask_text, {
+      channel: telegram ? A.home.by_telegram : A.home.by_email,
+    });
+    $(home, '[data-project-note]').textContent =
+      loyalty.enabled && offer.percent > 0
+        ? fill(A.home.project_discount, { percent: offer.percent })
+        : A.home.project_plain;
+    renderEggsRing();
+  }
+
+  /** The level: tabs, the name, what the next one asks, a ladder of bars. */
+  function renderLevel() {
+    if (!me) return;
+    const { loyalty } = me;
+    const current = loyalty.tier ?? '';
+    const levels = ['', ...T.loyalty.tiers.map((tier) => tier.id)];
+    const index = Math.max(0, levels.indexOf(current));
+    for (const tab of all(home, '[data-level]'))
+      tab.classList.toggle('is-current', tab.dataset['level'] === current);
+    $(home, '[data-level-name]').textContent = tierOf(current)?.name ?? A.loyalty.base;
+    const next = loyalty.next;
+    const left = next
+      ? [
+          next.orders > 0 ? count(T.plurals.orders, next.orders) : '',
+          next.spent > 0 ? money(next.spent) : '',
+        ].filter(Boolean)
+      : [];
+    $(home, '[data-level-next]').textContent = next
+      ? `${fill(A.loyalty.to_next, { tier: tierOf(next.tier)?.name ?? '' })}: ${
+          left.length === 2
+            ? fill(A.loyalty.level_rule, { orders: left[0] ?? '', spent: left[1] ?? '' })
+            : (left[0] ?? '')
+        }`
+      : A.loyalty.top;
+    const rungs = all(home, '[data-rung]');
+    const tallest = 150;
+    rungs.forEach((rung, i) => {
+      rung.classList.toggle('is-past', i < index);
+      rung.classList.toggle('is-current', i === index);
+      const tier = tierOf(rung.dataset['rung']);
+      $(rung, '[data-rung-label]').textContent =
+        i === index ? A.loyalty.here : `${tier?.discount ?? 0}%`;
+      $(rung, '[data-rung-bar]').style.height =
+        `${Math.round(((i + 1) / rungs.length) * tallest)}px`;
+    });
+  }
+
+  function renderEggsRing() {
+    const ring = home.querySelector<SVGCircleElement>('[data-ring]');
+    if (!ring || !me) return;
+    const total = EGGS.length;
+    const circumference = 2 * Math.PI * 64;
+    ring.setAttribute(
+      'stroke-dasharray',
+      `${((eggsFound / total) * circumference).toFixed(1)} ${circumference.toFixed(1)}`,
+    );
+    $(home, '[data-eggs-count]').textContent = `${eggsFound}/${total}`;
+    const eggs = { percent: T.loyalty.eggs };
+    $(home, '[data-eggs-hint]').textContent = !me.loyalty.enabled
+      ? ''
+      : me.loyalty.eggs_used
+        ? A.home.eggs_used
+        : eggsFound === total
+          ? fill(A.home.eggs_ready, eggs)
+          : fill(A.home.eggs_hint, eggs);
+  }
 
   // --- the discount and the level ----------------------------------------------------------------
 
+  const loyaltyScreen = $(app, '[data-screen="loyalty"]');
+
   function renderLoyalty() {
     if (!me) return;
-    const card = $(board, '[data-loyalty]');
     const { loyalty } = me;
-    card.hidden = !loyalty.enabled;
+    for (const node of all(app, '[data-loyalty-only]')) node.hidden = !loyalty.enabled;
+    $(app, '[data-nav-item="loyalty"]').hidden = !loyalty.enabled;
     const offer = loyalty.offer;
-    $(card, '[data-next-percent]').textContent = offer.percent > 0 ? `−${offer.percent}%` : '0%';
-    $(card, '[data-next-reason]').textContent =
-      offer.percent > 0 ? reasonText(offer) : A.loyalty.none;
-    const tier = $(card, '[data-tier]');
-    tier.textContent = loyalty.tier ? tierName(loyalty.tier) : A.loyalty.newcomer;
-    tier.dataset['value'] = loyalty.tier ?? '';
-    $(card, '[data-orders]').textContent = String(loyalty.orders);
-    $(card, '[data-spent]').textContent = money.format(loyalty.spent);
+    $(loyaltyScreen, '[data-next-percent]').textContent = percent(offer.percent);
+    $(loyaltyScreen, '[data-next-reason]').textContent = [
+      offer.percent > 0 ? reasonText(offer) : A.loyalty.none,
+      A.loyalty.no_stack,
+    ].join(' · ');
 
-    const progress = $(card, '[data-progress]');
-    const next = loyalty.next;
-    progress.hidden = !next;
-    if (next) {
-      $(progress, '[data-progress-title]').textContent = fill(A.loyalty.to_next, {
-        tier: tierName(next.tier),
-      });
-      $(progress, '[data-progress-bar]').style.width =
-        `${Math.round(Math.max(0, Math.min(1, next.progress)) * 100)}%`;
-      const left = [
-        next.orders > 0 ? fill(A.loyalty.more_orders, { count: orders(next.orders) }) : '',
-        next.spent > 0 ? fill(A.loyalty.more_spent, { amount: money.format(next.spent) }) : '',
-      ].filter(Boolean);
-      // «or $1,200 more» reads as a sentence only after something; alone it loses its «or».
-      if (left.length === 1 && next.orders <= 0) left[0] = money.format(next.spent);
-      $(progress, '[data-progress-left]').textContent = left.join(' ');
+    const next = loyalty.next ? tierOf(loyalty.next.tier) : undefined;
+    const bar = (selector: string, share: number) =>
+      ($(loyaltyScreen, selector).style.width =
+        `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`);
+    $(loyaltyScreen, '[data-orders-count]').textContent = String(loyalty.orders);
+    $(loyaltyScreen, '[data-spent-total]').textContent = money(loyalty.spent);
+    if (!next) {
+      // The top, or no levels at all.
+      $(loyaltyScreen, '[data-orders-target]').textContent = loyalty.tier ? A.loyalty.top : '';
+      $(loyaltyScreen, '[data-spent-target]').textContent = '';
+      bar('[data-orders-bar]', loyalty.tier ? 1 : 0);
+      bar('[data-spent-bar]', loyalty.tier ? 1 : 0);
+    } else {
+      $(loyaltyScreen, '[data-orders-target]').textContent =
+        next.orders > 0 ? `/ ${next.orders} · ${next.name}` : '';
+      $(loyaltyScreen, '[data-spent-target]').textContent =
+        next.spent > 0 ? `/ ${money(next.spent)}` : '';
+      bar('[data-orders-bar]', next.orders > 0 ? loyalty.orders / next.orders : 0);
+      bar('[data-spent-bar]', next.spent > 0 ? loyalty.spent / next.spent : 0);
     }
-    $(card, '[data-top]').hidden = Boolean(next) || !loyalty.tier;
 
-    const personal = $(card, '[data-personal]');
+    const personal = $(loyaltyScreen, '[data-personal]');
     const own = loyalty.personal;
     personal.hidden = !own;
     if (own) {
       personal.textContent = [
         fill(A.loyalty.personal, { percent: own.percent }),
         own.once ? A.loyalty.personal_once : '',
-        own.until
-          ? fill(A.loyalty.personal_until, { date: dayOnly.format(new Date(own.until)) })
-          : '',
+        own.until ? fill(A.loyalty.personal_until, { date: shortDate(own.until, true) }) : '',
         own.note,
       ]
         .filter(Boolean)
         .join(' · ');
     }
-    for (const row of card.querySelectorAll<HTMLElement>('[data-tier-id]')) {
-      row.classList.toggle('is-current', row.dataset['tierId'] === loyalty.tier);
+
+    const state = (row: HTMLElement, text: string) =>
+      ($(row, '[data-state]').textContent = text ? ` · ${text}` : '');
+    for (const row of all(loyaltyScreen, '[data-row]')) {
+      const kind = row.dataset['row'];
+      if (kind === 'welcome') {
+        row.classList.toggle('is-used', loyalty.welcome_used);
+        state(row, loyalty.welcome_used ? A.loyalty.used : '');
+      } else if (kind === 'eggs') {
+        row.classList.toggle('is-used', loyalty.eggs_used);
+        state(row, loyalty.eggs_used ? A.loyalty.used : '');
+      } else {
+        const mine = row.dataset['tierId'] === loyalty.tier;
+        row.classList.toggle('is-current', mine);
+        state(row, mine ? A.loyalty.yours : '');
+      }
     }
   }
 
   // --- requests and inquiries ------------------------------------------------------------------
 
-  const requests = $(board, '[data-requests]');
-  const listView = $(requests, '[data-list-view]');
+  const requests = $(app, '[data-screen="requests"]');
   const thread = $(requests, '[data-thread]');
-  const parentSelect = $<HTMLSelectElement>(board, '[data-parent]');
-  const requestTemplate = $<HTMLTemplateElement>(document, '#tpl-request');
-  const entryTemplate = $<HTMLTemplateElement>(document, '#tpl-entry');
-
-  const titleOf = (item: Summary) =>
-    item.subject || T.directions[item.direction] || item.direction || '';
-  const kindOf = (item: Summary) =>
-    item.kind === 'inquiry' ? A.requests.inquiry : A.requests.request;
+  const parentSelect = $<HTMLSelectElement>(app, '[data-parent]');
+  const cardTemplate = $<HTMLTemplateElement>(document, '#tpl-card');
+  const messageTemplate = $<HTMLTemplateElement>(document, '#tpl-msg');
+  let open = '';
 
   function statusPill(node: HTMLElement, status: string) {
     node.textContent = statusName(status);
@@ -502,24 +884,25 @@ export function initAccount(): void {
   }
 
   function renderRequests() {
-    const holder = $(requests, '[data-requests-list]');
-    holder.replaceChildren(
+    $(requests, '[data-total]').textContent = String(list.length);
+    $(requests, '[data-requests-list]').replaceChildren(
       ...list.map((item) => {
-        const row = requestTemplate.content.cloneNode(true) as DocumentFragment;
+        const row = cardTemplate.content.cloneNode(true) as DocumentFragment;
         const link = $<HTMLAnchorElement>(row, 'a');
         link.href = `#${item.number}`;
-        $(row, '[data-number]').textContent = `#${item.number}`;
-        $(row, '[data-kind]').textContent = [
+        if (item.number === open) link.setAttribute('aria-current', 'true');
+        $(row, '[data-number]').textContent = [
+          `#${item.number}`,
           kindOf(item),
           item.parent ? fill(A.requests.about, { id: `#${item.parent}` }) : '',
         ]
           .filter(Boolean)
           .join(' · ');
-        $(row, '[data-unread]').hidden = !item.unread;
         statusPill($(row, '[data-status]'), item.status);
         $(row, '[data-title]').textContent = titleOf(item);
         $(row, '[data-excerpt]').textContent = item.excerpt;
-        $(row, '[data-date]').textContent = date(item.created);
+        $(row, '[data-date]').textContent = shortDate(item.created, true);
+        $(row, '[data-unread]').hidden = !item.unread;
         $(row, '[data-discount]').textContent =
           item.discount.percent > 0 ? `−${item.discount.percent}%` : '';
         return row;
@@ -539,31 +922,38 @@ export function initAccount(): void {
       }),
     );
     parentSelect.value = list.some((item) => item.number === chosen) ? chosen : '';
+    renderHome();
+    renderFrame();
   }
 
-  let open = '';
-
   async function openThread(number: string) {
+    open = number;
     const { status, data } = await api<Answer & { lead?: View }>(
       'GET',
       `/api/account/leads/${encodeURIComponent(number)}`,
     );
+    if (open !== number) return; // another one was chosen meanwhile
     if (status === 404 || !data.lead) {
       closeThread();
-      const empty = $(requests, '[data-requests-empty]');
-      empty.textContent = A.requests.missing;
-      empty.hidden = false;
+      const none = $(requests, '[data-thread-none]');
+      none.textContent = status === 404 ? A.requests.missing : error(data.error);
+      none.hidden = false;
       return;
     }
+    $(requests, '[data-thread-none]').hidden = true;
     const lead = data.lead;
-    open = lead.number;
-    listView.hidden = true;
     thread.hidden = false;
+    requests.classList.add('is-open');
+    for (const card of all(requests, '.card')) {
+      if (card.getAttribute('href') === `#${lead.number}`)
+        card.setAttribute('aria-current', 'true');
+      else card.removeAttribute('aria-current');
+    }
     $(thread, '[data-thread-meta]').textContent = [
       `#${lead.number}`,
       kindOf(lead),
       lead.parent ? fill(A.requests.about, { id: `#${lead.parent}` }) : '',
-      date(lead.created),
+      longDate(lead.created),
     ]
       .filter(Boolean)
       .join(' · ');
@@ -574,14 +964,14 @@ export function initAccount(): void {
       [A.requests.direction, T.directions[lead.direction] ?? lead.direction],
       [A.requests.budget, lead.budget ?? ''],
       [A.requests.timeline, lead.timeline ?? ''],
-      [A.requests.contact, lead.contact],
       [
         A.requests.discount,
         lead.discount.percent > 0
           ? `−${lead.discount.percent}% · ${reasonText(lead.discount)}`
           : '',
       ],
-      [A.requests.amount, lead.amount !== undefined ? money.format(lead.amount) : ''],
+      [A.requests.amount, lead.amount !== undefined ? money(lead.amount) : ''],
+      [A.requests.contact, lead.contact],
     ];
     $(thread, '[data-thread-facts]').replaceChildren(
       ...facts
@@ -590,79 +980,93 @@ export function initAccount(): void {
           const line = document.createElement('div');
           const term = document.createElement('dt');
           const detail = document.createElement('dd');
+          line.className = 'fact';
           term.textContent = name;
           detail.textContent = value;
           line.append(term, detail);
           return line;
         }),
     );
+    // The description opens the conversation too (the form's message): shown once, as the request.
     $(thread, '[data-thread-description]').textContent = lead.description;
 
     const channels = A.channels as Record<string, string>;
+    const events = A.events as Record<string, string>;
     $(thread, '[data-thread-feed]').replaceChildren(
-      ...lead.feed.map((entry) => {
-        const row = entryTemplate.content.cloneNode(true) as DocumentFragment;
-        const item = $(row, 'li');
-        if (entry.kind === 'status') {
-          item.classList.add('is-status');
-          $(row, '[data-who]').textContent = fill(A.requests.status, {
-            status: statusName(entry.status ?? ''),
-          });
-        } else {
-          item.classList.add(entry.direction === 'in' ? 'is-in' : 'is-out');
-          const who = entry.direction === 'in' ? A.requests.you : A.requests.answer;
-          const channel = entry.channel ? channels[entry.channel] : '';
-          $(row, '[data-who]').textContent = [who, channel].filter(Boolean).join(' · ');
-          const files = entry.files?.length
-            ? `\n${fill(A.requests.files, { names: entry.files.join(', ') })}`
-            : '';
-          $(row, '[data-body]').textContent = `${entry.body ?? ''}${files}`;
-        }
-        $(row, '[data-when]').textContent = when(entry.at);
-        return row;
-      }),
+      ...lead.feed
+        .filter(
+          (entry, index) =>
+            !(
+              index <= 1 &&
+              entry.kind === 'message' &&
+              entry.direction === 'in' &&
+              entry.channel === 'form' &&
+              entry.body?.trim() === lead.description.trim()
+            ),
+        )
+        .map((entry) => {
+          const row = messageTemplate.content.cloneNode(true) as DocumentFragment;
+          const item = $(row, 'li');
+          const meta = $(row, '[data-meta]');
+          const body = $(row, '[data-body]');
+          if (entry.kind === 'status' || entry.kind === 'call') {
+            item.classList.add('msg-event');
+            meta.textContent = `${entry.kind === 'call' ? channels['phone'] : A.requests.status} · ${moment(entry.at)}`;
+            body.textContent =
+              entry.kind === 'call'
+                ? A.requests.call
+                : (events[entry.status ?? ''] ?? statusName(entry.status ?? ''));
+          } else {
+            const mine = entry.direction === 'in';
+            item.classList.add(mine ? 'msg-in' : 'msg-out');
+            const channel = entry.channel ? channels[entry.channel] : '';
+            meta.textContent = [
+              mine ? A.requests.you : A.requests.answer,
+              channel,
+              moment(entry.at),
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            body.textContent = entry.body ?? '';
+            if (entry.files?.length) {
+              const files = $(row, '[data-files]');
+              files.textContent = fill(A.requests.files, { names: entry.files.join(', ') });
+              files.hidden = false;
+            }
+          }
+          return row;
+        }),
     );
     const reply = $<HTMLFormElement>(thread, '[data-thread-reply]');
     reply.hidden = !lead.can_write;
     $(thread, '[data-thread-closed]').hidden = lead.can_write;
     $(reply, '[data-done]').textContent = '';
+    $(reply, '[data-error]').textContent = '';
 
-    // Opened, so read: the list loses its «new».
+    // Opened, so read: the list, the home screen and the rail lose their «new».
     const summary = list.find((item) => item.number === lead.number);
     if (summary?.unread) {
       summary.unread = false;
       renderRequests();
     }
-    requests.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!wide.matches) window.scrollTo({ top: 0 });
   }
 
   function closeThread() {
     open = '';
     thread.hidden = true;
-    listView.hidden = false;
+    $(requests, '[data-thread-none]').hidden = true;
+    requests.classList.remove('is-open');
+    for (const card of all(requests, '.card')) card.removeAttribute('aria-current');
   }
 
-  /** «#K-0042» in the address opens that request: the links of letters and of the bot lead here. */
-  function route() {
-    const number = /^#(K-\d+)$/i.exec(location.hash)?.[1]?.toUpperCase();
-    if (number && number !== open) void openThread(number);
-    else if (!number && open) closeThread();
+  for (const ask of all(thread, '[data-thread-ask]')) {
+    ask.addEventListener('click', () => {
+      parentSelect.value = open;
+      focusAfter = $(app, '#inquiry-text');
+      location.hash = '#new';
+    });
   }
-  window.addEventListener('hashchange', () => {
-    if (view === 'dashboard') route();
-  });
-
-  $(thread, '[data-thread-back]').addEventListener('click', () => {
-    history.pushState(null, '', location.pathname + location.search);
-    closeThread();
-  });
-
-  $(thread, '[data-thread-ask]').addEventListener('click', () => {
-    parentSelect.value = open;
-    const card = $(board, '#inquiry');
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    $<HTMLTextAreaElement>(card, 'textarea').focus({ preventScroll: true });
-  });
 
   const replyForm = $<HTMLFormElement>(thread, '[data-thread-reply]');
   replyForm.addEventListener('submit', (event) => {
@@ -672,12 +1076,14 @@ export function initAccount(): void {
     const problem = $(replyForm, '[data-error]');
     if (!text) {
       problem.textContent = A.errors.empty;
+      field.focus();
       return;
     }
+    const number = open;
     void busy(replyForm, async () => {
       const { data } = await api(
         'POST',
-        `/api/account/leads/${encodeURIComponent(open)}/messages`,
+        `/api/account/leads/${encodeURIComponent(number)}/messages`,
         { text },
       );
       if (!data.ok) {
@@ -687,19 +1093,19 @@ export function initAccount(): void {
       problem.textContent = '';
       field.value = '';
       // An answer can move the status (waiting for the client → in progress): the list follows.
-      await Promise.all([openThread(open), loadRequests()]);
+      await Promise.all([openThread(number), loadRequests()]);
       $(replyForm, '[data-done]').textContent = A.requests.sent;
     });
   });
 
-  const inquiry = $<HTMLFormElement>(board, '[data-inquiry]');
+  // --- a new inquiry --------------------------------------------------------------------------------
+
+  const inquiry = $<HTMLFormElement>(app, '[data-inquiry]');
   inquiry.addEventListener('submit', (event) => {
     event.preventDefault();
     const text = $<HTMLTextAreaElement>(inquiry, 'textarea');
     const subject = $<HTMLInputElement>(inquiry, 'input[name="subject"]');
     const problem = $(inquiry, '[data-error]');
-    const done = $(inquiry, '[data-done]');
-    done.textContent = '';
     if (Array.from(text.value.trim()).length < 2) {
       problem.textContent = A.errors.empty;
       text.setAttribute('aria-invalid', 'true');
@@ -720,86 +1126,119 @@ export function initAccount(): void {
       problem.textContent = '';
       text.value = '';
       subject.value = '';
-      done.textContent = fill(A.inquiry.sent, { id: `#${data.number}` });
+      parentSelect.value = '';
       await loadRequests();
+      // The inquiry opens with its number: the conversation goes on there.
+      history.pushState(null, '', `#${data.number}`);
+      showScreen('requests', true);
+      await openThread(data.number);
+      $(replyForm, '[data-done]').textContent = fill(A.inquiry.sent, { id: `#${data.number}` });
     });
   });
 
-  // --- contacts ---------------------------------------------------------------------------------
+  // --- achievements -------------------------------------------------------------------------------
 
-  const contactTemplate = $<HTMLTemplateElement>(document, '#tpl-contact');
-  const contactForm = $<HTMLFormElement>(board, '[data-contact-form]');
-  const kindSelect = $<HTMLSelectElement>(contactForm, 'select');
-  const valueInput = $<HTMLInputElement>(contactForm, 'input[name="value"]');
-  kindSelect.addEventListener('change', () => {
-    valueInput.placeholder = T.examples[kindSelect.value] ?? '';
-  });
+  const achievements = $(app, '[data-screen="achievements"]');
 
-  function renderContacts() {
+  /** The achievements of orders: the tiles, and a banner for each the client has not seen yet. */
+  async function renderOrders() {
     if (!me) return;
-    const kinds = A.contacts.kinds as Record<string, string>;
-    const holder = $(board, '[data-contact-list]');
-    holder.replaceChildren(
-      ...me.contacts.map((contact) => {
-        const row = contactTemplate.content.cloneNode(true) as DocumentFragment;
-        $(row, '[data-kind]').textContent = kinds[contact.kind] ?? contact.kind;
-        $(row, '[data-value]').textContent = contact.value;
-        $(row, '[data-remove]').addEventListener('click', (event) => {
-          const button = event.currentTarget as HTMLButtonElement;
-          button.disabled = true;
-          void api('POST', '/api/account/contacts/remove', { id: contact.id }).then(({ data }) => {
-            button.disabled = false;
-            if (!data.ok || !me) return;
-            me.contacts = me.contacts.filter((item) => item.id !== contact.id);
-            renderContacts();
-          });
-        });
-        return row;
-      }),
-    );
-    $(board, '[data-contacts-empty]').hidden = me.contacts.length > 0;
+    const { earned, shares } = me.orders;
+    const have = new Map(earned.map((item) => [item.id, item]));
+    const rareOf = (id: string) =>
+      id === 'all_orders' || (shares[id] !== undefined && (shares[id] ?? 100) < 10);
+    for (const tile of all(achievements, '[data-order]')) {
+      const id = tile.dataset['order'] ?? '';
+      const item = have.get(id);
+      const share = shares[id];
+      tile.classList.toggle('is-found', Boolean(item));
+      tile.classList.toggle('is-beige', id === 'second_order' || id === 'big_order');
+      $(tile, '[data-rarity]').textContent =
+        share === undefined
+          ? ''
+          : fill(
+              id === 'all_orders' ? A.orders.epic : share < 10 ? A.orders.rare : A.orders.share,
+              { percent: shareOf(share) },
+            );
+      $(tile, '[data-state]').textContent = item
+        ? fill(A.orders.earned, { date: shortDate(item.at, true) })
+        : A.orders.locked;
+    }
+
+    // What happened since the last visit comes the way Steam announces it: one banner after another.
+    const fresh = earned.filter((item) => item.new);
+    if (fresh.length === 0) return;
+    const { unlock } = await import('../../../design/components/eggs/achievement.js');
+    const base = earned.filter((item) => item.id !== 'all_orders');
+    for (const item of fresh) {
+      const texts = A.orders[item.id as OrderId];
+      if (!texts) continue;
+      const share = shares[item.id];
+      const rare = rareOf(item.id);
+      unlock({
+        id: item.id,
+        name: texts.name,
+        text: fill(texts.text, { amount: money(me.orders.big_order) }),
+        found: A.orders.found,
+        ...(item.id === 'all_orders'
+          ? {}
+          : { count: base.findIndex((other) => other.id === item.id) + 1, total: 3 }),
+        rare,
+        rarity: share === undefined ? '' : fill(A.orders.rarity, { percent: shareOf(share) }),
+        sound: item.id === 'all_orders' ? 'epic' : rare ? 'rare' : 'egg',
+      });
+    }
+    await api('POST', '/api/account/achievements/seen', { ids: fresh.map((item) => item.id) });
   }
 
-  contactForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const problem = $(contactForm, '[data-error]');
-    if (!valueInput.value.trim()) {
-      problem.textContent = A.errors.bad_contact;
-      valueInput.focus();
-      return;
+  /** The eggs: this browser's receipts go to the account, the finds of both are shown. */
+  async function syncEggs() {
+    if (!me) return;
+    const own = receipts();
+    const mine = EGGS.flatMap((id) => (own[id] ? [own[id]] : []));
+    if (mine.length > 0) {
+      const { data } = await api<Answer & { eggs?: Me['eggs'] }>('POST', '/api/account/eggs', {
+        receipts: mine,
+      });
+      if (data.ok && data.eggs && me) me.eggs = data.eggs;
     }
-    void busy(contactForm, async () => {
-      const { data } = await api<Answer & { contact?: Me['contacts'][number] }>(
-        'POST',
-        '/api/account/contacts',
-        { kind: kindSelect.value, value: valueInput.value.trim() },
-      );
-      if (!data.ok || !data.contact || !me) {
-        problem.textContent = error(data.error);
-        valueInput.setAttribute('aria-invalid', 'true');
-        return;
+    if (!me) return;
+    const found = new Set([...browserFinds(), ...me.eggs.map((egg) => egg.id)]);
+    eggsFound = EGGS.filter((id) => found.has(id)).length;
+    const grid = achievements.querySelector<HTMLElement>('.t-eggs-grid');
+    if (grid) {
+      $(grid, '[data-eggs-found]').textContent = `${eggsFound}/${EGGS.length}`;
+      $(grid, '[data-eggs-reward]').textContent = me.loyalty.eggs_used
+        ? A.eggs.reward_used
+        : fill(A.eggs.reward, { total: EGGS.length, percent: T.loyalty.eggs });
+      for (const tile of all(grid, '[data-egg]')) {
+        const id = tile.dataset['egg'] ?? '';
+        const have = found.has(id);
+        tile.classList.toggle('is-found', have);
+        $(tile, '.egg-mark').textContent = have ? '◆' : '◇';
+        $(tile, '[data-name]').textContent = have ? (T.eggs[id] ?? id) : A.eggs.hidden;
       }
-      problem.textContent = '';
-      valueInput.removeAttribute('aria-invalid');
-      valueInput.value = '';
-      const added = data.contact;
-      me.contacts = [...me.contacts.filter((item) => item.id !== added.id), added];
-      renderContacts();
-    });
-  });
+    }
+    const eggsRow = app.querySelector<HTMLElement>('[data-eggs-rule]');
+    if (eggsRow)
+      eggsRow.textContent = fill(A.loyalty.eggs_found, { found: eggsFound, total: EGGS.length });
+    renderEggsRing();
+  }
 
   // --- profile ----------------------------------------------------------------------------------
 
-  const profile = $<HTMLFormElement>(board, '[data-profile]');
+  const profile = $<HTMLFormElement>(app, '[data-profile]');
 
   function renderProfile() {
     if (!me) return;
     const { client } = me;
     $<HTMLInputElement>(profile, '[name="name"]').value = client.name;
     $<HTMLInputElement>(profile, '[name="company"]').value = client.company;
-    $<HTMLSelectElement>(profile, '[name="lang"]').value = client.lang || lang;
-    for (const radio of profile.querySelectorAll<HTMLInputElement>('[name="preferred"]')) {
-      radio.checked = radio.value === (client.preferred || (client.email ? 'email' : 'telegram'));
+    for (const radio of all<HTMLInputElement>(profile, '[name="lang"]'))
+      radio.checked = radio.value === (client.lang || lang);
+    const preferred = client.preferred || (client.email ? 'email' : 'telegram');
+    for (const radio of all<HTMLInputElement>(profile, '[name="preferred"]')) {
+      radio.checked = radio.value === preferred;
       radio.disabled = radio.value === 'telegram' ? !client.telegram : !client.email;
     }
   }
@@ -807,30 +1246,32 @@ export function initAccount(): void {
   profile.addEventListener('submit', (event) => {
     event.preventDefault();
     const done = $(profile, '[data-done]');
+    done.textContent = '';
     void busy(profile, async () => {
       const values = {
         name: $<HTMLInputElement>(profile, '[name="name"]').value.trim(),
         company: $<HTMLInputElement>(profile, '[name="company"]').value.trim(),
-        lang: $<HTMLSelectElement>(profile, '[name="lang"]').value,
+        lang: profile.querySelector<HTMLInputElement>('[name="lang"]:checked')?.value ?? lang,
         preferred:
           profile.querySelector<HTMLInputElement>('[name="preferred"]:checked')?.value ?? '',
       };
       const { data } = await api('POST', '/api/account/profile', values);
       done.textContent = data.ok ? A.profile.saved : error(data.error);
+      done.classList.toggle('error', !data.ok);
       if (data.ok && me) {
         me.client = { ...me.client, ...values };
-        renderHead();
+        renderFrame();
+        renderHome();
       }
     });
   });
 
   // --- the ways in: email and Telegram -----------------------------------------------------------
 
-  const access = $(board, '[data-access]');
+  const access = $(app, '[data-access]');
   const accessEmailForm = $<HTMLFormElement>(access, '[data-access-email-form]');
   const accessCodeForm = $<HTMLFormElement>(access, '[data-access-code-form]');
-  const accessBot = $(access, '[data-access-bot]');
-  const accessBotLink = $<HTMLAnchorElement>(access, '[data-access-bot-link]');
+  const accessBot = $<HTMLAnchorElement>(access, '[data-access-bot]');
   const accessError = $(access, '[data-error]');
 
   function renderAccess(step: 'idle' | 'email' | 'code' = 'idle') {
@@ -855,9 +1296,8 @@ export function initAccount(): void {
     renderAccess('email');
     $<HTMLInputElement>(accessEmailForm, 'input').focus();
   });
-  for (const cancel of access.querySelectorAll('[data-access-cancel]')) {
+  for (const cancel of all(access, '[data-access-cancel]'))
     cancel.addEventListener('click', () => renderAccess());
-  }
 
   accessEmailForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -897,7 +1337,7 @@ export function initAccount(): void {
           return;
         }
         accessError.textContent = '';
-        accessBotLink.href = data.bot_url;
+        accessBot.href = data.bot_url;
         accessBot.hidden = false;
         $(accessCodeForm, '[data-sent]').textContent = A.login.sent_telegram;
         renderAccess('code');
@@ -937,25 +1377,93 @@ export function initAccount(): void {
       input.value = '';
       await load();
       $(access, '[data-access-status]').hidden = data.merged !== true;
-      $(access, '[data-access-email]').closest('dl')?.scrollIntoView({ block: 'nearest' });
+    });
+  });
+
+  // --- contacts ---------------------------------------------------------------------------------
+
+  const contactTemplate = $<HTMLTemplateElement>(document, '#tpl-contact');
+  const contactForm = $<HTMLFormElement>(app, '[data-contact-form]');
+  const kindSelect = $<HTMLSelectElement>(contactForm, 'select');
+  const valueInput = $<HTMLInputElement>(contactForm, 'input[name="value"]');
+  const contactError = $(app, '[data-contact-error]');
+  kindSelect.addEventListener('change', () => {
+    valueInput.placeholder = T.examples[kindSelect.value] ?? '';
+  });
+
+  function renderContacts() {
+    if (!me) return;
+    const kinds = A.contacts.kinds as Record<string, string>;
+    $(app, '[data-contact-list]').replaceChildren(
+      ...me.contacts.map((contact) => {
+        const row = contactTemplate.content.cloneNode(true) as DocumentFragment;
+        $(row, '[data-kind]').textContent = kinds[contact.kind] ?? contact.kind;
+        $(row, '[data-value]').textContent = contact.value;
+        const remove = $<HTMLButtonElement>(row, '[data-remove]');
+        remove.setAttribute('aria-label', fill(A.contacts.remove, { value: contact.value }));
+        remove.addEventListener('click', () => {
+          remove.disabled = true;
+          void api('POST', '/api/account/contacts/remove', { id: contact.id }).then(({ data }) => {
+            remove.disabled = false;
+            if (!data.ok || !me) {
+              contactError.textContent = error(data.error);
+              return;
+            }
+            me.contacts = me.contacts.filter((item) => item.id !== contact.id);
+            renderContacts();
+          });
+        });
+        return row;
+      }),
+    );
+    $(app, '[data-contacts-empty]').hidden = me.contacts.length > 0;
+  }
+
+  contactForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!valueInput.value.trim()) {
+      contactError.textContent = A.errors.bad_contact;
+      valueInput.focus();
+      return;
+    }
+    void busy(contactForm, async () => {
+      const { data } = await api<Answer & { contact?: Me['contacts'][number] }>(
+        'POST',
+        '/api/account/contacts',
+        { kind: kindSelect.value, value: valueInput.value.trim() },
+      );
+      if (!data.ok || !data.contact || !me) {
+        contactError.textContent = error(data.error);
+        valueInput.setAttribute('aria-invalid', 'true');
+        return;
+      }
+      contactError.textContent = '';
+      valueInput.removeAttribute('aria-invalid');
+      valueInput.value = '';
+      const added = data.contact;
+      me.contacts = [...me.contacts.filter((item) => item.id !== added.id), added];
+      renderContacts();
     });
   });
 
   // --- devices ----------------------------------------------------------------------------------
 
   const sessionTemplate = $<HTMLTemplateElement>(document, '#tpl-session');
+  const endAll = $<HTMLButtonElement>(app, '[data-sessions-end-all]');
 
   function renderSessions() {
     if (!me) return;
-    const holder = $(board, '[data-session-list]');
-    holder.replaceChildren(
+    $(app, '[data-session-list]').replaceChildren(
       ...me.sessions.map((session) => {
         const row = sessionTemplate.content.cloneNode(true) as DocumentFragment;
         $(row, '[data-device]').textContent = session.device;
-        $(row, '[data-seen]').textContent = fill(A.sessions.seen, { date: when(session.seen) });
+        $(row, '[data-seen]').textContent = session.current
+          ? A.sessions.now
+          : relative(session.seen);
         $(row, '[data-current]').hidden = !session.current;
         const end = $<HTMLButtonElement>(row, '[data-end]');
         end.hidden = session.current;
+        end.setAttribute('aria-label', `${A.sessions.end}: ${session.device}`);
         end.addEventListener('click', () => {
           end.disabled = true;
           void api('POST', '/api/account/sessions/end', { id: session.id }).then(({ data }) => {
@@ -970,10 +1478,10 @@ export function initAccount(): void {
         return row;
       }),
     );
-    $(board, '[data-sessions-end-all]').hidden = me.sessions.every((session) => session.current);
+    endAll.hidden = me.sessions.every((session) => session.current);
   }
 
-  $(board, '[data-sessions-end-all]').addEventListener('click', () => {
+  endAll.addEventListener('click', () => {
     void api('POST', '/api/account/sessions/end', { id: '' }).then(({ data }) => {
       if (!data.ok || !me) return;
       me.sessions = me.sessions.filter((session) => session.current);
@@ -981,97 +1489,9 @@ export function initAccount(): void {
     });
   });
 
-  // --- achievements -------------------------------------------------------------------------------
-
-  const shareOf = (share: number) => {
-    const format = new Intl.NumberFormat(lang, {
-      style: 'percent',
-      maximumFractionDigits: share < 10 ? 1 : 0,
-    });
-    return share > 0 && share < 0.1 ? `<${format.format(0.001)}` : format.format(share / 100);
-  };
-
-  /** The achievements of orders: the list, and a banner for each the client has not seen yet. */
-  async function renderOrders() {
-    if (!me) return;
-    const { earned, shares } = me.orders;
-    const { icon, unlock } = await import('../../../design/components/eggs/achievement.js');
-    const have = new Map(earned.map((item) => [item.id, item]));
-    const rareOf = (id: string) =>
-      id === 'all_orders' || (shares[id] !== undefined && (shares[id] ?? 100) < 10);
-    for (const row of board.querySelectorAll<HTMLElement>('[data-order]')) {
-      const id = row.dataset['order'] ?? '';
-      const item = have.get(id);
-      const rare = Boolean(item) && rareOf(id);
-      row.classList.toggle('is-found', Boolean(item));
-      row.classList.toggle('is-rare', rare);
-      $(row, '[data-icon]').replaceChildren(icon(id, rare, { size: 40, locked: !item }));
-      $(row, '[data-state]').textContent = item
-        ? fill(A.orders.earned, { date: date(item.at) })
-        : A.orders.locked;
-      const share = shares[id];
-      const cell = $(row, '[data-share]');
-      cell.textContent = share === undefined ? '' : shareOf(share);
-      if (share !== undefined) cell.title = fill(A.orders.rarity, { percent: shareOf(share) });
-    }
-
-    // What happened since the last visit comes the way Steam announces it: one banner after another.
-    const fresh = earned.filter((item) => item.new);
-    if (fresh.length === 0) return;
-    const base = earned.filter((item) => item.id !== 'all_orders');
-    for (const item of fresh) {
-      const texts =
-        A.orders[item.id as 'first_order' | 'second_order' | 'big_order' | 'all_orders'];
-      if (!texts) continue;
-      const share = shares[item.id];
-      const rare = rareOf(item.id);
-      unlock({
-        id: item.id,
-        name: texts.name,
-        text: fill(texts.text, { amount: money.format(me.orders.big_order) }),
-        found: A.orders.found,
-        ...(item.id === 'all_orders'
-          ? {}
-          : { count: base.findIndex((other) => other.id === item.id) + 1, total: 3 }),
-        rare,
-        rarity: share === undefined ? '' : fill(A.orders.rarity, { percent: shareOf(share) }),
-        sound: item.id === 'all_orders' ? 'epic' : rare ? 'rare' : 'egg',
-      });
-    }
-    await api('POST', '/api/account/achievements/seen', { ids: fresh.map((item) => item.id) });
-  }
-
-  async function syncEggs() {
-    const card = board.querySelector<HTMLElement>('[data-eggs-card]');
-    if (!me) return;
-    const own = receipts();
-    const mine = EGGS.flatMap((id) => (own[id] ? [own[id]] : []));
-    if (mine.length > 0) {
-      const { data } = await api<Answer & { eggs?: Me['eggs'] }>('POST', '/api/account/eggs', {
-        receipts: mine,
-      });
-      if (data.ok && data.eggs) me.eggs = data.eggs;
-    }
-    const panel = await import('./achievements-panel.ts');
-    panel.useAccount(me.eggs, me.loyalty.eggs_used);
-    if (!card) return;
-    const found = new Set([...panel.browserFinds(), ...me.eggs.map((egg) => egg.id)]);
-    const count = EGGS.filter((id) => found.has(id)).length;
-    $(card, '[data-eggs-count]').textContent = `${count}/${EGGS.length}`;
-    const { icon } = await import('../../../design/components/eggs/achievement.js');
-    $(card, '[data-eggs-icons]').replaceChildren(
-      ...EGGS.map((id) => icon(id, false, { size: 28, locked: !found.has(id) })),
-      icon('all', count === EGGS.length, { size: 28, locked: count < EGGS.length }),
-    );
-  }
-
-  board.querySelector('[data-eggs-open]')?.addEventListener('click', () => {
-    void import('./achievements-panel.ts').then((panel) => panel.openAchievements());
-  });
-
   // --- deleting the account ------------------------------------------------------------------------
 
-  const remove = $<HTMLFormElement>(board, '[data-delete]');
+  const remove = $<HTMLFormElement>(app, '[data-delete]');
   const confirm = $<HTMLInputElement>(remove, '[data-delete-confirm]');
   const removeButton = $<HTMLButtonElement>(remove, '[data-delete-button]');
   confirm.addEventListener('change', () => (removeButton.disabled = !confirm.checked));
@@ -1082,37 +1502,24 @@ export function initAccount(): void {
       const { data } = await api('POST', '/api/account/delete', { confirm: true });
       if (data.ok) {
         confirm.checked = false;
+        history.replaceState(null, '', location.pathname + location.search);
         signedOut();
       }
-    });
+    }).finally(() => (removeButton.disabled = !confirm.checked));
   });
 
   // --- start ------------------------------------------------------------------------------------
 
   async function start() {
     // A link from a letter or from the bot: «#login=<token>». The token leaves the address at once.
-    // It signs in once the visitor has seen whose account it opens and agreed: a link somebody
-    // else sent would quietly put this browser into their account, and whatever is sent from it
-    // later would be theirs to read.
     const token = /^#login=([A-Za-z0-9._-]{8,200})$/.exec(location.hash)?.[1];
     if (token) {
       history.replaceState(null, '', location.pathname + location.search);
-      const peek = await api<Answer & { account?: string }>('POST', '/api/account/login/link', {
-        token,
-        peek: true,
-      });
-      if (!peek.data.ok || typeof peek.data.account !== 'string') {
-        signedOut(error(peek.data.error));
+      $(root!, '[data-loading]').textContent = A.login.link;
+      const { data } = await api('POST', '/api/account/login/link', { token });
+      if (!data.ok) {
+        signedOut(error(data.error));
         return;
-      }
-      if (await askLink(peek.data.account)) {
-        $(root!, '[data-loading]').textContent = A.login.link;
-        show('loading');
-        const { data } = await api('POST', '/api/account/login/link', { token });
-        if (!data.ok) {
-          signedOut(error(data.error));
-          return;
-        }
       }
     }
     await load();

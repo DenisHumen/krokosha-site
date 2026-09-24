@@ -1,10 +1,11 @@
 ---
-// The personal account (docs/architecture.md, 2026-09-24; api/internal/clients): the client's requests
-// and inquiries with their statuses and conversations, the discount of the next request and the level
-// of a regular client, contacts and social networks, the ways to sign in, the devices. No password: a
-// one-time code comes by email or from the site's Telegram bot. Everything here is the page's frame
-// and its texts; scripts/account.ts asks the API and fills it in. A service page: not indexed.
-import Achievements from '../../components/Achievements.astro';
+// The personal account (docs/architecture.md, 2026-09-24; design v3 — the rail, the header with its
+// ticker, tiles): the client's requests and inquiries with their conversations, a new inquiry, the
+// discount and the level, the achievements, the profile with its ways in, contacts and devices. No
+// password: a one-time code comes by email or from the site's Telegram bot. The page is its frame and
+// its texts; scripts/account.ts asks the API, fills it in and switches the screens by the address
+// (#requests, #K-0042, #profile…). A service page: not indexed, and none of the site's header.
+import '../../styles/account.css';
 import { localeFromParam, localePath } from '../../i18n/locales.ts';
 import { fill, plural } from '../../i18n/localize.ts';
 import Base from '../../layouts/Base.astro';
@@ -16,28 +17,63 @@ export const getStaticPaths = localeStaticPaths;
 
 const lang = localeFromParam(Astro.params.lang);
 const data = await getPageData(lang);
-const { account, loyalty, flags } = data.site;
+const { account: A, loyalty, flags, eggs } = data.site;
 const { form } = data.site.contacts;
-const orders = getContent().site.plurals.orders[lang];
+const { plurals } = getContent().site;
+const orders = plurals.orders[lang];
 const money = new Intl.NumberFormat(lang, {
   style: 'currency',
   currency: loyalty.currency,
+  currencyDisplay: 'narrowSymbol',
   maximumFractionDigits: 0,
 });
-const panel = flags.easter_eggs.enabled && flags.easter_eggs['achievements'] !== false;
-// The achievements of orders (api/internal/clients/orders.go), in the order the account shows them.
+const eggsOn = flags.easter_eggs.enabled && flags.easter_eggs['achievements'] !== false;
+const locales = data.site.i18n.locales;
+
+// The eggs of the site (scripts/achievements.ts → EGGS) and the achievements of orders
+// (api/internal/clients/orders.go), in the order the account shows them.
+const EGG_IDS = [
+  'konami',
+  'sudo',
+  'croc',
+  'cat',
+  'reboot',
+  'console',
+  'croc5',
+  'lost_packet',
+] as const;
 const ORDER_ACHIEVEMENTS = ['first_order', 'second_order', 'big_order', 'all_orders'] as const;
 
 /** «3 orders or $5,000»: what a level asks, whichever comes first. */
 function rule(tier: (typeof loyalty.tiers)[number]): string {
   const count = tier.orders > 0 ? `${tier.orders} ${plural(orders, tier.orders, lang)}` : '';
   const sum = tier.spent > 0 ? money.format(tier.spent) : '';
-  return count && sum
-    ? fill(account.loyalty.level_rule, { orders: count, spent: sum })
-    : count || sum;
+  return count && sum ? fill(A.loyalty.level_rule, { orders: count, spent: sum }) : count || sum;
 }
 
-const kinds = Object.entries(account.contacts.kinds);
+// The ladder of levels: no level yet, then the levels of site.yaml.
+const levels = [
+  { id: '', name: A.loyalty.base, discount: 0 },
+  ...loyalty.tiers.map(({ id, name, discount }) => ({ id, name, discount })),
+];
+
+// Icons of the rail and the menu (design v3), 24×24 strokes.
+const ICONS = {
+  home: 'M4 11l8-7 8 7v9h-5v-6H9v6H4z',
+  requests: 'M4 6h16M4 12h16M4 18h10',
+  new: 'M12 5v14M5 12h14',
+  loyalty:
+    'M6 18L18 6M8 8.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM16 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
+  achievements: 'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6',
+  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.6-7 8-7s8 3 8 7',
+  out: 'M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10',
+  language:
+    'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
+  site: 'M5 19L19 5M9 5h10v10',
+} as const;
+const SCREENS = ['home', 'requests', 'new', 'loyalty', 'achievements', 'profile'] as const;
+
+const kinds = Object.entries(A.contacts.kinds);
 // What a value of each kind looks like: examples, the same in every language.
 const examples: Record<string, string> = {
   phone: '+380 …',
@@ -58,15 +94,22 @@ const examples: Record<string, string> = {
 // What the script needs: the texts, and the words it builds sentences from.
 const scriptTexts = JSON.stringify({
   lang,
-  account,
-  orders,
+  account: A,
+  plurals: { orders, requests: plurals.requests[lang], open: plurals.open[lang] },
   examples,
   directions: Object.fromEntries(form.directions.map((item) => [item.id, item.label])),
+  eggs: Object.fromEntries(EGG_IDS.map((id) => [id, eggs.achievements[id].name])),
   loyalty: {
     enabled: loyalty.enabled,
     currency: loyalty.currency,
     eggs: loyalty.eggs,
-    tiers: loyalty.tiers.map(({ id, name, discount }) => ({ id, name, discount })),
+    tiers: loyalty.tiers.map(({ id, name, discount, orders: count, spent }) => ({
+      id,
+      name,
+      discount,
+      orders: count,
+      spent,
+    })),
   },
 });
 ---
@@ -74,595 +117,1023 @@ const scriptTexts = JSON.stringify({
 <Base
   data={data}
   page="account"
-  title={`${account.title} — ${data.profile.nickname}`}
-  description={account.description}
+  title={`${A.title} — ${data.profile.nickname}`}
+  description={A.description}
   noindex
+  variant="app"
 >
-  <div class="account" data-account data-texts={scriptTexts}>
+  <div class="cab" data-account data-texts={scriptTexts}>
     <noscript>
-      <p class="notice">{account.no_script}</p>
+      <p class="cab-notice">{A.no_script}</p>
     </noscript>
 
-    <p class="loading mono needs-js" data-view="loading" role="status">
+    <p class="cab-loading needs-js" data-view="loading" role="status">
       <i aria-hidden="true"></i>
-      <span data-loading>{account.loading}</span>
+      <span data-loading>{A.loading}</span>
     </p>
 
-    {/* Signed out: an address or Telegram, then the code. */}
-    <section class="login" data-view="login" hidden aria-labelledby="login-title">
-      <p class="status mono">
-        <i aria-hidden="true"></i>AUTH · ONE-TIME CODE
-      </p>
-      <h1 id="login-title">{account.title}</h1>
-      <p class="lead">{account.login.lead}</p>
+    {/* Signed out: Telegram or an address, then the code (design v3: «Вход в кабинет»). */}
+    <section class="gate" data-view="login" hidden aria-labelledby="login-title">
+      <glyph-field class="gate-field" ink="#b9b9b5" cell="14" chars=" .·:·+" fps="12"></glyph-field>
+      <div class="gate-frame">
+        <div class="gate-card">
+          <div class="gate-side">
+            <div class="gate-top">
+              <a class="gate-logo" href={localePath(lang)} aria-label={A.login.home}>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </a>
+              <nav class="gate-langs" aria-label={A.login.languages}>
+                {locales.map(({ code, label }) => (
+                  <a
+                    href={localePath(code, 'account')}
+                    hreflang={code}
+                    lang={code}
+                    aria-current={code === lang ? 'page' : undefined}
+                  >
+                    {label}
+                  </a>
+                ))}
+              </nav>
+            </div>
 
-      <div class="login-card">
-        <fieldset class="choose" data-login-methods>
-          <legend class="label">{account.login.method}</legend>
-          <span class="methods">
-            <label class="method">
-              <input type="radio" name="login-method" value="email" checked />
-              <span>{account.login.email}</span>
-            </label>
-            <label class="method">
-              <input type="radio" name="login-method" value="telegram" />
-              <span>{account.login.telegram}</span>
-            </label>
-          </span>
-        </fieldset>
+            <div class="gate-head">
+              <h1 id="login-title" data-login-title>
+                {A.login.title}
+              </h1>
+              <p data-login-lead>{A.login.lead}</p>
+            </div>
 
-        <form class="step" data-login-email novalidate>
-          <label class="label" for="login-email">
-            {account.login.email_label}
-          </label>
-          <input
-            id="login-email"
-            name="email"
-            type="email"
-            inputmode="email"
-            autocomplete="email"
-            maxlength="200"
-            required
-            placeholder="you@company.com"
-          />
-          <button class="pill pill-inverse submit" type="submit">
-            {account.login.send}
-            <span class="arrow" aria-hidden="true">
-              →
-            </span>
-          </button>
-        </form>
+            <div class="gate-step" data-login-start>
+              <button class="g-btn" type="button" data-login-telegram-start>
+                <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#2aa1da"
+                    d="M21.5 3.5L2.8 10.7c-1.3.5-1.2 1.3-.2 1.6l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.5l2.3-2.2 4.8 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6zM9.6 14.6l-.4 3.9-1.4-4.5 10.4-6.6z"
+                  ></path>
+                </svg>
+                {A.login.telegram}
+              </button>
+              <p class="g-or">{A.login.or}</p>
+              <form class="g-form" data-login-email novalidate>
+                <label class="g-label" for="login-email">
+                  {A.login.email_label}
+                </label>
+                <input
+                  class="g-input"
+                  id="login-email"
+                  name="email"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="email"
+                  maxlength="200"
+                  required
+                  placeholder={A.login.email_placeholder}
+                  aria-describedby="login-email-hint"
+                />
+                <p class="g-hint" id="login-email-hint">
+                  {A.login.email_hint}
+                </p>
+                <button class="g-btn g-btn-dark" type="submit">
+                  {A.login.send}
+                </button>
+              </form>
+              <p class="g-note">
+                <span>{A.login.no_account}</span>
+                <span>{A.login.note}</span>
+              </p>
+            </div>
 
-        <div class="step" data-login-telegram hidden>
-          <p class="muted">{account.login.telegram_text}</p>
-          <a
-            class="pill pill-inverse submit is-waiting"
-            href={localePath(lang, 'account')}
-            target="_blank"
-            rel="noopener"
-            aria-disabled="true"
-            data-bot-link
-          >
-            {account.login.telegram_open}
-            <span class="arrow" aria-hidden="true">
-              →
-            </span>
-          </a>
+            <div class="gate-step" data-login-telegram hidden>
+              <a
+                class="g-btn g-btn-dark is-waiting"
+                href={localePath(lang, 'account')}
+                target="_blank"
+                rel="noopener"
+                aria-disabled="true"
+                data-bot-link
+              >
+                <span data-bot-label>{A.login.telegram_open}</span>
+                <span aria-hidden="true">↗</span>
+              </a>
+              <button class="g-link" type="button" data-login-back>
+                {A.login.by_email}
+              </button>
+            </div>
+
+            <form class="gate-step" data-login-code hidden novalidate>
+              <label class="visually-hidden" for="login-code">
+                {A.login.code}
+              </label>
+              <div class="code-box">
+                <input
+                  class="code-input"
+                  id="login-code"
+                  name="code"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxlength="6"
+                  required
+                  aria-describedby="login-code-hint"
+                />
+                <span class="code-cells" aria-hidden="true">
+                  <span data-cell></span>
+                  <span data-cell></span>
+                  <span data-cell></span>
+                  <span data-cell></span>
+                  <span data-cell></span>
+                  <span data-cell></span>
+                </span>
+              </div>
+              <p class="g-hint" id="login-code-hint">
+                {A.login.code_hint}
+                <button class="g-resend" type="button" data-resend hidden></button>
+              </p>
+              <button class="g-btn g-btn-dark" type="submit">
+                {A.login.submit}
+              </button>
+              <a
+                class="g-btn"
+                href={localePath(lang, 'account')}
+                target="_blank"
+                rel="noopener"
+                data-code-bot
+                hidden
+              >
+                <span data-bot-label>{A.login.telegram_open}</span>
+                <span aria-hidden="true">↗</span>
+              </a>
+              <button class="g-link" type="button" data-login-back>
+                {A.login.back}
+              </button>
+            </form>
+
+            <p class="g-error" role="alert" data-login-error></p>
+          </div>
+          <div class="gate-art" aria-hidden="true">
+            <glyph-field
+              ink="#121212"
+              cell="10"
+              mask="right"
+              intensity="1.25"
+              chars=" ·:+◆◆"
+              fps="12"
+            ></glyph-field>
+          </div>
         </div>
-
-        {/* A link from a letter or from the bot asks first: a link somebody else sent would open their account. */}
-        <div class="step" data-login-link hidden>
-          <p class="sent" data-link-account></p>
-          <p class="muted">{account.login.link_note}</p>
-          <p class="row">
-            <button class="pill pill-inverse submit" type="button" data-link-yes>
-              {account.login.link_yes}
-            </button>
-            <button class="link" type="button" data-link-no>
-              {account.login.link_no}
-            </button>
-          </p>
-        </div>
-
-        <form class="step" data-login-code hidden novalidate>
-          <p class="sent" data-sent></p>
-          <label class="label" for="login-code">
-            {account.login.code}
-          </label>
-          <input
-            class="code mono"
-            id="login-code"
-            name="code"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            pattern="[0-9]{6}"
-            maxlength="6"
-            required
-          />
-          <p class="row">
-            <button class="pill pill-inverse submit" type="submit">
-              {account.login.submit}
-            </button>
-            <button class="link" type="button" data-login-back>
-              {account.login.back}
-            </button>
-          </p>
-        </form>
-
-        <p class="error" role="alert" data-login-error></p>
       </div>
-      <p class="note muted">{account.login.note}</p>
     </section>
 
-    {/* Signed in. */}
-    <div class="dashboard" data-view="dashboard" hidden>
-      <header class="head">
-        <p class="status mono">
-          <i aria-hidden="true"></i>SESSION · ESTABLISHED
-        </p>
-        <h1 data-hello>{account.title}</h1>
-        <p class="muted" data-since></p>
-        <p class="row">
-          <a class="pill pill-inverse cta" href={`${localePath(lang)}#contacts`}>
-            {account.home.new_request}
-            <span class="arrow" aria-hidden="true">
-              →
-            </span>
-          </a>
-          <button class="pill pill-line cta" type="button" data-logout>
-            {account.home.sign_out}
-          </button>
-        </p>
-      </header>
+    {/* Signed in: the rail, the header, the screens. */}
+    <div class="app" data-view="app" hidden>
+      <glyph-field
+        class="app-field"
+        ink="#2b2b30"
+        accent="#3f4668"
+        cell="13"
+        intensity="0.9"
+        fps="12"
+      ></glyph-field>
 
-      <div class="columns">
-        <div class="stack">
-          <section class="card" aria-labelledby="requests-title" data-requests>
-            <div data-list-view>
-              <h2 class="card-title" id="requests-title">
-                {account.requests.title}
-              </h2>
-              <p class="muted" data-requests-empty hidden>
-                {account.requests.empty}
-              </p>
-              <ul class="requests" data-requests-list></ul>
-            </div>
+      <nav class="rail" aria-label={A.nav.label}>
+        <a class="rail-logo" href={localePath(lang)} aria-label={A.login.home}>
+          {Array.from({ length: 9 }, () => (
+            <span></span>
+          ))}
+        </a>
+        <ul class="rail-list">
+          {SCREENS.map((id) => (
+            <li data-nav-item={id}>
+              <a
+                class="rail-link"
+                href={`#${id}`}
+                data-nav={id}
+                aria-label={A.nav[id]}
+                title={A.nav[id]}
+              >
+                <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS[id]}></path>
+                </svg>
+                {id === 'requests' && (
+                  <span class="rail-dot" data-unread-dot hidden>
+                    <span class="visually-hidden">{A.requests.unread}</span>
+                  </span>
+                )}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <button
+          class="rail-link rail-out"
+          type="button"
+          data-logout
+          aria-label={A.menu.sign_out}
+          title={A.menu.sign_out}
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+            <path d={ICONS.out}></path>
+          </svg>
+        </button>
+      </nav>
 
-            <article class="thread" data-thread hidden aria-live="polite">
-              <button class="link back mono" type="button" data-thread-back>
-                <span aria-hidden="true">←</span>
-                {account.requests.back}
-              </button>
-              <header class="thread-head">
-                <p class="mono muted" data-thread-meta></p>
-                <h2 class="card-title" data-thread-title>
-                  {account.requests.request}
-                </h2>
-                <span class="pill-status" data-thread-status></span>
-              </header>
-              <dl class="facts" data-thread-facts></dl>
-              <p class="description" data-thread-description></p>
-              <h3 class="subtitle mono">{account.requests.conversation}</h3>
-              <ol class="feed" data-thread-feed></ol>
-              <form class="reply" data-thread-reply novalidate>
-                <label class="visually-hidden" for="reply-text">
-                  {account.requests.write}
-                </label>
-                <textarea
-                  id="reply-text"
-                  name="text"
-                  rows="3"
-                  maxlength="4000"
-                  placeholder={account.requests.write}
-                ></textarea>
-                <p class="field-error" role="alert" data-error></p>
-                <p class="row">
-                  <button class="pill pill-inverse submit" type="submit">
-                    {account.requests.send}
-                  </button>
-                  <span class="done mono" role="status" data-done></span>
-                </p>
-              </form>
-              <p class="muted" data-thread-closed hidden>
-                {account.requests.closed}
-              </p>
-              <button class="link ask" type="button" data-thread-ask>
-                {account.requests.ask} <span aria-hidden="true">→</span>
-              </button>
-            </article>
-          </section>
-
-          <section class="card" aria-labelledby="inquiry-title" id="inquiry">
-            <h2 class="card-title" id="inquiry-title">
-              {account.inquiry.title}
-            </h2>
-            <p class="muted">{account.inquiry.lead}</p>
-            <form class="fields" data-inquiry novalidate>
-              <label class="label" for="inquiry-parent">
-                {account.inquiry.parent}
-              </label>
-              <select id="inquiry-parent" name="parent" data-parent>
-                <option value="">{account.inquiry.none}</option>
-              </select>
-              <label class="label" for="inquiry-subject">
-                {account.inquiry.subject}
-              </label>
-              <input id="inquiry-subject" name="subject" maxlength="150" autocomplete="off" />
-              <label class="label" for="inquiry-text">
-                {account.inquiry.text}
-              </label>
-              <textarea id="inquiry-text" name="text" rows="5" maxlength="4000" required></textarea>
-              <p class="field-error" role="alert" data-error></p>
-              <p class="row">
-                <button class="pill pill-inverse submit" type="submit">
-                  {account.inquiry.send}
-                </button>
-                <span class="done mono" role="status" data-done></span>
-              </p>
-            </form>
-          </section>
-
-          <section class="card" aria-labelledby="contacts-title" data-contacts>
-            <h2 class="card-title" id="contacts-title">
-              {account.contacts.title}
-            </h2>
-            <p class="muted">{account.contacts.lead}</p>
-            <ul class="list" data-contact-list></ul>
-            <p class="muted" data-contacts-empty hidden>
-              {account.contacts.empty}
-            </p>
-            <form class="fields add" data-contact-form novalidate>
-              <label class="label" for="contact-kind">
-                {account.contacts.kind}
-              </label>
-              <select id="contact-kind" name="kind">
-                {kinds.map(([id, label]) => (
-                  <option value={id}>{label}</option>
-                ))}
-              </select>
-              <label class="label" for="contact-value">
-                {account.contacts.value}
-              </label>
-              <input
-                id="contact-value"
-                name="value"
-                maxlength="200"
-                autocomplete="off"
-                required
-                placeholder={examples[kinds[0]?.[0] ?? 'phone']}
-              />
-              <p class="field-error" role="alert" data-error></p>
-              <p class="row">
-                <button class="pill pill-line submit" type="submit">
-                  {account.contacts.add}
-                </button>
-              </p>
-            </form>
-          </section>
-        </div>
-
-        <div class="stack">
-          <section class="card loyalty" aria-labelledby="loyalty-title" data-loyalty>
-            <h2 class="card-title" id="loyalty-title">
-              {account.loyalty.title}
-            </h2>
-            <div class="next">
-              <p class="next-label mono muted">{account.loyalty.next}</p>
-              <p class="percent mono" data-next-percent>
-                —
-              </p>
-              <p class="muted" data-next-reason></p>
-            </div>
-            <dl class="facts">
-              <div>
-                <dt>{account.loyalty.level}</dt>
-                <dd>
-                  <span class="tier" data-tier></span>
-                </dd>
+      <div class="panel">
+        <header class="top">
+          <div class="top-left">
+            <span class="brand">KROKOSHA</span>
+            <dl class="ticker" aria-label={A.ticker.label}>
+              <div data-loyalty-only>
+                <dt>{A.ticker.discount}</dt>
+                <dd data-tick="discount">—</dd>
+              </div>
+              <div data-loyalty-only>
+                <dt>{A.ticker.level}</dt>
+                <dd data-tick="level">—</dd>
               </div>
               <div>
-                <dt>{account.loyalty.orders}</dt>
-                <dd class="mono" data-orders>
-                  0
-                </dd>
+                <dt>{A.ticker.open}</dt>
+                <dd data-tick="open">—</dd>
               </div>
               <div>
-                <dt>{account.loyalty.spent}</dt>
-                <dd class="mono" data-spent></dd>
+                <dt>{A.ticker.answer}</dt>
+                <dd data-tick="answer">—</dd>
               </div>
             </dl>
-            <div class="progress" data-progress hidden>
-              <p data-progress-title></p>
-              <i class="meter" aria-hidden="true">
-                <b data-progress-bar></b>
-              </i>
-              <p class="mono muted" data-progress-left></p>
+          </div>
+          <a class="add" href="#new" aria-label={A.nav.new}>
+            <span class="add-plus" aria-hidden="true">
+              +
+            </span>
+            <span class="add-label" aria-hidden="true">
+              {A.home.inquiry}
+            </span>
+          </a>
+          <details class="menu" data-menu>
+            <summary class="who" aria-label={A.menu.open}>
+              <span class="avatar" data-initials aria-hidden="true"></span>
+              <span class="who-text" aria-hidden="true">
+                <span class="who-name" data-who-name></span>
+                <span class="who-id" data-who-id></span>
+              </span>
+            </summary>
+            <div class="menu-panel">
+              <a class="menu-item" href="#profile">
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS.profile}></path>
+                </svg>
+                <span>{A.nav.profile}</span>
+              </a>
+              <a class="menu-item" href="#loyalty" data-loyalty-only>
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS.loyalty}></path>
+                </svg>
+                <span>{A.nav.loyalty}</span>
+                <span class="menu-hint" data-menu-discount></span>
+              </a>
+              <div class="menu-item menu-langs">
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS.language}></path>
+                </svg>
+                <span id="menu-language">{A.menu.language}</span>
+                <span class="menu-hint" role="group" aria-labelledby="menu-language">
+                  {locales.map(({ code, label }) => (
+                    <a
+                      href={localePath(code, 'account')}
+                      hreflang={code}
+                      lang={code}
+                      aria-current={code === lang ? 'page' : undefined}
+                      data-lang-link
+                    >
+                      {label}
+                    </a>
+                  ))}
+                </span>
+              </div>
+              <a class="menu-item" href={localePath(lang)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS.site}></path>
+                </svg>
+                <span>{A.menu.site}</span>
+                <span class="menu-hint" aria-hidden="true">
+                  ↗
+                </span>
+              </a>
+              <hr class="menu-rule" />
+              <button class="menu-item" type="button" data-logout>
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICONS.out}></path>
+                </svg>
+                <span>{A.menu.sign_out}</span>
+              </button>
             </div>
-            <p class="top" data-top hidden>
-              {account.loyalty.top}
-            </p>
-            <p class="personal" data-personal hidden></p>
-            <details class="rules">
-              <summary>{account.loyalty.levels}</summary>
-              <ol class="tiers">
-                {loyalty.tiers.map((tier) => (
-                  <li data-tier-id={tier.id}>
-                    <span class="tier-name">{tier.name}</span>
-                    <span class="mono muted">{rule(tier)}</span>
-                    <span class="mono">−{tier.discount}%</span>
-                  </li>
-                ))}
-              </ol>
-              <p class="muted">
-                {fill(account.loyalty.rules, { welcome: loyalty.welcome, eggs: loyalty.eggs })}
+          </details>
+        </header>
+
+        <div class="content">
+          <div class="head">
+            <h1 tabindex="-1" data-title>
+              {A.home.hello_plain}
+            </h1>
+            <span class="since" data-since></span>
+          </div>
+
+          {/* The home screen. */}
+          <section class="screen grid grid-home" data-screen="home" aria-labelledby="home-summary">
+            <h2 class="visually-hidden" id="home-summary">
+              {A.nav.home}
+            </h2>
+            <a class="tile tile-accent t-discount" href="#loyalty" data-loyalty-only>
+              <span class="tile-label">{A.home.discount}</span>
+              <span class="num-row">
+                <span class="num" data-offer>
+                  —
+                </span>
+                <span class="num-sub" data-offer-reason></span>
+              </span>
+            </a>
+            <a class="tile t-requests" href="#requests" data-home-requests>
+              <span class="tile-label">{A.home.requests}</span>
+              <span class="t-requests-body">
+                <span class="num-row">
+                  <span class="num num-xl" data-count>
+                    0
+                  </span>
+                  <span class="num-sub" data-open></span>
+                </span>
+                <span class="t-rule">
+                  <span data-answer-label>{A.home.no_answers}</span>
+                  <span data-answer-at></span>
+                </span>
+              </span>
+            </a>
+            <div class="tile t-level" data-loyalty-only>
+              <div class="tile-head">
+                <span class="tile-label">{A.loyalty.level}</span>
+                <span class="tabs" aria-hidden="true">
+                  {levels.map((level) => (
+                    <span class="tab" data-level={level.id}>
+                      {level.name}
+                    </span>
+                  ))}
+                </span>
+              </div>
+              <div class="level-body">
+                <p class="level-text">
+                  <span class="level-name" data-level-name>
+                    {A.loyalty.base}
+                  </span>
+                  <span class="level-next" data-level-next></span>
+                </p>
+                <div class="ladder" aria-hidden="true">
+                  {levels.map((level) => (
+                    <div class="rung" data-rung={level.id}>
+                      <span class="rung-label" data-rung-label>
+                        {level.discount}%
+                      </span>
+                      <span class="rung-bar" data-rung-bar></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <a class="tile t-ordered" href="#loyalty" data-loyalty-only>
+              <span class="tile-label">{A.home.ordered}</span>
+              <span class="num-row">
+                <span class="num" data-spent>
+                  —
+                </span>
+                <span class="num-sub" data-orders></span>
+              </span>
+            </a>
+            <section class="tile t-latest" aria-labelledby="latest-title">
+              <div class="tile-head">
+                <h3 class="tile-label" id="latest-title">
+                  {A.home.latest}
+                </h3>
+                <a class="round" href="#requests" aria-label={A.home.all}>
+                  ↗
+                </a>
+              </div>
+              <ul class="rows" data-latest></ul>
+              <p class="empty" data-latest-empty hidden>
+                {A.requests.empty}
               </p>
-            </details>
+            </section>
+            <a class="tile tile-accent t-ask" href="#new">
+              <svg class="t-ask-art" viewBox="0 0 200 200" aria-hidden="true">
+                <circle cx="100" cy="100" r="90"></circle>
+                <path d="M100 100L100 10M100 100L150 25M100 100L190 100"></path>
+              </svg>
+              <span class="t-ask-title">{A.home.ask_title}</span>
+              <span class="t-ask-text" data-ask-text></span>
+              <span class="chip-light">
+                {A.home.ask} <span aria-hidden="true">→</span>
+              </span>
+            </a>
+            {eggsOn && (
+              <a class="tile t-eggs" href="#achievements">
+                <span class="ring">
+                  <svg viewBox="0 0 140 140" aria-hidden="true">
+                    <circle class="ring-track" cx="70" cy="70" r="64"></circle>
+                    <circle
+                      class="ring-value"
+                      cx="70"
+                      cy="70"
+                      r="64"
+                      stroke-dasharray="0 403"
+                      data-ring
+                    ></circle>
+                  </svg>
+                  <span class="ring-text">
+                    <span class="ring-num" data-eggs-count>
+                      0/{EGG_IDS.length}
+                    </span>
+                    <span class="ring-label">{A.home.eggs}</span>
+                  </span>
+                </span>
+                <span class="t-eggs-text" data-eggs-hint></span>
+              </a>
+            )}
+            <a class="tile tile-beige t-project" href={`${localePath(lang)}#contacts`}>
+              <span class="t-project-title">{A.home.project}</span>
+              <span class="t-project-side">
+                <span data-project-note>{A.home.project_plain}</span>
+                <span class="round round-dark" aria-hidden="true">
+                  ↗
+                </span>
+              </span>
+            </a>
           </section>
 
-          <section class="card" aria-labelledby="account-achievements-title" data-achievements-card>
-            <h2 class="card-title" id="account-achievements-title">
-              {account.eggs.title}
-            </h2>
-            <h3 class="subtitle mono">{account.orders.title}</h3>
-            <ol class="achievements-list" data-orders>
-              {ORDER_ACHIEVEMENTS.map((id) => (
-                <li class:list={['achievement', { crown: id === 'all_orders' }]} data-order={id}>
-                  <span class="achievement-icon" data-icon></span>
-                  <span class="achievement-body">
-                    <span class="achievement-name">{account.orders[id].name}</span>
-                    <span class="achievement-text">
-                      {fill(account.orders[id].text, { amount: money.format(loyalty.big_order) })}
-                    </span>
-                    <span class="achievement-state mono" data-state>
-                      {account.orders.locked}
-                    </span>
-                  </span>
-                  <span class="achievement-share mono" data-share></span>
-                </li>
-              ))}
-            </ol>
-            {panel && (
-              <div class="eggs" data-eggs-card>
-                <h3 class="subtitle mono">
-                  {account.eggs.heading} · <span data-eggs-count>0/8</span>
+          {/* Requests: the list, and the one that is open with its conversation. */}
+          <section
+            class="screen split-requests"
+            data-screen="requests"
+            hidden
+            aria-labelledby="requests-title"
+          >
+            <div class="tile list-card">
+              <h2 class="tile-label list-title" id="requests-title">
+                {A.requests.title} · <span data-total>0</span>
+              </h2>
+              <ul class="cards" data-requests-list></ul>
+              <p class="empty" data-requests-empty hidden>
+                {A.requests.empty}
+              </p>
+            </div>
+            <div class="detail" data-thread hidden>
+              <a class="btn back" href="#requests">
+                <span aria-hidden="true">←</span>
+                {A.requests.back}
+              </a>
+              <article class="tile detail-card" aria-labelledby="thread-title">
+                <div class="detail-top">
+                  <span data-thread-meta></span>
+                  <span class="status" data-thread-status></span>
+                </div>
+                <h2 class="detail-title" id="thread-title" data-thread-title>
+                  {A.requests.request}
+                </h2>
+                <dl class="facts" data-thread-facts></dl>
+                <p class="detail-text" data-thread-description></p>
+              </article>
+              <section class="tile thread-card" aria-labelledby="conversation-title">
+                <h3 class="tile-label" id="conversation-title">
+                  {A.requests.conversation}
                 </h3>
-                <div class="eggs-icons" aria-hidden="true" data-eggs-icons></div>
-                <button class="pill pill-line cta" type="button" data-eggs-open>
-                  {account.eggs.open}
-                </button>
-              </div>
+                <ol class="thread" data-thread-feed></ol>
+                <form class="reply" data-thread-reply novalidate>
+                  <label class="visually-hidden" for="reply-text">
+                    {A.requests.write}
+                  </label>
+                  <textarea
+                    id="reply-text"
+                    name="text"
+                    rows="3"
+                    maxlength="4000"
+                    placeholder={A.requests.write}
+                  ></textarea>
+                  <p class="error" role="alert" data-error></p>
+                  <div class="reply-bar">
+                    <button class="btn" type="button" data-thread-ask>
+                      {A.requests.ask}
+                    </button>
+                    <span class="done" role="status" data-done></span>
+                    <button class="btn btn-accent" type="submit">
+                      {A.requests.send} <span aria-hidden="true">→</span>
+                    </button>
+                  </div>
+                </form>
+                <div class="closed" data-thread-closed hidden>
+                  <p>{A.requests.closed}</p>
+                  <button class="btn" type="button" data-thread-ask>
+                    {A.requests.ask}
+                  </button>
+                </div>
+              </section>
+            </div>
+            <p class="tile detail-none" data-thread-none hidden>
+              {A.requests.choose}
+            </p>
+          </section>
+
+          {/* A new inquiry. */}
+          <section
+            class="screen split-new"
+            data-screen="new"
+            hidden
+            aria-labelledby="inquiry-title"
+          >
+            <form class="tile form-card" data-inquiry novalidate>
+              <h2 class="tile-label" id="inquiry-title">
+                {A.inquiry.title}
+              </h2>
+              <label class="field">
+                <span class="field-label">{A.inquiry.parent}</span>
+                <select id="inquiry-parent" name="parent" data-parent>
+                  <option value="">{A.inquiry.none}</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">{A.inquiry.subject}</span>
+                <input
+                  id="inquiry-subject"
+                  name="subject"
+                  maxlength="150"
+                  autocomplete="off"
+                  placeholder={A.inquiry.subject_placeholder}
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">{A.inquiry.text}</span>
+                <textarea
+                  id="inquiry-text"
+                  name="text"
+                  rows="7"
+                  maxlength="4000"
+                  required
+                  placeholder={A.inquiry.text_placeholder}
+                ></textarea>
+              </label>
+              <p class="error" role="alert" data-error></p>
+              <button class="btn btn-accent btn-m" type="submit">
+                {A.inquiry.send} <span aria-hidden="true">→</span>
+              </button>
+            </form>
+            <section class="tile tile-beige how" aria-labelledby="how-title">
+              <h2 class="tile-label" id="how-title">
+                {A.inquiry.how}
+              </h2>
+              <ol class="how-steps">
+                <li>
+                  <span aria-hidden="true">01</span>
+                  <span>{A.inquiry.step_number}</span>
+                </li>
+                <li>
+                  <span aria-hidden="true">02</span>
+                  <span>{A.inquiry.step_answer}</span>
+                </li>
+                <li>
+                  <span aria-hidden="true">03</span>
+                  <span>{A.inquiry.step_parent}</span>
+                </li>
+              </ol>
+            </section>
+          </section>
+
+          {/* The discount and the level. */}
+          <section
+            class="screen grid grid-loyalty"
+            data-screen="loyalty"
+            hidden
+            aria-labelledby="next-title"
+          >
+            <div class="tile tile-accent t-next">
+              <svg class="t-next-art" viewBox="0 0 200 200" aria-hidden="true">
+                <circle cx="100" cy="100" r="90"></circle>
+                <circle cx="100" cy="100" r="55"></circle>
+              </svg>
+              <h2 class="tile-label" id="next-title">
+                {A.loyalty.next}
+              </h2>
+              <p class="t-next-body">
+                <span class="num num-hero" data-next-percent>
+                  —
+                </span>
+                <span class="t-next-sub" data-next-reason></span>
+              </p>
+            </div>
+            <div class="tile t-progress">
+              <h2 class="tile-label">{A.loyalty.orders}</h2>
+              <p class="num-row">
+                <span class="num" data-orders-count>
+                  0
+                </span>
+                <span class="num-sub" data-orders-target></span>
+              </p>
+              <span class="meter" aria-hidden="true">
+                <span data-orders-bar></span>
+              </span>
+            </div>
+            <div class="tile t-progress">
+              <h2 class="tile-label">{A.loyalty.spent}</h2>
+              <p class="num-row">
+                <span class="num" data-spent-total>
+                  —
+                </span>
+                <span class="num-sub" data-spent-target></span>
+              </p>
+              <span class="meter meter-beige" aria-hidden="true">
+                <span data-spent-bar></span>
+              </span>
+            </div>
+            <p class="tile t-personal" data-personal hidden></p>
+            <section class="tile t-tiers" aria-labelledby="levels-title">
+              <h2 class="tile-label" id="levels-title">
+                {A.loyalty.levels}
+              </h2>
+              <ul class="tiers">
+                <li class="tier-row" data-row="welcome">
+                  <span class="tier-dot" aria-hidden="true"></span>
+                  <span class="tier-name">
+                    {A.loyalty.welcome}
+                    <span data-state></span>
+                  </span>
+                  <span class="tier-rule">{A.loyalty.once}</span>
+                  <span class="tier-pct">{loyalty.welcome}%</span>
+                </li>
+                {eggsOn && (
+                  <li class="tier-row" data-row="eggs">
+                    <span class="tier-dot" aria-hidden="true"></span>
+                    <span class="tier-name">
+                      {A.loyalty.eggs}
+                      <span data-state></span>
+                    </span>
+                    <span class="tier-rule" data-eggs-rule>
+                      {A.loyalty.once}
+                    </span>
+                    <span class="tier-pct">{loyalty.eggs}%</span>
+                  </li>
+                )}
+                {loyalty.tiers.map((tier) => (
+                  <li class="tier-row" data-row="tier" data-tier-id={tier.id}>
+                    <span class="tier-dot" aria-hidden="true"></span>
+                    <span class="tier-name">
+                      {tier.name}
+                      <span data-state></span>
+                    </span>
+                    <span class="tier-rule">{rule(tier)}</span>
+                    <span class="tier-pct">{tier.discount}%</span>
+                  </li>
+                ))}
+              </ul>
+              <p class="rules-note">
+                {fill(A.loyalty.rules, { welcome: loyalty.welcome, eggs: loyalty.eggs })}
+              </p>
+            </section>
+          </section>
+
+          {/* Achievements: those of orders, and the eggs of the site. */}
+          <section
+            class="screen grid grid-ach"
+            data-screen="achievements"
+            hidden
+            aria-labelledby="orders-title"
+          >
+            <h2 class="visually-hidden" id="orders-title">
+              {A.orders.title}
+            </h2>
+            {ORDER_ACHIEVEMENTS.map((id) => (
+              <article class="tile ach" data-order={id}>
+                <p class="ach-top">
+                  <span>{A.orders.title}</span>
+                  <span data-rarity></span>
+                </p>
+                <div class="ach-body">
+                  <h3 class="ach-name">{A.orders[id].name}</h3>
+                  <p class="ach-text">
+                    {fill(A.orders[id].text, { amount: money.format(loyalty.big_order) })}
+                  </p>
+                  <p class="ach-state" data-state>
+                    {A.orders.locked}
+                  </p>
+                </div>
+              </article>
+            ))}
+            {eggsOn && (
+              <section class="tile t-eggs-grid" aria-labelledby="eggs-title">
+                <div class="tile-head">
+                  <h2 class="tile-label" id="eggs-title">
+                    {A.eggs.heading} · <span data-eggs-found>0/{EGG_IDS.length}</span>
+                  </h2>
+                  <span class="aside" data-eggs-reward data-loyalty-only>
+                    {fill(A.eggs.reward, { total: EGG_IDS.length, percent: loyalty.eggs })}
+                  </span>
+                </div>
+                <ul class="eggs">
+                  {EGG_IDS.map((id) => (
+                    <li class="egg" data-egg={id}>
+                      <span class="egg-mark" aria-hidden="true">
+                        ◇
+                      </span>
+                      <span class="egg-name" data-name>
+                        {A.eggs.hidden}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
           </section>
 
-          <section class="card" aria-labelledby="profile-title">
-            <h2 class="card-title" id="profile-title">
-              {account.profile.title}
-            </h2>
-            <form class="fields" data-profile novalidate>
-              <label class="label" for="profile-name">
-                {account.profile.name}
+          {/* The profile, the ways in, contacts, devices. */}
+          <section
+            class="screen grid grid-profile"
+            data-screen="profile"
+            hidden
+            aria-labelledby="profile-title"
+          >
+            <form class="tile form-card" data-profile novalidate>
+              <h2 class="tile-label" id="profile-title">
+                {A.profile.title}
+              </h2>
+              <label class="field">
+                <span class="field-label">{A.profile.name}</span>
+                <input id="profile-name" name="name" maxlength="100" autocomplete="name" />
               </label>
-              <input id="profile-name" name="name" maxlength="100" autocomplete="name" />
-              <label class="label" for="profile-company">
-                {account.profile.company}
+              <label class="field">
+                <span class="field-label">{A.profile.company}</span>
+                <input
+                  id="profile-company"
+                  name="company"
+                  maxlength="120"
+                  autocomplete="organization"
+                />
               </label>
-              <input
-                id="profile-company"
-                name="company"
-                maxlength="120"
-                autocomplete="organization"
-              />
-              <label class="label" for="profile-lang">
-                {account.profile.lang}
-              </label>
-              <select id="profile-lang" name="lang">
-                <option value="en">English</option>
-                <option value="uk">Українська</option>
-                <option value="ru">Русский</option>
-              </select>
-              <fieldset class="choose">
-                <legend class="label">{account.profile.preferred}</legend>
-                <span class="methods">
-                  <label class="method">
-                    <input type="radio" name="preferred" value="email" />
-                    <span>{account.profile.preferred_email}</span>
-                  </label>
-                  <label class="method">
+              <fieldset class="chips-field">
+                <legend class="field-label">{A.profile.lang}</legend>
+                <span class="chips">
+                  {locales.map(({ code, label }) => (
+                    <label class="chip">
+                      <input type="radio" name="lang" value={code} />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </span>
+              </fieldset>
+              <fieldset class="chips-field">
+                <legend class="field-label">{A.profile.preferred}</legend>
+                <span class="chips">
+                  <label class="chip">
                     <input type="radio" name="preferred" value="telegram" />
-                    <span>{account.profile.preferred_telegram}</span>
+                    <span>{A.profile.preferred_telegram}</span>
+                  </label>
+                  <label class="chip">
+                    <input type="radio" name="preferred" value="email" />
+                    <span>{A.profile.preferred_email}</span>
                   </label>
                 </span>
               </fieldset>
-              <p class="row">
-                <button class="pill pill-line submit" type="submit">
-                  {account.profile.save}
+              <div class="form-bar">
+                <button class="btn btn-accent" type="submit">
+                  {A.profile.save}
                 </button>
-                <span class="done mono" role="status" data-done></span>
-              </p>
+                <span class="done" role="status" data-done></span>
+              </div>
             </form>
-          </section>
 
-          <section class="card" aria-labelledby="access-title" data-access>
-            <h2 class="card-title" id="access-title">
-              {account.access.title}
-            </h2>
-            <dl class="facts">
-              <div>
-                <dt>{account.access.email}</dt>
-                <dd data-access-email></dd>
+            <section class="tile" data-access aria-labelledby="access-title">
+              <h2 class="tile-label" id="access-title">
+                {A.access.title}
+              </h2>
+              <div class="ways">
+                <div class="way">
+                  <p class="way-text">
+                    <span class="way-label">{A.access.email}</span>
+                    <span class="way-value" data-access-email></span>
+                  </p>
+                  <button class="btn btn-s" type="button" data-email-change></button>
+                </div>
+                <div class="way">
+                  <p class="way-text">
+                    <span class="way-label">{A.access.telegram}</span>
+                    <span class="way-value" data-access-telegram></span>
+                  </p>
+                  <button class="btn btn-s" type="button" data-telegram-link>
+                    {A.access.link_telegram}
+                  </button>
+                  <button class="btn btn-s" type="button" data-telegram-unlink>
+                    {A.access.unlink}
+                  </button>
+                </div>
               </div>
-              <div>
-                <dt>{account.access.telegram}</dt>
-                <dd data-access-telegram></dd>
-              </div>
-            </dl>
-            <p class="row actions">
-              <button class="link" type="button" data-email-change></button>
-              <button class="link" type="button" data-telegram-link>
-                {account.access.link_telegram}
-              </button>
-              <button class="link" type="button" data-telegram-unlink>
-                {account.access.unlink}
-              </button>
-            </p>
-            <form class="fields" data-access-email-form hidden novalidate>
-              <label class="label" for="access-email">
-                {account.login.email_label}
-              </label>
-              <input
-                id="access-email"
-                name="email"
-                type="email"
-                inputmode="email"
-                autocomplete="email"
-                maxlength="200"
-                required
-              />
-              <p class="row">
-                <button class="pill pill-line submit" type="submit">
-                  {account.login.send}
-                </button>
-                <button class="link" type="button" data-access-cancel>
-                  {account.access.cancel}
-                </button>
-              </p>
-            </form>
-            <form class="fields" data-access-code-form hidden novalidate>
-              <p class="sent" data-sent></p>
-              <p class="row" data-access-bot hidden>
+              <form class="way-form" data-access-email-form hidden novalidate>
+                <label class="field">
+                  <span class="field-label">{A.login.email_label}</span>
+                  <input
+                    id="access-email"
+                    name="email"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    maxlength="200"
+                    required
+                  />
+                </label>
+                <div class="form-bar">
+                  <button class="btn btn-accent" type="submit">
+                    {A.login.send}
+                  </button>
+                  <button class="btn" type="button" data-access-cancel>
+                    {A.access.cancel}
+                  </button>
+                </div>
+              </form>
+              <form class="way-form" data-access-code-form hidden novalidate>
+                <p class="way-sent" data-sent></p>
                 <a
-                  class="pill pill-inverse submit"
+                  class="btn btn-accent"
                   href={localePath(lang, 'account')}
                   target="_blank"
                   rel="noopener"
-                  data-access-bot-link
+                  data-access-bot
+                  hidden
                 >
-                  {account.login.telegram_open}
-                  <span class="arrow" aria-hidden="true">
-                    →
-                  </span>
+                  {A.login.telegram_open} <span aria-hidden="true">↗</span>
                 </a>
+                <label class="field">
+                  <span class="field-label">{A.login.code}</span>
+                  <input
+                    class="code-plain"
+                    id="access-code"
+                    name="code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxlength="6"
+                    required
+                  />
+                </label>
+                <div class="form-bar">
+                  <button class="btn btn-accent" type="submit">
+                    {A.login.submit}
+                  </button>
+                  <button class="btn" type="button" data-access-cancel>
+                    {A.access.cancel}
+                  </button>
+                </div>
+              </form>
+              <p class="error" role="alert" data-error></p>
+              <p class="ok-note" role="status" data-access-status hidden>
+                {A.access.merged}
               </p>
-              <label class="label" for="access-code">
-                {account.login.code}
-              </label>
-              <input
-                class="code mono"
-                id="access-code"
-                name="code"
-                inputmode="numeric"
-                autocomplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxlength="6"
-                required
-              />
-              <p class="row">
-                <button class="pill pill-inverse submit" type="submit">
-                  {account.login.submit}
-                </button>
-                <button class="link" type="button" data-access-cancel>
-                  {account.access.cancel}
-                </button>
+              <p class="note" data-access-hint hidden>
+                {A.access.join_hint}
               </p>
-            </form>
-            <p class="field-error" role="alert" data-error></p>
-            <p class="sent" role="status" data-access-status hidden>
-              {account.access.merged}
-            </p>
-            <p class="note sent" data-access-hint hidden>
-              {account.access.join_hint}
-            </p>
-          </section>
 
-          <section class="card" aria-labelledby="sessions-title" data-sessions>
-            <h2 class="card-title" id="sessions-title">
-              {account.sessions.title}
-            </h2>
-            <ul class="list" data-session-list></ul>
-            <button class="link" type="button" data-sessions-end-all hidden>
-              {account.sessions.end_all}
-            </button>
-          </section>
-
-          <section class="card danger" aria-labelledby="delete-title">
-            <h2 class="card-title" id="delete-title">
-              {account.delete.title}
-            </h2>
-            <p class="muted">{account.delete.text}</p>
-            <form class="fields" data-delete novalidate>
-              <label class="consent">
-                <input type="checkbox" name="confirm" data-delete-confirm />
-                <span>{account.delete.confirm}</span>
-              </label>
-              <p class="row">
-                <button class="pill pill-danger submit" type="submit" disabled data-delete-button>
-                  {account.delete.button}
-                </button>
+              <h3 class="tile-label sub-label" id="contacts-title">
+                {A.contacts.title}
+              </h3>
+              <ul class="contacts" data-contact-list aria-labelledby="contacts-title"></ul>
+              <p class="empty" data-contacts-empty hidden>
+                {A.contacts.empty}
               </p>
-            </form>
+              <form class="contact-add" data-contact-form novalidate>
+                <label class="visually-hidden" for="contact-kind">
+                  {A.contacts.kind}
+                </label>
+                <select id="contact-kind" name="kind">
+                  {kinds.map(([id, label]) => (
+                    <option value={id}>{label}</option>
+                  ))}
+                </select>
+                <label class="visually-hidden" for="contact-value">
+                  {A.contacts.value}
+                </label>
+                <input
+                  id="contact-value"
+                  name="value"
+                  maxlength="200"
+                  autocomplete="off"
+                  required
+                  placeholder={examples[kinds[0]?.[0] ?? 'phone']}
+                />
+                <button class="btn btn-s" type="submit">
+                  + {A.contacts.add}
+                </button>
+              </form>
+              <p class="error" role="alert" data-contact-error></p>
+            </section>
+
+            <div class="stack">
+              <section class="tile" data-sessions aria-labelledby="sessions-title">
+                <div class="tile-head">
+                  <h2 class="tile-label" id="sessions-title">
+                    {A.sessions.title}
+                  </h2>
+                  <button class="link-btn" type="button" data-sessions-end-all hidden>
+                    {A.sessions.end_all}
+                  </button>
+                </div>
+                <ul class="devices" data-session-list></ul>
+              </section>
+
+              <section class="tile tile-danger" aria-labelledby="delete-title">
+                <h2 class="tile-label warn" id="delete-title">
+                  {A.delete.title}
+                </h2>
+                <p class="danger-text">{A.delete.text}</p>
+                <form class="danger-form" data-delete novalidate>
+                  <label class="check">
+                    <input type="checkbox" name="confirm" data-delete-confirm />
+                    <span>{A.delete.confirm}</span>
+                  </label>
+                  <button class="btn btn-danger" type="submit" disabled data-delete-button>
+                    {A.delete.button}
+                  </button>
+                </form>
+              </section>
+            </div>
           </section>
         </div>
       </div>
     </div>
   </div>
 
-  {/* Rows the script clones: a request, a line of the conversation, a contact, a device. */}
-  <template id="tpl-request">
+  {/* Rows the script clones: a request of the list, a line of the home screen, a line of the
+      conversation, a contact, a device. */}
+  <template id="tpl-card">
     <li>
-      <a class="request" href={localePath(lang, 'account')}>
-        <span class="request-top">
-          <span class="number mono" data-number></span>
-          <span class="kind mono muted" data-kind></span>
-          <span class="unread mono" data-unread hidden>
-            {account.requests.unread}
-          </span>
-          <span class="pill-status" data-status></span>
+      <a class="card" href="#requests">
+        <span class="card-top">
+          <span class="card-num" data-number></span>
+          <span class="status" data-status></span>
         </span>
-        <span class="request-title" data-title></span>
-        <span class="excerpt muted" data-excerpt></span>
-        <span class="request-bottom mono muted">
+        <span class="card-title" data-title></span>
+        <span class="card-text" data-excerpt></span>
+        <span class="card-bottom">
           <span data-date></span>
-          <span data-discount></span>
+          <span class="card-new" data-unread hidden>
+            {A.requests.unread}
+          </span>
+          <span class="card-disc" data-discount></span>
         </span>
       </a>
     </li>
   </template>
-  <template id="tpl-entry">
-    <li class="entry">
-      <p class="entry-head mono">
-        <span data-who></span>
-        <span class="muted" data-when></span>
+  <template id="tpl-row">
+    <li>
+      <a class="row" href="#requests">
+        <span class="row-num" data-number></span>
+        <span class="row-main">
+          <span class="row-title" data-title></span>
+          <span class="row-sub" data-sub></span>
+        </span>
+        <span class="row-end">
+          <span class="dot" data-unread hidden>
+            <span class="visually-hidden">{A.requests.unread}</span>
+          </span>
+          <span class="status" data-status></span>
+        </span>
+      </a>
+    </li>
+  </template>
+  <template id="tpl-msg">
+    <li class="msg">
+      <span class="msg-meta" data-meta></span>
+      <p class="msg-body">
+        <span data-body></span>
+        <span class="msg-files" data-files hidden></span>
       </p>
-      <p class="entry-body" data-body></p>
     </li>
   </template>
   <template id="tpl-contact">
-    <li class="row-item">
-      <span class="item-main">
-        <span class="mono muted" data-kind></span>
-        <span data-value></span>
+    <li class="contact">
+      <span class="contact-text">
+        <span class="contact-kind" data-kind></span>
+        <span class="contact-value" data-value></span>
       </span>
-      <button class="link" type="button" data-remove>
-        {account.contacts.remove}
+      <button class="x" type="button" data-remove>
+        ×
       </button>
     </li>
   </template>
   <template id="tpl-session">
-    <li class="row-item">
-      <span class="item-main">
-        <span data-device></span>
-        <span class="mono muted" data-seen></span>
+    <li class="device">
+      <span class="device-text">
+        <span class="device-name" data-device></span>
+        <span class="device-seen" data-seen></span>
       </span>
-      <span class="current mono" data-current hidden>
-        {account.sessions.current}
+      <span class="device-current" data-current hidden>
+        {A.sessions.current}
       </span>
-      <button class="link" type="button" data-end>
-        {account.sessions.end}
+      <button class="link-btn" type="button" data-end>
+        {A.sessions.end}
       </button>
     </li>
   </template>
-
-  {panel && <Achievements data={data} account={false} />}
 </Base>
 
 <script>
@@ -670,829 +1141,3 @@ const scriptTexts = JSON.stringify({
 
   initAccount();
 </script>
-
-<style>
-  .account {
-    --amber: #e6b450;
-
-    max-width: var(--page);
-    width: 100%;
-    margin: 0 auto;
-    padding: 3.5rem var(--gutter) 6rem;
-  }
-
-  :global(:root[data-theme='light']) .account {
-    --amber: #8a5a00;
-  }
-
-  @media (prefers-color-scheme: light) {
-    :global(:root:not([data-theme='dark'])) .account {
-      --amber: #8a5a00;
-    }
-  }
-
-  .notice {
-    max-width: 40rem;
-    padding: 1rem 1.2rem;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-m);
-    background: var(--surface);
-  }
-
-  [hidden] {
-    display: none !important;
-  }
-
-  /* A status line in the manner of the site's service pages: «404 · ICMP TIME EXCEEDED». */
-  .status,
-  .loading {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    color: var(--muted);
-  }
-
-  .status i,
-  .loading i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: kro-blink 1.6s infinite;
-  }
-
-  .dashboard .status i {
-    background: var(--ok);
-  }
-
-  h1 {
-    font-size: clamp(2rem, 4.5vw, 3.2rem);
-    line-height: 1.05;
-    letter-spacing: -0.03em;
-    font-weight: 500;
-    text-wrap: balance;
-    overflow-wrap: anywhere;
-  }
-
-  .lead {
-    max-width: 36rem;
-    color: var(--fg-2);
-    text-wrap: pretty;
-  }
-
-  .row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem 1rem;
-  }
-
-  .label {
-    padding: 0;
-    font-size: 0.85rem;
-    color: var(--fg-2);
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  .link {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--fg-2);
-    font: inherit;
-    font-size: 0.875rem;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    cursor: pointer;
-  }
-
-  .link:hover {
-    color: var(--accent);
-  }
-
-  input[type='text'],
-  input[type='email'],
-  input:not([type]),
-  select,
-  textarea {
-    width: 100%;
-    height: 2.9rem;
-    padding: 0 0.9rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--bg);
-    outline: none;
-    transition: border-color var(--dur-1);
-  }
-
-  textarea {
-    height: auto;
-    min-height: 6rem;
-    padding: 0.75rem 0.9rem;
-    line-height: 1.5;
-    resize: vertical;
-  }
-
-  input:focus,
-  select:focus,
-  textarea:focus {
-    border-color: var(--fg);
-  }
-
-  [aria-invalid='true'] {
-    border-color: var(--danger);
-  }
-
-  .code {
-    max-width: 12rem;
-    font-size: 1.4rem;
-    letter-spacing: 0.4em;
-    text-align: center;
-  }
-
-  .submit {
-    height: 2.9rem;
-    padding: 0 1.3rem;
-    border: 0;
-    font-size: 0.95rem;
-    cursor: pointer;
-  }
-
-  .submit:disabled,
-  .submit.is-waiting {
-    opacity: 0.55;
-    cursor: progress;
-  }
-
-  .cta {
-    height: 2.75rem;
-    padding: 0 1.2rem;
-    border: 0;
-    font-size: 0.95rem;
-    cursor: pointer;
-  }
-
-  .pill-line.cta,
-  .pill-line.submit {
-    border: 1px solid var(--line-strong);
-    background: none;
-  }
-
-  .pill-danger {
-    border: 1px solid var(--danger);
-    background: none;
-    color: var(--danger);
-  }
-
-  .error,
-  .field-error {
-    font-size: 0.85rem;
-    color: var(--danger);
-  }
-
-  .error:empty,
-  .field-error:empty,
-  .done:empty {
-    display: none;
-  }
-
-  .done {
-    font-size: 0.75rem;
-    color: var(--ok);
-  }
-
-  /* Email · Telegram as the form's segmented switch; the radios stay real radios. */
-  .choose {
-    display: grid;
-    gap: 0.4rem;
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .methods {
-    display: inline-flex;
-    width: max-content;
-    max-width: 100%;
-    padding: 3px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-pill);
-    background: var(--bg);
-  }
-
-  .method {
-    position: relative;
-    padding: 0.4rem 0.95rem;
-    border-radius: var(--radius-pill);
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background var(--dur-1);
-  }
-
-  .method input {
-    position: absolute;
-    inset: 0;
-    margin: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .method:has(input:checked) {
-    background: var(--inverse-bg);
-    color: var(--inverse-fg);
-  }
-
-  .method:has(input:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  .consent {
-    display: flex;
-    gap: 0.7rem;
-    align-items: flex-start;
-    font-size: 0.875rem;
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-
-  .consent input {
-    flex: none;
-    width: 1rem;
-    height: 1rem;
-    margin: 0.2rem 0 0;
-    accent-color: var(--danger);
-  }
-
-  /* --- signing in ---------------------------------------------------------------------------------- */
-
-  .login {
-    display: grid;
-    gap: 1.25rem;
-    max-width: 36rem;
-    margin: 0 auto;
-    animation: kro-up var(--dur-3) var(--ease-out) both;
-  }
-
-  .login-card {
-    display: grid;
-    gap: 1.1rem;
-    padding: clamp(1.25rem, 3vw, 2rem);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-l);
-    background: var(--surface);
-  }
-
-  .step {
-    display: grid;
-    gap: 0.6rem;
-    justify-items: start;
-  }
-
-  .step input {
-    width: 100%;
-  }
-
-  .sent {
-    color: var(--fg-2);
-  }
-
-  .note {
-    font-size: 0.85rem;
-  }
-
-  /* --- signed in ----------------------------------------------------------------------------------- */
-
-  .dashboard {
-    display: grid;
-    gap: 2.5rem;
-    animation: kro-up var(--dur-3) var(--ease-out) both;
-  }
-
-  .head {
-    display: grid;
-    gap: 0.8rem;
-  }
-
-  .columns {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
-  }
-
-  .stack {
-    display: grid;
-    gap: 1rem;
-    min-width: 0;
-  }
-
-  .card {
-    display: grid;
-    gap: 1rem;
-    align-content: start;
-    min-width: 0;
-    padding: clamp(1.25rem, 3vw, 1.75rem);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-l);
-    background: var(--surface);
-  }
-
-  .card-title {
-    font-size: 1.2rem;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    overflow-wrap: anywhere;
-  }
-
-  .subtitle {
-    font-size: 0.7rem;
-    font-weight: 400;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .fields {
-    display: grid;
-    gap: 0.5rem;
-  }
-
-  .fields .label {
-    margin-top: 0.35rem;
-  }
-
-  .fields .row {
-    margin-top: 0.4rem;
-  }
-
-  .facts {
-    display: grid;
-    gap: 0.4rem;
-  }
-
-  /* The facts of a request are made by the script: its elements carry no scope, hence :global. */
-  .facts > :global(div) {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    padding-top: 0.4rem;
-    border-top: 1px dashed var(--line);
-  }
-
-  .facts :global(dt) {
-    flex: none;
-    color: var(--muted);
-    font-size: 0.875rem;
-  }
-
-  .facts :global(dd) {
-    min-width: 0;
-    text-align: right;
-    overflow-wrap: anywhere;
-  }
-
-  /* The requests: one link per request, the newest first. */
-  .requests {
-    display: grid;
-    gap: 0.5rem;
-  }
-
-  .request {
-    display: grid;
-    gap: 0.3rem;
-    padding: 0.9rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--bg);
-    transition:
-      border-color var(--dur-1),
-      transform var(--dur-1) var(--ease-out);
-  }
-
-  .request:hover {
-    border-color: var(--fg);
-    color: var(--fg);
-    transform: translateX(3px);
-  }
-
-  .request-top,
-  .request-bottom {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 0.8rem;
-    font-size: 0.75rem;
-  }
-
-  .request-top .pill-status {
-    margin-left: auto;
-  }
-
-  .number {
-    color: var(--fg);
-  }
-
-  .unread {
-    padding: 0.05rem 0.5rem;
-    border-radius: var(--radius-pill);
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: 0.66rem;
-    letter-spacing: 0.06em;
-  }
-
-  .request-title {
-    font-weight: 500;
-    overflow-wrap: anywhere;
-  }
-
-  .excerpt {
-    font-size: 0.875rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-  }
-
-  .pill-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.15rem 0.6rem;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-  }
-
-  .pill-status::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .pill-status[data-value='waiting_client'] {
-    border-color: var(--amber);
-  }
-
-  .pill-status[data-value='waiting_client']::before {
-    background: var(--amber);
-  }
-
-  .pill-status[data-value='done']::before {
-    background: var(--ok);
-  }
-
-  .pill-status[data-value='rejected']::before {
-    background: var(--muted);
-  }
-
-  /* One request with its conversation. */
-  .thread {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .ask {
-    justify-self: start;
-  }
-
-  .back {
-    justify-self: start;
-    font-size: 0.75rem;
-    text-decoration: none;
-  }
-
-  .thread-head {
-    display: grid;
-    gap: 0.35rem;
-    justify-items: start;
-  }
-
-  .thread-head .mono {
-    font-size: 0.75rem;
-  }
-
-  .description {
-    padding: 1rem;
-    border-radius: var(--radius-m);
-    background: var(--bg);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .feed {
-    display: grid;
-    gap: 0.6rem;
-  }
-
-  .entry {
-    display: grid;
-    gap: 0.3rem;
-    max-width: 85%;
-    padding: 0.7rem 0.9rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--bg);
-  }
-
-  .entry.is-in {
-    justify-self: end;
-    border-color: var(--accent-line);
-    background: var(--accent-soft);
-  }
-
-  .entry.is-status {
-    justify-self: center;
-    max-width: none;
-    padding: 0.2rem 0.8rem;
-    border-style: dashed;
-    background: none;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-
-  .entry.is-status .entry-body {
-    display: none;
-  }
-
-  .entry-head {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 0.8rem;
-    font-size: 0.7rem;
-  }
-
-  .entry-body {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .reply {
-    display: grid;
-    gap: 0.5rem;
-  }
-
-  /* The discount and the level. */
-  .next {
-    display: grid;
-    gap: 0.1rem;
-  }
-
-  .next-label {
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .percent {
-    font-size: clamp(2.2rem, 5vw, 3rem);
-    line-height: 1.1;
-    font-weight: 500;
-    color: var(--accent);
-  }
-
-  .tier {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .tier::before {
-    content: '';
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--tier-color, var(--dot-dim));
-  }
-
-  .tier[data-value='silver'],
-  .tiers [data-tier-id='silver'] {
-    --tier-color: #b7bcc6;
-  }
-
-  .tier[data-value='gold'],
-  .tiers [data-tier-id='gold'] {
-    --tier-color: #ffb84e;
-  }
-
-  .tier[data-value='platinum'],
-  .tiers [data-tier-id='platinum'] {
-    --tier-color: #b9d7f0;
-  }
-
-  .progress {
-    display: grid;
-    gap: 0.45rem;
-    font-size: 0.9rem;
-  }
-
-  .progress .mono {
-    font-size: 0.75rem;
-  }
-
-  .meter {
-    display: block;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--line);
-    overflow: hidden;
-  }
-
-  .meter b {
-    display: block;
-    width: 0;
-    height: 100%;
-    background: var(--accent);
-    transition: width var(--dur-3) var(--ease-out);
-  }
-
-  .top,
-  .personal {
-    padding: 0.6rem 0.9rem;
-    border: 1px dashed var(--accent-line);
-    border-radius: var(--radius-m);
-    background: var(--accent-soft);
-    font-size: 0.9rem;
-  }
-
-  .rules summary {
-    font-size: 0.875rem;
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-
-  .rules[open] {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .rules p {
-    font-size: 0.85rem;
-  }
-
-  .tiers {
-    display: grid;
-    gap: 0.4rem;
-    margin-top: 0.6rem;
-  }
-
-  .tiers li {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.6rem;
-    align-items: baseline;
-    font-size: 0.875rem;
-  }
-
-  .tier-name {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .tier-name::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--tier-color, var(--dot-dim));
-  }
-
-  .tiers .muted {
-    font-size: 0.75rem;
-  }
-
-  /* Achievements: those of orders as Steam lists them — the icon, the name, when, how many have it —
-     and the eggs as a row of icons with the way to their panel. */
-  .achievements-list {
-    display: grid;
-    gap: 0.25rem;
-  }
-
-  .achievement {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) auto;
-    gap: 0.8rem;
-    align-items: center;
-    padding: 0.45rem 0;
-  }
-
-  .achievement-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 2px;
-    background: var(--bg);
-  }
-
-  .achievement-body {
-    display: grid;
-    gap: 0.05rem;
-    min-width: 0;
-  }
-
-  .achievement-name {
-    font-weight: 500;
-    overflow-wrap: anywhere;
-  }
-
-  .achievement:not(.is-found) .achievement-name,
-  .achievement:not(.is-found) .achievement-text {
-    color: var(--muted);
-  }
-
-  .achievement-text {
-    font-size: 0.85rem;
-    color: var(--fg-2);
-  }
-
-  .achievement-state,
-  .achievement-share {
-    font-size: 0.7rem;
-    color: var(--muted);
-  }
-
-  .achievement.is-rare .achievement-state,
-  .achievement.is-rare .achievement-share {
-    color: var(--amber);
-  }
-
-  .eggs {
-    display: grid;
-    gap: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed var(--line);
-  }
-
-  .eggs-icons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .cta,
-  [data-eggs-open] {
-    justify-self: start;
-  }
-
-  /* Contacts and devices: a line each, with its action on the right. */
-  .list {
-    display: grid;
-  }
-
-  .row-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 0;
-    border-top: 1px dashed var(--line);
-  }
-
-  .row-item:first-child {
-    border-top: 0;
-  }
-
-  .item-main {
-    display: grid;
-    gap: 0.1rem;
-    min-width: 0;
-    margin-right: auto;
-    overflow-wrap: anywhere;
-  }
-
-  .item-main .mono {
-    font-size: 0.7rem;
-  }
-
-  .current {
-    font-size: 0.7rem;
-    color: var(--ok);
-  }
-
-  .actions {
-    gap: 0.5rem 1.25rem;
-  }
-
-  .danger {
-    border-color: color-mix(in oklab, var(--danger) 45%, var(--line));
-  }
-
-  @media (min-width: 1000px) {
-    .columns {
-      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    }
-  }
-</style>
