@@ -214,9 +214,11 @@ func run() error {
 		if task.Kind != leads.TaskReply || json.Unmarshal(task.Payload, &payload) != nil || payload.MessageID <= 0 {
 			return
 		}
-		err := leadStore.MarkDelivery(ctx, payload.MessageID, "failed", "")
+		var err error
 		if payload.DeliveryID > 0 {
-			err = leadStore.MarkTarget(ctx, payload.DeliveryID, "failed", "")
+			err = leadStore.MarkTarget(ctx, payload.DeliveryID, "failed", "") // one place; the answer sums them up
+		} else {
+			err = leadStore.MarkDelivery(ctx, payload.MessageID, "failed", "")
 		}
 		if err != nil {
 			log.Error("cannot mark an answer as failed", "error", err)

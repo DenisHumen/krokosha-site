@@ -759,7 +759,7 @@ func (s *Store) UndeliveredTo(ctx context.Context, id int64, emailMessageID, rec
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE lead_messages m JOIN (
 					SELECT message_id,
-					       CASE WHEN SUM(status = 'queued') > 0 THEN 'queued' WHEN SUM(status = 'sent') > 0 THEN 'sent' ELSE 'failed' END AS summary
+					       CASE WHEN SUM(status = 'sent') > 0 THEN 'sent' WHEN SUM(status = 'queued') > 0 THEN 'queued' ELSE 'failed' END AS summary
 					FROM lead_deliveries WHERE lead_id = ? AND email_message_id = ? GROUP BY message_id
 				) d ON d.message_id = m.id
 				SET m.delivery = d.summary`, id, emailMessageID); err != nil {

@@ -232,8 +232,9 @@ func (s *Store) Deliveries(ctx context.Context, leadID int64) (map[int64][]Deliv
 	return out, rows.Err()
 }
 
-// MarkTarget records what became of one delivery, and sums the answer up: queued while any of its
-// deliveries is, sent once any reached the client, failed when none did.
+// MarkTarget records what became of one delivery, and sums the answer up: sent once any delivery
+// reached the client (the client has it), queued while none did and some still wait, failed when
+// none can. What became of each is in the deliveries themselves.
 func (s *Store) MarkTarget(ctx context.Context, id int64, status, emailMessageID string) error {
 	now := s.now().UTC()
 	if _, err := s.db.ExecContext(ctx, `
@@ -244,7 +245,7 @@ func (s *Store) MarkTarget(ctx context.Context, id int64, status, emailMessageID
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE lead_messages m JOIN (
 			SELECT message_id,
-			       CASE WHEN SUM(status = 'queued') > 0 THEN 'queued' WHEN SUM(status = 'sent') > 0 THEN 'sent' ELSE 'failed' END AS summary
+			       CASE WHEN SUM(status = 'sent') > 0 THEN 'sent' WHEN SUM(status = 'queued') > 0 THEN 'queued' ELSE 'failed' END AS summary
 			FROM lead_deliveries WHERE message_id = (SELECT message_id FROM lead_deliveries WHERE id = ?) GROUP BY message_id
 		) d ON d.message_id = m.id
 		SET m.delivery = d.summary, m.email_message_id = COALESCE(m.email_message_id, NULLIF(?, ''))`, id, emailMessageID)

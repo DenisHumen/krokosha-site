@@ -355,7 +355,9 @@ func (h *Handler) feed(ctx context.Context, card *leads.Card, me string, unread 
 	return out, nil
 }
 
-// answerState sums an answer up: every target reached — sent; some — partly; none yet — queued.
+// answerState sums an answer up for its mark: the client has it — sent (partly when a place
+// refused it); nothing reached them yet — queued; nothing can — failed. Each place is in the
+// tooltip of the mark.
 func answerState(summary string, marks []deliveryMark) string {
 	if len(marks) == 0 {
 		return summary // an answer from before deliveries, or a record of a call ("")
@@ -372,14 +374,14 @@ func answerState(summary string, marks []deliveryMark) string {
 		}
 	}
 	switch {
+	case sent > 0 && failed > 0:
+		return "partly"
+	case sent > 0:
+		return "sent"
 	case queued > 0:
 		return "queued"
-	case failed > 0 && sent > 0:
-		return "partly"
-	case failed > 0:
-		return "failed"
 	}
-	return "sent"
+	return "failed"
 }
 
 func nameOr(names map[string]string, key, fallback string) string {
