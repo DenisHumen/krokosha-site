@@ -399,7 +399,7 @@
       "bad_code": "The code does not fit or has expired",
       "throttled": "Too many attempts. Please try again in an hour.",
       "no_bot": "Signing in with Telegram is not available now: please use email.",
-      "taken": "This email or Telegram belongs to another account already.",
+      "taken": "This email or Telegram belongs to a disabled account. Please write to me.",
       "disabled": "This account is disabled. Please write to me.",
       "signed_out": "The session has ended: please sign in again.",
       "bad_contact": "This does not look like a contact of this kind",
@@ -539,7 +539,9 @@
       "link_telegram": "Link Telegram",
       "unlink": "Unlink",
       "linked": "Linked",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "join_hint": "Signed in before with another email or with Telegram? Add that way here: the two accounts become one, with all requests and achievements.",
+      "merged": "Done: your other account joined this one — its requests and achievements are here now."
     },
     "sessions": {
       "title": "Devices",

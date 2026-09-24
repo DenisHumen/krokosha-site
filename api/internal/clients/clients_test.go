@@ -355,10 +355,17 @@ func TestAddingAnAddress(t *testing.T) {
 
 	b := f.browser("203.0.113.7")
 	b.signInByEmail("first@example.com")
-	// Somebody else's address: refused, and the account keeps its own.
+	// The address of another account: whoever types its code holds it, so that account is theirs too
+	// and joins this one (TestTwoAccountsOfOnePersonBecomeOne).
 	b.send(http.MethodPost, "/api/account/email", map[string]string{"email": "taken@example.com"})
-	if got := b.send(http.MethodPost, "/api/account/login/code", map[string]string{"code": f.service.code(f.lastLogin())}); got.status != http.StatusConflict {
+	if got := b.send(http.MethodPost, "/api/account/login/code", map[string]string{"code": f.service.code(f.lastLogin())}); got.status != http.StatusOK {
 		t.Errorf("an address of another account: %d %v", got.status, got.body)
+	}
+	if email := b.me()["client"].(map[string]any)["email"]; email != "taken@example.com" {
+		t.Errorf("email after joining the other account: %v", email)
+	}
+	if got := taken.send(http.MethodGet, "/api/account/me", nil); got.body["ok"] != false {
+		t.Errorf("the joined account is still signed in: %s", got.raw)
 	}
 	// A new address replaces the old one; the session stays.
 	b.send(http.MethodPost, "/api/account/email", map[string]string{"email": "second@example.com"})
