@@ -31,6 +31,7 @@ var clientTexts = map[string]map[string]string{
 		"failed":   "Не получилось передать сообщение. Попробуйте ещё раз чуть позже.",
 		"textonly": "Пока я умею передавать только текст. Напишите словами, а файлы можно прислать письмом.",
 		"answer":   "💬 Ответ по заявке #%s:",
+		"account":  "Открыть в личном кабинете",
 		"accepted": "принята", "working": "в работе", "done": "завершена", "closed": "закрыта",
 	},
 	"uk": {
@@ -42,6 +43,7 @@ var clientTexts = map[string]map[string]string{
 		"failed":   "Не вдалося передати повідомлення. Спробуйте ще раз трохи згодом.",
 		"textonly": "Поки що я вмію передавати лише текст. Напишіть словами, а файли можна надіслати листом.",
 		"answer":   "💬 Відповідь щодо заявки #%s:",
+		"account":  "Відкрити в особистому кабінеті",
 		"accepted": "прийнята", "working": "в роботі", "done": "завершена", "closed": "закрита",
 	},
 	"en": {
@@ -53,6 +55,7 @@ var clientTexts = map[string]map[string]string{
 		"failed":   "The message could not be passed on. Please try again a little later.",
 		"textonly": "For now I can pass on text only. Please write it in words; files can be sent by email.",
 		"answer":   "💬 Reply to your request #%s:",
+		"account":  "Open in your account",
 		"accepted": "received", "working": "in progress", "done": "completed", "closed": "closed",
 	},
 }
@@ -160,7 +163,7 @@ func (b *Bot) clientWrites(ctx context.Context, message *Message, command string
 // --- deliveries --------------------------------------------------------------------------------------
 
 // answerClient delivers an answer of the staff to a client who continued in Telegram.
-func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64) error {
+func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64, site bool) error {
 	lead, err := b.opts.Leads.Get(ctx, leadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return outbox.Permanent(errors.New("the request is gone (deleted on the client's demand?)"))
@@ -168,12 +171,7 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64) error {
 	if err != nil {
 		return err
 	}
-	var chatID int64
-	err = b.opts.DB.QueryRowContext(ctx, `SELECT telegram_id FROM bot_clients WHERE lead_id = ?`, leadID).Scan(&chatID)
-	if errors.Is(err, sql.ErrNoRows) {
-		// A bot cannot write first. The answer waits until the client opens the link.
-		return outbox.NotReady(errors.New("the client has not opened the bot yet"))
-	}
+	chatID, lang, err := b.clientChat(ctx, lead, site)
 	if err != nil {
 		return err
 	}
@@ -184,18 +182,68 @@ func (b *Bot) answerClient(ctx context.Context, leadID, messageID int64) error {
 	if err != nil {
 		return err
 	}
-	text, _ := cut(body, messageLimit-200)
-	_, err = b.opts.API.Send(ctx, Outgoing{ChatID: chatID, Text: Escape(fmt.Sprintf(clientText(lead.Lang, "answer"), lead.Number())) + "\n\n" + Escape(text)})
+	text, _ := cut(body, messageLimit-300)
+	message := Outgoing{ChatID: chatID, Text: Escape(fmt.Sprintf(clientText(lang, "answer"), lead.Number())) + "\n\n" + Escape(text)}
+	if lead.ClientID > 0 && b.opts.SiteURL != "" {
+		// A client with a personal account has the whole conversation there as well.
+		message.Buttons = Keyboard{{{Text: clientText(lang, "account"), URL: strings.TrimRight(b.opts.SiteURL, "/") + accountPath(lang) + "#" + lead.Number()}}}
+	}
+	_, err = b.opts.API.Send(ctx, message)
 	var refused *APIError
 	switch {
+	case err == nil && site:
+		return nil // the answer was in the account already; this was the notice of it
 	case err == nil:
 		return b.opts.Leads.MarkDelivery(ctx, messageID, "sent", "")
 	case errors.As(err, &refused) && refused.Gone():
-		_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
+		if !site {
+			_ = b.opts.Leads.MarkDelivery(ctx, messageID, "failed", "")
+		}
 		return outbox.Permanent(err) // the client blocked the bot: no retry will help
 	default:
 		return err
 	}
+}
+
+// clientChat is where an answer to the client goes: the Telegram account that opened the request's
+// «continue in Telegram», else the one linked to the client's personal account. The notice of an
+// answer left in the account (site) goes to the account's Telegram alone.
+func (b *Bot) clientChat(ctx context.Context, lead *leads.Lead, site bool) (chatID int64, lang string, err error) {
+	lang = lead.Lang
+	if !site {
+		err = b.opts.DB.QueryRowContext(ctx, `SELECT telegram_id FROM bot_clients WHERE lead_id = ?`, lead.ID).Scan(&chatID)
+		if err == nil {
+			return chatID, lang, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, "", err
+		}
+	}
+	if lead.ClientID > 0 {
+		account, err := b.opts.Leads.AccountOf(ctx, lead.ClientID)
+		switch {
+		case err == nil && account.TelegramID != 0:
+			if site {
+				lang = account.Lang
+			}
+			return account.TelegramID, lang, nil
+		case err != nil && !errors.Is(err, leads.ErrNoClient):
+			return 0, "", err
+		}
+	}
+	if site {
+		return 0, "", outbox.Permanent(errors.New("the account has no Telegram"))
+	}
+	// A bot cannot write first. The answer waits until the client opens the link.
+	return 0, "", outbox.NotReady(errors.New("the client has not opened the bot yet"))
+}
+
+// accountPath is the personal account's page in a language.
+func accountPath(lang string) string {
+	if lang == "uk" || lang == "ru" {
+		return "/" + lang + "/account/"
+	}
+	return "/account/"
 }
 
 // clientWrote pushes a client's new message to everybody with access, as a reply to the card of
@@ -220,7 +268,7 @@ func (b *Bot) clientWrote(ctx context.Context, leadID, messageID int64) error {
 		return err
 	}
 
-	via := map[string]string{leads.ChannelTelegram: "в Telegram", leads.ChannelEmail: "письмом"}[channel]
+	via := map[string]string{leads.ChannelTelegram: "в Telegram", leads.ChannelEmail: "письмом", leads.ChannelSite: "в личном кабинете"}[channel]
 	shown, shortened := cut(body, 3000)
 	if shortened {
 		shown += "…"

@@ -44,7 +44,15 @@ const external = (url: string) => url.startsWith('https://');
       <p class="meta">
         <span data-slot="site.footer.copyright">{fill(site.footer.copyright, { year })}</span>
         {page !== 'privacy' && <a href={localePath(lang, 'privacy')}>{privacy.data.title}</a>}
-        {variant === 'home' && <span aria-hidden="true" data-eggs-caption></span>}
+        {variant === 'home' && (
+          <button
+            class="eggs"
+            type="button"
+            aria-haspopup="dialog"
+            data-eggs-caption
+            hidden
+          ></button>
+        )}
       </p>
       {variant === 'home' && (
         /* The hidden entrance to the mini-game (brief part D): leads to a «coming soon» stub. */
@@ -121,6 +129,26 @@ const external = (url: string) => url.startsWith('https://');
   }
 
   .meta span:empty {
+    display: none;
+  }
+
+  /* «eggs 3/8»: opens the panel of achievements (scripts/home.ts). */
+  .eggs {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+
+  .eggs:hover {
+    color: var(--accent);
+  }
+
+  .eggs[hidden] {
     display: none;
   }
 

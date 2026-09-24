@@ -69,9 +69,19 @@ func (s *Store) Anonymize(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
+	// A completed order stays with its client as a number: the level of a regular client must not
+	// fall because old data went (docs/architecture.md, 2026-09-24). The link itself goes — the
+	// request no longer knows whose it was.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE clients c JOIN leads l ON l.client_id = c.id
+		SET c.orders_carried = c.orders_carried + 1, c.spent_carried = c.spent_carried + COALESCE(l.amount, 0)
+		WHERE l.id = ? AND l.status = 'done' AND l.kind = 'request' AND l.anonymized_at IS NULL`, id); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE leads SET name = '—', contact_value = '', description = '', public_token = ?, session_id = NULL, referrer_host = NULL,
-		       ip_prefix = '', sections_seen = NULL, spam_reasons = NULL, anonymized_at = ?
+		       ip_prefix = '', sections_seen = NULL, spam_reasons = NULL, client_id = NULL, parent_id = NULL, subject = NULL,
+		       discount_detail = NULL, anonymized_at = ?
 		WHERE id = ? AND anonymized_at IS NULL`, token, now, id)
 	if err != nil {
 		return err
@@ -85,6 +95,8 @@ func (s *Store) Anonymize(ctx context.Context, id int64) error {
 		`DELETE FROM outbox WHERE lead_id = ?`,
 		// Reasons of refusals and details of events are the owner's free text: it may name the person.
 		`UPDATE lead_events SET details = NULL WHERE lead_id = ?`,
+		// An inquiry about the order no longer leads to it: its sum and dates are nobody's now.
+		`UPDATE leads SET parent_id = NULL WHERE parent_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, query, id); err != nil {
 			return err

@@ -35,12 +35,27 @@ const replyPromise =
 // same limits and looks inside every file (api/internal/leads/files.go); these are for the visitor.
 const files = { max: 3, maxBytes: 10 * 1024 * 1024, accept: '.pdf,.png,.jpg,.jpeg,.txt,.docx' };
 
-// What the script needs, in one attribute: texts of field errors and the placeholders per method.
+// What the script needs, in one attribute: texts of field errors and the placeholders per method; the
+// words of a discount (content/site.yaml → loyalty) and the way to the personal account.
+const { loyalty } = data.site;
 const scriptTexts = JSON.stringify({
   errors: form.errors,
   placeholders: form.placeholders,
   sending: text('labels', 'sending'),
   success: text('messages', 'success_title'),
+  discount: loyalty.enabled
+    ? {
+        welcome: text('messages', 'discount_welcome'),
+        eggs: text('messages', 'discount_eggs'),
+        tier: text('messages', 'discount_tier'),
+        personal: text('messages', 'discount_personal'),
+        fixed: text('messages', 'discount_fixed'),
+        tiers: Object.fromEntries(loyalty.tiers.map((tier) => [tier.id, tier.name])),
+      }
+    : null,
+  signed_in: text('messages', 'signed_in'),
+  track: text('messages', 'track'),
+  account: localePath(lang, 'account'),
 });
 ---
 
@@ -55,6 +70,8 @@ const scriptTexts = JSON.stringify({
     >
       <input type="hidden" name="lang" value={lang} />
       <input type="hidden" name="altcha" value="" />
+      {/* The receipt of every easter egg, when this browser has it: the one-time discount (form.js). */}
+      <input type="hidden" name="eggs" value="" />
       {/* Not for people: whoever fills it in is a robot. Off-screen rather than display:none, which robots check for. */}
       <p class="form-trap" aria-hidden="true">
         <label>
@@ -196,6 +213,13 @@ const scriptTexts = JSON.stringify({
         <span class="field-error" data-error-for="consent" role="alert"></span>
       </p>
 
+      {/* What this request would get, asked of /api/leads/offer while the form is filled in (form.js). */}
+      <p class="offer" data-offer hidden>
+        <b class="offer-percent mono" data-offer-percent></b>
+        <span data-offer-reason></span>
+      </p>
+      <p class="signed-in mono" data-signed-in hidden></p>
+
       <p class="actions">
         <button
           class="pill pill-inverse submit"
@@ -247,6 +271,15 @@ const scriptTexts = JSON.stringify({
       <h3 data-field="title">{text('messages', 'success_generic')}</h3>
       <p data-field="text">
         {text('messages', 'success_text')} {replyPromise}
+      </p>
+      <p class="fixed" data-field="discount" hidden></p>
+      <p data-field="account" hidden>
+        <a class="pill pill-line track" href={localePath(lang, 'account')}>
+          {text('messages', 'track')}
+          <span class="arrow" aria-hidden="true">
+            →
+          </span>
+        </a>
       </p>
       <p data-field="telegram" hidden>
         <a
@@ -521,5 +554,58 @@ const scriptTexts = JSON.stringify({
   .continue {
     height: 2.9rem;
     padding: 0 1.3rem;
+  }
+
+  /* «−10 % on your first request»: what the request is going to get. */
+  .offer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+    border: 1px dashed var(--accent-line);
+    border-radius: var(--radius-m);
+    background: var(--accent-soft);
+    font-size: 0.9rem;
+    color: var(--fg-2);
+    animation: kro-up var(--dur-2) var(--ease-out) both;
+  }
+
+  .offer[hidden],
+  .signed-in[hidden] {
+    display: none;
+  }
+
+  .offer-percent {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .signed-in {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .signed-in::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 0.5rem;
+    border-radius: 50%;
+    background: var(--ok);
+    vertical-align: 0.1em;
+  }
+
+  .fixed {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .track {
+    height: 2.6rem;
+    padding: 0 1.1rem;
+    font-weight: 400;
   }
 </style>

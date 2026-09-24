@@ -1,0 +1,341 @@
+---
+// The panel of achievements, the way Steam lists them: every easter egg with its icon, its name, when it
+// was found and how many players have it (the share bar), and the discount for finding them all. A
+// <dialog>: the «eggs 3/8» counter opens it (Rail, Footer), and so does the personal account. The page's
+// script fills it in (scripts/achievements-panel.ts); here are the texts and the frame.
+import { localePath } from '../i18n/locales.ts';
+import type { SitePageData } from '../lib/page-data.ts';
+
+interface Props {
+  data: SitePageData;
+  /** Where «keep them in your account» leads; not shown on the account's own page. */
+  account?: boolean;
+}
+
+const { data, account = true } = Astro.props;
+const { lang, site } = data;
+const { eggs, loyalty } = site;
+const ids = [
+  'konami',
+  'sudo',
+  'croc',
+  'cat',
+  'reboot',
+  'console',
+  'croc5',
+  'lost_packet',
+  'all',
+] as const;
+const discount = loyalty.enabled ? loyalty.eggs : 0;
+const texts = JSON.stringify({ ...eggs.panel, rarity: eggs.rarity, percent: discount });
+---
+
+<dialog
+  class="achievements"
+  id="achievements"
+  aria-labelledby="achievements-title"
+  data-achievements
+  data-texts={texts}
+>
+  <div class="head">
+    <p class="status mono" aria-hidden="true">
+      ACHIEVEMENTS · <span data-progress></span>
+    </p>
+    <h2 id="achievements-title">{eggs.panel.title}</h2>
+    <p class="count mono" data-count></p>
+    <i class="meter" aria-hidden="true">
+      <b data-meter></b>
+    </i>
+    <button class="close" type="button" data-close aria-label={eggs.panel.close}>
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M2 2l10 10M12 2 2 12" stroke="currentColor" stroke-width="1.4"></path>
+      </svg>
+    </button>
+  </div>
+
+  <ol class="list">
+    {ids.map((id) => (
+      <li class:list={['item', { last: id === 'all' }]} data-achievement={id}>
+        <span class="icon" data-icon></span>
+        <span class="body">
+          <span class="name">{eggs.achievements[id].name}</span>
+          <span class="text" data-text hidden>
+            {eggs.achievements[id].text}
+          </span>
+          <span class="state mono" data-state>
+            {eggs.panel.locked}
+          </span>
+        </span>
+        <span class="share mono" data-share></span>
+        <i class="bar" aria-hidden="true">
+          <b data-bar></b>
+        </i>
+      </li>
+    ))}
+  </ol>
+
+  <div class="foot">
+    <p class="counting muted" data-counting hidden>
+      {eggs.panel.counting}
+    </p>
+    {discount > 0 && <p class="discount" data-discount></p>}
+    {account && (
+      <a class="to-account mono" href={localePath(lang, 'account')}>
+        {eggs.panel.account} <span aria-hidden="true">→</span>
+      </a>
+    )}
+  </div>
+</dialog>
+
+<style>
+  .achievements {
+    /* Steam's gold of a rare achievement, dark enough for small text on the light theme too. */
+    --gold: #e3b061;
+    --gold-bar: #ffb84e;
+
+    width: min(38rem, calc(100vw - 2rem));
+    max-height: min(46rem, calc(100dvh - 2rem));
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+  }
+
+  .achievements[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    animation: kro-up var(--dur-2) var(--ease-out) both;
+  }
+
+  .achievements::backdrop {
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(3px);
+  }
+
+  .head {
+    position: relative;
+    display: grid;
+    gap: 0.35rem;
+    padding: 1.4rem 1.5rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .status {
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+  }
+
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  .count {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .meter {
+    display: block;
+    height: 3px;
+    margin-top: 0.4rem;
+    border-radius: 2px;
+    background: var(--line);
+    overflow: hidden;
+  }
+
+  .meter b {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+    transition: width var(--dur-3) var(--ease-out);
+  }
+
+  .close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface-2);
+    cursor: pointer;
+  }
+
+  .close:hover {
+    border-color: var(--fg);
+  }
+
+  .list {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.5rem 0;
+  }
+
+  /* One achievement: the icon, the name and what is known, the share on the right; under it all, a thin
+     bar as long as the share of players who have it (Steam's global statistics). */
+  .item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 0.9rem;
+    align-items: center;
+    padding: 0.7rem 1.5rem 0.95rem;
+  }
+
+  .item + .item {
+    border-top: 1px solid var(--line);
+  }
+
+  .icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 2px;
+    background: var(--surface-2);
+  }
+
+  .body {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .name {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .text {
+    font-size: 0.875rem;
+    color: var(--fg-2);
+  }
+
+  .state {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .share {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .bar {
+    position: absolute;
+    left: calc(1.5rem + 48px + 0.9rem);
+    right: 1.5rem;
+    bottom: 0.45rem;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--line);
+    overflow: hidden;
+  }
+
+  .bar b {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--muted);
+    transition: width var(--dur-3) var(--ease-out);
+  }
+
+  .item:not(.is-found) .name {
+    color: var(--muted);
+  }
+
+  .item.is-found .bar b {
+    background: var(--accent);
+  }
+
+  .item.is-rare .share,
+  .item.is-rare .state {
+    color: var(--gold);
+  }
+
+  .item.is-rare .bar b {
+    background: var(--gold-bar);
+  }
+
+  :global(:root[data-theme='light']) .achievements {
+    --gold: #8a5a00;
+    --gold-bar: #c98a1c;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :global(:root:not([data-theme='dark'])) .achievements {
+      --gold: #8a5a00;
+      --gold-bar: #c98a1c;
+    }
+  }
+
+  .foot {
+    display: grid;
+    gap: 0.6rem;
+    padding: 1rem 1.5rem 1.3rem;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+    font-size: 0.875rem;
+  }
+
+  .discount {
+    color: var(--fg-2);
+  }
+
+  .discount.is-ready {
+    color: var(--fg);
+  }
+
+  .discount.is-ready::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 0.55rem;
+    border-radius: 50%;
+    background: var(--ok);
+    vertical-align: 0.1em;
+  }
+
+  .to-account {
+    justify-self: start;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 30rem) {
+    .item {
+      grid-template-columns: 40px minmax(0, 1fr);
+      padding-inline: 1rem;
+    }
+
+    .icon {
+      width: 40px;
+      height: 40px;
+    }
+
+    .share {
+      grid-column: 2;
+      text-align: left;
+    }
+
+    .bar {
+      left: calc(1rem + 40px + 0.9rem);
+      right: 1rem;
+    }
+  }
+</style>

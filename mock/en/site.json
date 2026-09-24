@@ -164,7 +164,14 @@
         "success_reply": "I'll reply within {hours} h.",
         "continue_telegram": "Continue in Telegram",
         "server_error": "Couldn't send the request. Please email me: {email}",
-        "rate_limited": "Too many requests. Please try again later or email me: {email}"
+        "rate_limited": "Too many requests. Please try again later or email me: {email}",
+        "discount_welcome": "off your first request",
+        "discount_eggs": "for finding every easter egg",
+        "discount_tier": "— {tier} level",
+        "discount_personal": "— your personal discount",
+        "discount_fixed": "A {percent}% discount is fixed on the request.",
+        "signed_in": "You are signed in: the request will appear in your personal account.",
+        "track": "Follow it in your account"
       },
       "errors": {
         "required": "Required field",
@@ -309,6 +316,21 @@
         "text": "Every easter egg found"
       }
     },
+    "rarity": "{percent} of players have it",
+    "panel": {
+      "title": "Achievements",
+      "open": "Achievements: {found} of {total}",
+      "progress": "{found} of {total}",
+      "locked": "Not found yet",
+      "found_on": "Found {date}",
+      "rare": "Rare",
+      "counting": "Rarity appears once enough players are counted.",
+      "discount": "Find every egg — and get {percent}% off one request.",
+      "discount_ready": "Every egg is found: {percent}% off your next request. It applies by itself when you send the form from this browser or signed in to your account.",
+      "discount_used": "The discount for the eggs has gone to a request.",
+      "account": "Keep them in your account",
+      "close": "Close"
+    },
     "night": "server room · 03:14 · all green",
     "croc": "Crocodile",
     "console": "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA",
@@ -317,6 +339,252 @@
       "uptime": "up 9 years, 0 incidents caused by coffee",
       "ping": "he answers fast",
       "rm": "nice try. Snapshot restored in 0.2 s"
+    }
+  },
+  "loyalty": {
+    "enabled": true,
+    "currency": "USD",
+    "welcome": 10,
+    "eggs": 20,
+    "big_order": 3000,
+    "tiers": [
+      {
+        "id": "silver",
+        "name": "Silver",
+        "orders": 1,
+        "spent": 1000,
+        "discount": 5
+      },
+      {
+        "id": "gold",
+        "name": "Gold",
+        "orders": 3,
+        "spent": 5000,
+        "discount": 10
+      },
+      {
+        "id": "platinum",
+        "name": "Platinum",
+        "orders": 6,
+        "spent": 15000,
+        "discount": 15
+      }
+    ]
+  },
+  "account": {
+    "title": "Personal account",
+    "description": "Your requests and inquiries, their statuses and answers, your discount and client level.",
+    "link": "Personal account",
+    "no_script": "The personal account needs JavaScript. A request can be sent without it — with the form on the main page.",
+    "loading": "Checking the session…",
+    "login": {
+      "lead": "Your requests and inquiries, their statuses and answers, your discount and level. No password: a one-time code comes by email or from the Telegram bot.",
+      "method": "Sign in with",
+      "email": "Email",
+      "telegram": "Telegram",
+      "email_label": "Your email",
+      "send": "Send the code",
+      "telegram_text": "The site's bot will send you a code for this page.",
+      "telegram_open": "Open the bot",
+      "sent_email": "The code went to {address}. It is valid for 15 minutes; the letter also has a button that signs you in at once.",
+      "sent_telegram": "Press Start in the bot, and it will send the code. The code is valid for 15 minutes.",
+      "code": "Code",
+      "submit": "Sign in",
+      "back": "Another way",
+      "link": "Signing you in…",
+      "link_ask": "This link signs in to the account of {account}.",
+      "link_note": "Sign in only if you asked for the link yourself: a link from somebody else opens their account, and they would see whatever you send from it.",
+      "link_yes": "Sign in",
+      "link_no": "It is not mine",
+      "note": "No account yet? It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it."
+    },
+    "errors": {
+      "bad_email": "Check the email address",
+      "bad_code": "The code does not fit or has expired",
+      "throttled": "Too many attempts. Please try again in an hour.",
+      "no_bot": "Signing in with Telegram is not available now: please use email.",
+      "taken": "This email or Telegram belongs to another account already.",
+      "disabled": "This account is disabled. Please write to me.",
+      "signed_out": "The session has ended: please sign in again.",
+      "bad_contact": "This does not look like a contact of this kind",
+      "too_many": "No more contacts can be added",
+      "empty": "Write a few words",
+      "too_long": "No more than 4000 characters",
+      "last_way": "Add an email first: without Telegram there would be no way in.",
+      "no_way_back": "Add an email or Telegram first: there is nowhere to answer.",
+      "server": "Something went wrong. Please try again a little later.",
+      "network": "No connection to the site. Check the internet and try again."
+    },
+    "home": {
+      "hello": "Hello, {name}",
+      "hello_plain": "Hello",
+      "since": "Client since {date}",
+      "new_request": "New request",
+      "sign_out": "Sign out"
+    },
+    "loyalty": {
+      "title": "Discount and level",
+      "next": "On the next request",
+      "none": "no discount",
+      "level": "Level",
+      "newcomer": "not yet",
+      "orders": "Completed orders",
+      "spent": "Total of orders",
+      "to_next": "To «{tier}»",
+      "more_orders": "{count} more",
+      "more_spent": "or {amount} more",
+      "top": "The highest level. Thank you for your trust!",
+      "personal": "Personal discount {percent}%",
+      "personal_once": "on one request",
+      "personal_until": "until {date}",
+      "levels": "Levels",
+      "level_rule": "{orders} or {spent}",
+      "rules": "The first request is {welcome}% off. Every easter egg found on the site gives {eggs}% off one request. Levels come with completed orders or their total, whichever comes first. Discounts do not add up: the largest applies and is fixed on the request.",
+      "reasons": {
+        "welcome": "first request",
+        "eggs": "all easter eggs",
+        "tier": "level «{tier}»",
+        "personal": "personal",
+        "manual": "set by me"
+      }
+    },
+    "requests": {
+      "title": "Requests and inquiries",
+      "empty": "Nothing here yet. Send a request with the form on the main page — it will appear here with its status.",
+      "request": "Request",
+      "inquiry": "Inquiry",
+      "unread": "new",
+      "about": "about {id}",
+      "back": "All requests",
+      "direction": "Area",
+      "budget": "Budget",
+      "timeline": "Timeline",
+      "contact": "Answers go to",
+      "discount": "Discount",
+      "amount": "Amount",
+      "conversation": "Conversation",
+      "you": "You",
+      "answer": "Answer",
+      "status": "Status: {status}",
+      "files": "files: {names}",
+      "write": "Your message",
+      "send": "Send",
+      "sent": "Sent",
+      "closed": "The request is closed. To go on, write an inquiry about it.",
+      "ask": "Ask about this request",
+      "missing": "There is no such request in your account."
+    },
+    "statuses": {
+      "new": "Under review",
+      "in_progress": "In progress",
+      "waiting_client": "Waiting for your answer",
+      "done": "Done",
+      "rejected": "Declined"
+    },
+    "channels": {
+      "form": "form on the site",
+      "site": "personal account",
+      "email": "email",
+      "telegram": "Telegram",
+      "phone": "phone"
+    },
+    "inquiry": {
+      "title": "New inquiry",
+      "lead": "A question about a request, documents, payment — anything. The answer comes here, and I will let you know by email or in Telegram.",
+      "subject": "Subject",
+      "text": "Message",
+      "parent": "About a request",
+      "none": "— none —",
+      "send": "Send the inquiry",
+      "sent": "Inquiry {id} sent"
+    },
+    "contacts": {
+      "title": "Contacts and social networks",
+      "lead": "Where else I can reach you: I see these when I write to you.",
+      "kind": "Where",
+      "value": "Address, name or number",
+      "add": "Add",
+      "remove": "Remove",
+      "empty": "No contacts yet.",
+      "kinds": {
+        "phone": "Phone",
+        "whatsapp": "WhatsApp",
+        "viber": "Viber",
+        "signal": "Signal",
+        "telegram": "Telegram",
+        "linkedin": "LinkedIn",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "x": "X",
+        "discord": "Discord",
+        "skype": "Skype",
+        "github": "GitHub",
+        "website": "Website"
+      }
+    },
+    "profile": {
+      "title": "Profile",
+      "name": "Name",
+      "company": "Company",
+      "lang": "Language of letters",
+      "preferred": "Answer me by",
+      "preferred_email": "email",
+      "preferred_telegram": "Telegram",
+      "save": "Save",
+      "saved": "Saved"
+    },
+    "access": {
+      "title": "Sign-in",
+      "email": "Email",
+      "telegram": "Telegram",
+      "missing": "not linked",
+      "change_email": "Change",
+      "add_email": "Add an email",
+      "link_telegram": "Link Telegram",
+      "unlink": "Unlink",
+      "linked": "Linked",
+      "cancel": "Cancel"
+    },
+    "sessions": {
+      "title": "Devices",
+      "current": "this device",
+      "seen": "last seen {date}",
+      "end": "Sign out",
+      "end_all": "Sign out on all other devices"
+    },
+    "eggs": {
+      "title": "Achievements",
+      "open": "Show all",
+      "heading": "Easter eggs"
+    },
+    "orders": {
+      "title": "For orders",
+      "found": "Achievement unlocked",
+      "rarity": "{percent} of clients have it",
+      "locked": "Not yet",
+      "earned": "Earned {date}",
+      "first_order": {
+        "name": "First order",
+        "text": "The first order is done"
+      },
+      "second_order": {
+        "name": "Welcome back",
+        "text": "A second order is done"
+      },
+      "big_order": {
+        "name": "Big project",
+        "text": "An order of {amount} or more"
+      },
+      "all_orders": {
+        "name": "Partner",
+        "text": "Every achievement for orders"
+      }
+    },
+    "delete": {
+      "title": "Delete the account",
+      "text": "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period — see the privacy policy; to have them deleted earlier, write to me.",
+      "confirm": "Yes, delete my account",
+      "button": "Delete the account"
     }
   },
   "map": {

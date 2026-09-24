@@ -1,6 +1,7 @@
 ---
 // The left rail of wide screens: the socials as round icons, a thin line with a dot that follows the
-// scroll (scripts/home.ts) and, once somebody finds an easter egg, the «eggs 2/8» counter.
+// scroll (scripts/home.ts) and, once somebody finds an easter egg, the «eggs 2/8» counter that opens
+// the panel of achievements.
 import type { SitePageData } from '../lib/page-data.ts';
 import Icon from './Icon.astro';
 
@@ -33,7 +34,14 @@ const external = (url: string) => url.startsWith('https://');
   <i class="rail-line" aria-hidden="true">
     <b data-rail-dot></b>
   </i>
-  <span class="rail-eggs mono" aria-hidden="true" data-eggs-caption></span>
+  {/* Shown by scripts/home.ts once an egg is found; opens the panel of achievements. */}
+  <button
+    class="rail-eggs mono"
+    type="button"
+    aria-haspopup="dialog"
+    data-eggs-caption
+    hidden
+  ></button>
 </aside>
 
 <style>
@@ -95,9 +103,23 @@ const external = (url: string) => url.startsWith('https://');
 
   .rail-eggs {
     writing-mode: vertical-rl;
+    padding: 0.4rem 0.2rem;
+    border: 0;
+    border-radius: var(--radius-s);
+    background: none;
     font-size: 0.62rem;
     letter-spacing: 0.14em;
     color: var(--muted);
+    cursor: pointer;
+    transition: color var(--dur-1);
+  }
+
+  .rail-eggs:hover {
+    color: var(--accent);
+  }
+
+  .rail-eggs[hidden] {
+    display: none;
   }
 
   @media (max-width: 900px) {

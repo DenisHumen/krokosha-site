@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
+	"github.com/DenisHumen/krokosha-site/api/internal/config"
+	"github.com/DenisHumen/krokosha-site/api/internal/loyalty"
 	"github.com/DenisHumen/krokosha-site/api/internal/outbox"
 )
 
@@ -33,6 +35,8 @@ const (
 	TaskClientMessage = "lead.client_message"
 	// TaskUndelivered: a mail server returned a letter to the client — the staff must know.
 	TaskUndelivered = "lead.undelivered"
+	// TaskSiteReply: an answer waits in the client's personal account — the client is told.
+	TaskSiteReply = "lead.site_reply"
 )
 
 // Lead is a stored request.
@@ -48,6 +52,13 @@ type Lead struct {
 	IPPrefix string
 	// Anonymized: the storage period ran out, the person and the conversation are gone.
 	Anonymized bool
+	// Discount is what the request got when it came (loyalty.Decide), or what the owner set since.
+	Discount loyalty.Offer
+	// Amount is what the order came to, entered by the owner; HasAmount is false until then.
+	Amount    float64
+	HasAmount bool
+
+	personalOnce bool // the discount given is the account's personal one «once»: Create spends it
 }
 
 // Number is how a request is called everywhere: #K-0042.
@@ -70,6 +81,10 @@ type Store struct {
 	db    *sql.DB
 	now   func() time.Time
 	files *Files // where attachments live; nil — this installation keeps none
+	// rules of discounts (content/site.yaml → loyalty); location is the owner's time zone, the one
+	// the last day of a personal discount is counted in.
+	rules    func() config.Loyalty
+	location *time.Location
 
 	// Listeners: the Telegram bot keeps its cards in step with what happens here.
 	hooks struct {
@@ -84,11 +99,22 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 	if now == nil {
 		now = time.Now
 	}
-	return &Store{db: db, now: now}
+	return &Store{db: db, now: now, rules: func() config.Loyalty { return config.Loyalty{} }, location: time.UTC}
 }
 
 // UseFiles tells the store where attachments are kept, so that deleting a request deletes them too.
 func (s *Store) UseFiles(files *Files) { s.files = files }
+
+// UseLoyalty gives the store the rules of discounts; without them no request gets one.
+func (s *Store) UseLoyalty(rules func() config.Loyalty, location *time.Location) {
+	s.rules = rules
+	if location != nil {
+		s.location = location
+	}
+}
+
+// Rules returns the rules of discounts in force.
+func (s *Store) Rules() config.Loyalty { return s.rules() }
 
 // OnChange registers a listener called after anything about a request changed — it was taken,
 // answered, moved to another status — wherever that was done: the admin area or the bot. The
@@ -127,31 +153,64 @@ func (s *Store) erasing(ctx context.Context, leadID int64) {
 // in one transaction (brief B10.2): either everything is there, or the visitor is told to try
 // again. Spam is stored too, silently: nobody is notified.
 func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, session analytics.SessionSummary, ipPrefix string) (*Lead, error) {
+	lead, err := s.create(ctx, sub, verdict, session, ipPrefix)
+	// Two requests at the same moment with one receipt of the eggs: the second learns the receipt is
+	// spent only when its row meets the first one's in the unique key. It goes without that discount.
+	if err != nil && sub.EggsReceipt != "" && strings.Contains(err.Error(), "uq_leads_eggs") {
+		sub.EggsReceipt = ""
+		lead, err = s.create(ctx, sub, verdict, session, ipPrefix)
+	}
+	return lead, err
+}
+
+func (s *Store) create(ctx context.Context, sub Submission, verdict Verdict, session analytics.SessionSummary, ipPrefix string) (*Lead, error) {
 	token := make([]byte, 16)
 	if _, err := rand.Read(token); err != nil {
 		return nil, err
+	}
+	if sub.Kind == "" {
+		sub.Kind = KindRequest
 	}
 	now := s.now().UTC()
 	lead := &Lead{
 		PublicToken: base64.RawURLEncoding.EncodeToString(token), Status: StatusNew, CreatedAt: now,
 		Submission: sub, Verdict: verdict, Session: session, IPPrefix: ipPrefix,
 	}
-	if verdict.IsSpam() {
+	if verdict.IsSpam() && !sub.Trusted {
 		lead.Status = StatusSpam
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	// Read committed: the price of a request of an account is decided after its row is locked, on the
+	// requests committed by then (historyOf).
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Whose it is: the account the visitor is signed in to, or else the account that proved this
+	// very address with a code. What a robot sent belongs to nobody.
+	if lead.Status != StatusSpam && lead.ClientID == 0 && sub.ContactMethod == MethodEmail {
+		if lead.ClientID, err = accountOfEmail(ctx, tx, sub.ContactValue); err != nil {
+			return nil, err
+		}
+	}
+	var eggs []byte // the receipt of the eggs, when the discount it claims is the one given
+	if lead.Kind == KindRequest && lead.Status != StatusSpam {
+		if lead.Discount, eggs, err = s.price(ctx, tx, lead); err != nil {
+			return nil, err
+		}
+	}
+
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO leads (public_token, created_at, updated_at, status, name, contact_method, contact_value, direction, description,
+		INSERT INTO leads (public_token, created_at, updated_at, status, kind, client_id, parent_id, subject, discount_percent,
+			discount_reason, discount_detail, eggs_receipt, eggs_span_s, name, contact_method, contact_value, direction, description,
 			budget, timeline, lang, consent_at, spam_score, spam_reasons, session_id, source, referrer_host, utm_source, utm_medium,
 			utm_campaign, country, device, browser, os, ip_prefix, sections_seen, time_on_site_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		token, now, now, lead.Status, sub.Name, sub.ContactMethod, sub.ContactValue, sub.Direction, sub.Description,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		token, now, now, lead.Status, lead.Kind, nullID(lead.ClientID), nullID(lead.ParentID), null(cut(lead.Subject, 150)), lead.Discount.Percent,
+		null(lead.Discount.Reason), null(cut(lead.Discount.Detail, 100)), nullBytes(eggs), nullSpan(lead.EggsSpan, eggs != nil),
+		sub.Name, sub.ContactMethod, sub.ContactValue, sub.Direction, sub.Description,
 		null(sub.Budget), null(sub.Timeline), sub.Lang, now, verdict.Score, null(cut(strings.Join(verdict.Reasons, "; "), 255)),
 		nullBytes(session.SessionID), null(session.Source), null(session.ReferrerHost), null(session.UTMSource), null(session.UTMMedium),
 		null(session.UTMCampaign), null(session.Country), null(session.Device), null(session.Browser), null(session.OS), ipPrefix,
@@ -162,9 +221,16 @@ func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, ses
 	if lead.ID, err = result.LastInsertId(); err != nil {
 		return nil, err
 	}
+	if err := s.spend(ctx, tx, lead); err != nil {
+		return nil, err
+	}
 
-	message, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', 'form', ?)`,
-		lead.ID, now, sub.Description)
+	channel := "form"
+	if lead.Kind == KindInquiry {
+		channel = ChannelSite
+	}
+	message, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, body) VALUES (?, ?, 'in', ?, ?)`,
+		lead.ID, now, channel, sub.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +247,9 @@ func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, ses
 		}
 	}
 	details := "форма на сайте"
+	if lead.Kind == KindInquiry {
+		details = "обращение из личного кабинета"
+	}
 	if lead.Status == StatusSpam {
 		details = "похоже на спам: " + strings.Join(verdict.Reasons, "; ")
 		if sub.FilesDropped > 0 {
@@ -199,7 +268,8 @@ func (s *Store) Create(ctx context.Context, sub Submission, verdict Verdict, ses
 			{Channel: outbox.ChannelEmail, Kind: TaskNotify, LeadID: lead.ID, DedupeKey: fmt.Sprintf("lead:%d:notify:email", lead.ID), Payload: payload},
 			{Channel: outbox.ChannelTelegram, Kind: TaskNotify, LeadID: lead.ID, DedupeKey: fmt.Sprintf("lead:%d:notify:telegram", lead.ID), Payload: payload},
 		}
-		if sub.ContactMethod == MethodEmail {
+		// An inquiry is written in the account, where it shows at once: no confirmation by mail.
+		if sub.ContactMethod == MethodEmail && lead.Kind == KindRequest {
 			tasks = append(tasks, outbox.NewTask{Channel: outbox.ChannelEmail, Kind: TaskAutoReply, LeadID: lead.ID,
 				DedupeKey: fmt.Sprintf("lead:%d:autoreply", lead.ID), Payload: payload})
 		}
@@ -217,12 +287,16 @@ func (s *Store) Get(ctx context.Context, id int64) (*Lead, error) {
 	lead := &Lead{ID: id}
 	var token, session []byte
 	var budget, timeline, reasons, source, referrer, utmSource, utmMedium, utmCampaign, country, device, browser, os, sections sql.NullString
-	var timeOnSite sql.NullInt64
+	var subject, discountReason, discountDetail sql.NullString
+	var timeOnSite, clientID, parentID, eggsSpan sql.NullInt64
+	var amount sql.NullFloat64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT public_token, status, created_at, name, contact_method, contact_value, direction, description, budget, timeline, lang,
+		SELECT public_token, status, kind, client_id, parent_id, subject, discount_percent, discount_reason, discount_detail, amount,
+		       eggs_span_s, created_at, name, contact_method, contact_value, direction, description, budget, timeline, lang,
 		       spam_score, spam_reasons, session_id, source, referrer_host, utm_source, utm_medium, utm_campaign, country, device,
 		       browser, os, ip_prefix, sections_seen, time_on_site_ms, anonymized_at IS NOT NULL
-		FROM leads WHERE id = ?`, id).Scan(&token, &lead.Status, &lead.CreatedAt, &lead.Name, &lead.ContactMethod, &lead.ContactValue,
+		FROM leads WHERE id = ?`, id).Scan(&token, &lead.Status, &lead.Kind, &clientID, &parentID, &subject, &lead.Discount.Percent,
+		&discountReason, &discountDetail, &amount, &eggsSpan, &lead.CreatedAt, &lead.Name, &lead.ContactMethod, &lead.ContactValue,
 		&lead.Direction, &lead.Description, &budget, &timeline, &lead.Lang, &lead.Verdict.Score, &reasons, &session, &source, &referrer,
 		&utmSource, &utmMedium, &utmCampaign, &country, &device, &browser, &os, &lead.IPPrefix, &sections, &timeOnSite, &lead.Anonymized)
 	if err != nil {
@@ -230,6 +304,10 @@ func (s *Store) Get(ctx context.Context, id int64) (*Lead, error) {
 	}
 	lead.PublicToken = base64.RawURLEncoding.EncodeToString(token)
 	lead.Budget, lead.Timeline = budget.String, timeline.String
+	lead.ClientID, lead.ParentID, lead.Subject = clientID.Int64, parentID.Int64, subject.String
+	lead.Discount.Reason, lead.Discount.Detail = discountReason.String, discountDetail.String
+	lead.Amount, lead.HasAmount = amount.Float64, amount.Valid
+	lead.EggsSpan = time.Duration(eggsSpan.Int64) * time.Second
 	if reasons.String != "" {
 		lead.Verdict.Reasons = strings.Split(reasons.String, "; ")
 	}
@@ -267,6 +345,12 @@ func nullBytes(data []byte) any {
 }
 
 func nullInt(value int64, valid bool) sql.NullInt64 { return sql.NullInt64{Int64: value, Valid: valid} }
+
+func nullID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: id > 0} }
+
+func nullSpan(span time.Duration, valid bool) sql.NullInt64 {
+	return sql.NullInt64{Int64: int64(span / time.Second), Valid: valid}
+}
 
 // cut shortens a text to fit a column, on a rune boundary.
 func cut(text string, limit int) string {

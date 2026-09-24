@@ -14,6 +14,7 @@ export const ICONS: Record<string, string> = {
   devops: 'M8 3a5 5 0 0 0 0 10h8a5 5 0 0 1 0 10H8m0-20 3-3M8 3l3 3m5 17-3-3m3 3-3 3',
   os: 'M4 5h16v11H4zM2 19h20M9 16v3m6-3v3',
   code: 'm8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7.5 8.5a7.5 7.5 0 0 1 15 0',
 };
 
 /** The path of an icon; unknown ids get a neutral one instead of an empty square. */

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
+	"github.com/DenisHumen/krokosha-site/api/internal/clients"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
 	"github.com/DenisHumen/krokosha-site/api/internal/leads"
 )
@@ -49,7 +50,9 @@ type Options struct {
 	Audit func(ctx context.Context, actor, action, subject, details string)
 	// SiteURL is the public address of the site, for the greeting of strangers.
 	SiteURL string
-	Now     func() time.Time
+	// Logins hands out the codes of the personal account (clients.Service); nil — the site has none.
+	Logins Logins
+	Now    func() time.Time
 }
 
 // Bot decides what to do with every update.
@@ -117,6 +120,11 @@ func (b *Bot) message(ctx context.Context, message *Message) {
 		return
 	}
 	command, argument := splitCommand(message.Text)
+	// Signing in to the personal account is for everybody, the staff included.
+	if command == "/start" && strings.HasPrefix(argument, clients.TelegramPrefix) && b.opts.Logins != nil {
+		b.signIn(ctx, message, argument)
+		return
+	}
 	member, err := b.opts.Access.Member(ctx, message.From.ID)
 	switch {
 	case errors.Is(err, ErrNoAccess):

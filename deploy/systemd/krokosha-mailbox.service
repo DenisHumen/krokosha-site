@@ -1,0 +1,21 @@
+[Unit]
+Description=krokosha site: apply the mailbox requests of the admin area
+Documentation=https://github.com/DenisHumen/krokosha-site/blob/main/deploy/README.md
+ConditionPathExists=/etc/krokosha/env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/krokosha-mailbox apply
+# Root, as it writes the mail server's file of mailboxes; nothing else is needed.
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077

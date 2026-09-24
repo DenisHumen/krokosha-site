@@ -661,6 +661,38 @@ check "mail programs find their settings on the site" grep -q "<hostname>mail.$D
 check "a second mailbox" bash -c "printf '%s\n' 'another long password' | krokosha-mailbox add Second@$DOMAIN --password-stdin 2>/dev/null && krokosha-mailbox list | grep -qx 'second@$DOMAIN'"
 check "…a short password is refused" bash -c "! printf 'short\n' | krokosha-mailbox add third@$DOMAIN --password-stdin 2>/dev/null"
 check "…and the site's own mailbox cannot be removed" bash -c "! krokosha-mailbox del leads@$DOMAIN 2>/dev/null"
+check "…nor one whose name only looks like it" bash -c "! krokosha-mailbox del l.ads@$DOMAIN 2>/dev/null && krokosha-mailbox list | grep -qx 'leads@$DOMAIN'"
+# The «Почта» screen of the admin area: the API drops a request into its own directory, and the root
+# helper (krokosha-mailbox.path → krokosha-mailbox apply) checks it as a stranger's and applies it.
+mail_request() { # mail_request ACTION ADDRESS [HASH] — written as the API writes it, by the site user
+  # shellcheck disable=SC2016 # the dollars are the site user's shell's
+  runuser -u krokosha -- sh -c 'printf "%s\n%s\n%s\n" "$1" "$2" "$3" >"$4/.$5.tmp" && mv "$4/.$5.tmp" "$4/$5.req"' \
+    _ "$1" "$2" "${3:-}" /var/lib/krokosha/requests/mail "$(date +%s%N)-$(openssl rand -hex 4)"
+}
+requests_taken() { ! compgen -G '/var/lib/krokosha/requests/mail/*.req' >/dev/null; }
+staff_known() { docker exec krokosha-mail-1 doveadm user "staff@$DOMAIN" >/dev/null 2>&1 && docker exec krokosha-mail-1 postmap -q "staff@$DOMAIN" texthash:/etc/postfix/vmailbox >/dev/null 2>&1; }
+staff_gone() { requests_taken && ! krokosha-mailbox list | grep -qx "staff@$DOMAIN"; }
+STAFF_PASSWORD='ci: the password of a colleague'
+check "the service writes requests, and can only read what the helper answers" bash -c "[[ \$(stat -c '%U %a' /var/lib/krokosha/requests/mail) == 'krokosha 750' && \$(stat -c '%U:%G %a' /var/lib/krokosha/mail) == 'root:krokosha 750' ]]"
+mail_request add "staff@$DOMAIN" "{SHA512-CRYPT}$(openssl passwd -6 "$STAFF_PASSWORD")"
+check "a mailbox asked for by the admin area is taken by the root helper" wait_for 30 requests_taken
+check "…which makes it" bash -c "krokosha-mailbox list | grep -qx 'staff@$DOMAIN' && tail -n 1 /var/lib/krokosha/mail/log | grep -qP '\\tadd\\tstaff@$DOMAIN\\tok\\t'"
+check "…lists it for the API" runuser -u krokosha -- grep -qx "staff@$DOMAIN" /var/lib/krokosha/mail/mailboxes
+check "…and the mail server learns about it" wait_for 120 staff_known
+check "…so the colleague can sign in" mailcheck login "staff@$DOMAIN" "$STAFF_PASSWORD"
+# An address is no pattern: the dot of «l.ads@» must not take the line of «leads@», nor «s.cond@» that of «second@».
+second_line=$(grep "^second@$DOMAIN|" /srv/krokosha/mail/config/postfix-accounts.cf)
+mail_request del "l.ads@$DOMAIN"
+mail_request passwd "s.cond@$DOMAIN" "{SHA512-CRYPT}$(openssl passwd -6 'ci: some other long password')"
+check "…a request about an address that only looks like another one" wait_for 30 requests_taken
+check "…changes nobody's mailbox" bash -c "krokosha-mailbox list | grep -qx 'leads@$DOMAIN' && grep -qxF '$second_line' /srv/krokosha/mail/config/postfix-accounts.cf && [[ \$(tail -n 2 /var/lib/krokosha/mail/log | grep -c 'такого ящика нет') == 2 ]]"
+# The helper runs as root: a link in place of a request must not be read, or the first line of
+# /etc/shadow would come back to the service in the helper's log.
+runuser -u krokosha -- ln -s /etc/shadow "/var/lib/krokosha/requests/mail/$(date +%s%N)-$(openssl rand -hex 4).req"
+check "…a link in place of a request is dropped" wait_for 30 requests_taken
+check "…unread" bash -c "! grep -q 'root:' /var/lib/krokosha/mail/log"
+mail_request del "staff@$DOMAIN"
+check "…and a mailbox asked to go goes" wait_for 30 staff_gone
 check "the mail ports are open in the firewall" bash -c "ufw status | grep -qE '^25/tcp +ALLOW' && ufw status | grep -qE '^993/tcp +ALLOW'"
 
 echo "Firewall"

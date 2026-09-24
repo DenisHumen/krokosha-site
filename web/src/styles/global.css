@@ -253,6 +253,7 @@ html:not(.js) .needs-js {
 /* «Thank you» page: the API switches its parts by replacing the %%…_CLASS%% marks. */
 .thanks-numbered,
 .thanks-telegram,
+.thanks-discount,
 .thanks-generic.is-hidden {
   display: none;
 }
@@ -261,6 +262,7 @@ html:not(.js) .needs-js {
   display: inline;
 }
 
-.thanks-telegram.is-shown {
+.thanks-telegram.is-shown,
+.thanks-discount.is-shown {
   display: block;
 }

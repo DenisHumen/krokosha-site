@@ -1,0 +1,67 @@
+{{define "content"}}
+  {{$d := .Data}}
+  <div class="page-head">
+    <h1>Ачивки</h1>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <h2 class="card-title">Проверка уведомлений</h2>
+      <div class="card-body">
+        <p class="muted">Баннер сайта — тот же, что видят посетители и клиенты: в правом нижнем углу, со своим звуком. Обычная ачивка звучит «динь», редкая (меньше 10&nbsp;%) — золотом и перезвоном, последняя в наборе — фанфарой. Доли — настоящие, если игроков и клиентов уже достаточно, иначе примерные.</p>
+        <div class="toast-bench">
+          {{range $d.Samples}}
+            <button class="button button-ghost toast-button" type="button" data-toast="{{.Toast}}">
+              <span>{{.Label}}</span>
+              <span class="cell-sub">{{.Hint}}</span>
+            </button>
+          {{end}}
+        </div>
+        <label class="choice"><input type="checkbox" id="toast-sound" checked /> со звуком</label>
+        <p class="muted">Браузер разрешает звук только после действия на странице — первое нажатие уже им считается.</p>
+      </div>
+    </section>
+
+    <div class="mail-layout">
+      <section class="card">
+        <h2 class="card-title">Пасхалки · редкость</h2>
+        <div class="card-body">
+          {{if $d.Eggs}}
+            <p class="muted">Доля игроков — браузеров, нашедших хотя бы одну пасхалку, — у которых есть каждая, как в глобальной статистике Steam. Игроков: {{$d.Players}}. Пересчёт каждые 5 минут{{if not $d.Updated.IsZero}}, последний — {{time $d.Updated}}{{end}}.</p>
+            <ul class="rows">
+              {{range $d.Eggs}}
+                <li class="row">
+                  <span class="row-share">{{printf "%.1f%%" .Percent}}</span>
+                  <span class="row-name">{{eggName .ID}}</span>
+                  {{bar .Percent (or (and (lt .Percent 10.0) "pink") "accent")}}
+                  <span class="row-value">{{.Found}}</span>
+                </li>
+              {{end}}
+            </ul>
+            <p class="muted">Меньше 10 % — редкая: на сайте она золотая. Сайт показывает доли, когда игроков не меньше десяти.</p>
+          {{else}}
+            <p class="muted">Пока никто не нашёл ни одной пасхалки.</p>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">За заказы · редкость</h2>
+        <div class="card-body">
+          <p class="muted">Ачивки личного кабинета: первый выполненный заказ, второй, заказ от {{money $d.BigOrder}} (порог — <span class="mono">loyalty.big_order</span> в content/site.yaml) и золотая за все три. Скидки не дают — скидки дают уровни. Кабинетов: {{$d.Accounts}}.</p>
+          <ul class="rows">
+            {{range $d.Orders}}
+              <li class="row">
+                <span class="row-share">{{printf "%.1f%%" .Percent}}</span>
+                <span class="row-name">{{orderName .ID}}</span>
+                {{bar .Percent (or (and (lt .Percent 10.0) "pink") "accent")}}
+                <span class="row-value">{{.Count}}</span>
+              </li>
+            {{end}}
+          </ul>
+          <p class="muted">Клиент видит баннер, когда в следующий раз открывает кабинет. Сайт показывает доли, когда кабинетов не меньше десяти.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+{{end}}

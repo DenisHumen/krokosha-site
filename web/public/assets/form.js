@@ -7,7 +7,10 @@
  *   - errors next to the fields, in the language of the page;
  *   - a proof of work against spam — the browser solves a small puzzle from /api/leads/challenge
  *     while the form is being filled in (no cookies, no third parties, nothing to track);
- *   - sending without leaving the page.
+ *   - sending without leaving the page;
+ *   - the discount the request is going to get (/api/leads/offer): the first request's, the easter eggs'
+ *     (the receipt of every egg that this browser keeps, sent in the hidden field «eggs»), or — for a
+ *     signed-in client — the level's or a personal one.
  */
 (function () {
   'use strict';
@@ -178,6 +181,65 @@
   form.addEventListener('focusin', startProof);
   form.addEventListener('pointerdown', startProof);
 
+  // --- the discount -----------------------------------------------------------------------------
+
+  var discount = texts.discount; // null when content/site.yaml switches discounts off
+  var offered = false;
+  var signedIn = false;
+
+  // The receipt of every easter egg (web/src/scripts/achievements.ts keeps it), or ''.
+  function eggsReceipt() {
+    try {
+      var receipts = JSON.parse(localStorage.getItem('krokosha:receipts') || '{}');
+      return typeof receipts.all === 'string' ? receipts.all : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function reason(offer) {
+    if (!discount) return '';
+    if (offer.reason === 'tier') {
+      var name = (discount.tiers || {})[offer.detail] || offer.detail || '';
+      return (discount.tier || '').replace('{tier}', name);
+    }
+    return discount[offer.reason] || '';
+  }
+
+  function startOffer() {
+    if (offered || !discount) return;
+    offered = true;
+    fetch('/api/leads/offer', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eggs: eggsReceipt() }),
+      credentials: 'same-origin',
+    })
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (offer) {
+        if (!offer || !offer.ok) return;
+        signedIn = offer.signed_in === true;
+        var note = form.querySelector('[data-signed-in]');
+        if (note && signedIn) {
+          note.textContent = texts.signed_in || '';
+          note.hidden = false;
+        }
+        var block = form.querySelector('[data-offer]');
+        if (!block || !offer.enabled || !(offer.percent > 0)) return;
+        block.querySelector('[data-offer-percent]').textContent = '−' + offer.percent + '%';
+        block.querySelector('[data-offer-reason]').textContent = reason(offer);
+        block.hidden = false;
+      })
+      .catch(function () {
+        offered = false; // asked again the next time the form is touched
+      });
+  }
+
+  form.addEventListener('focusin', startOffer);
+  form.addEventListener('pointerdown', startOffer);
+
   // --- sending ----------------------------------------------------------------------------------
 
   function message(id) {
@@ -199,6 +261,23 @@
       telegram.querySelector('a').href = result.telegram_url;
       telegram.hidden = false;
     }
+    var fixed = block.querySelector('[data-field="discount"]');
+    if (fixed && discount && result.discount && result.discount.percent > 0) {
+      fixed.textContent = (discount.fixed || '').replace('{percent}', result.discount.percent);
+      fixed.hidden = false;
+      if (result.discount.reason === 'eggs') {
+        try {
+          localStorage.setItem('krokosha:eggs-spent', JSON.stringify(result.id));
+        } catch {
+          // The panel of achievements learns it from the site the next time it opens.
+        }
+      }
+    }
+    var account = block.querySelector('[data-field="account"]');
+    if (account && signedIn) {
+      account.querySelector('a').href = (texts.account || '/account/') + '#' + result.id;
+      account.hidden = false;
+    }
     form.hidden = true;
     message('form-success');
     document.dispatchEvent(new CustomEvent('krokosha:lead', { detail: { id: result.id } }));
@@ -218,6 +297,7 @@
     (proof || Promise.resolve(''))
       .then(function (payload) {
         form.elements.altcha.value = payload || '';
+        if (form.elements.eggs) form.elements.eggs.value = eggsReceipt();
         return fetch(form.action, {
           method: 'POST',
           headers: { Accept: 'application/json' },

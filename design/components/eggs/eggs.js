@@ -11,15 +11,23 @@ const ALL = ['konami', 'sudo', 'croc', 'cat', 'reboot', 'console', 'croc5', 'los
 export const TOTAL = ALL.length;
 let years = 9; // set by initEggs: the BIOS screen of the avatar counts the real years
 let achievements = true; // flag achievements: the banner with its sound
+let rarity = () => null; // the site's: how rare an achievement is — { share, line } or null (not counted yet)
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const css = (el, s) => { el.style.cssText += ';' + s; return el; };
 const mono = "font:12px/1.5 var(--font-mono, 'Fira Code', ui-monospace, monospace)"; // the site's own family name
 
-/** What found() needs where initEggs() does not run (the 404 page): the flags and the years. */
-export function configure({ flags = {}, experience } = {}) {
+/**
+ * What found() needs where initEggs() does not run (the 404 page): the flags and the years; and, from the site,
+ * how rare each achievement is: rarity(id) → { share: 3.4, line: '3.4% of players have it' } or null.
+ * @param {{ flags?: Record<string, boolean | undefined>, experience?: number,
+ *   rarity?: (id: string) => ({ share: number, line: string } | null) }} [options]
+ */
+export function configure({ flags = {}, experience, rarity: shares } = {}) {
   achievements = flags.enabled !== false && flags.achievements !== false;
   if (experience) years = experience;
+  if (shares) rarity = shares;
 }
+export const EGGS = ALL;
 export function foundList() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
 export function found(id, texts = {}) {
   const list = foundList(); if (list.includes(id)) return list.length;
@@ -28,8 +36,12 @@ export function found(id, texts = {}) {
   document.dispatchEvent(new CustomEvent('krokosha:egg', { detail: id })); // statistics (contract §4)
   if (achievements) {
     const names = texts.achievements || {}, label = texts.found || 'Пасхалка найдена';
-    unlock({ id, name: id, text: label, ...names[id], found: label, count: list.length, total: ALL.length });
-    if (list.length >= ALL.length) unlock({ id: 'all', name: 'root@krokosha', text: '', ...names.all, found: label, rare: true });
+    // Steam: an achievement fewer than 10 % of players have is rare — gold, with rays and a sound of its own.
+    // The last egg brings every egg's: the fanfare.
+    const share = rarity(id), last = rarity('all');
+    unlock({ id, name: id, text: label, ...names[id], found: label, count: list.length, total: ALL.length,
+      rare: Boolean(share && share.share < 10), rarity: share ? share.line : '' });
+    if (list.length >= ALL.length) unlock({ id: 'all', name: 'root@krokosha', text: '', ...names.all, found: label, rare: true, rarity: last ? last.line : '', sound: 'epic' });
   }
   return list.length;
 }

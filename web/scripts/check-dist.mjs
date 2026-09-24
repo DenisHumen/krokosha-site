@@ -42,14 +42,14 @@ const attr = (html, pattern) => pattern.exec(html)?.[1] ?? null;
 const visibleText = (html) =>
   html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ');
 
-function checkPage(file, lang, { indexable }) {
+function checkPage(file, lang, { indexable, headings = 1 }) {
   const html = read(file);
   if (html === null) return null;
 
   if (attr(html, /<html[^>]*\blang="([^"]+)"/) !== lang)
     fail(file, `<html lang> must be "${lang}"`);
-  if (count(html, /<h1[\s>]/g) !== 1)
-    fail(file, `expected exactly one <h1>, found ${count(html, /<h1[\s>]/g)}`);
+  if (count(html, /<h1[\s>]/g) !== headings)
+    fail(file, `expected ${headings} <h1>, found ${count(html, /<h1[\s>]/g)}`);
   if (!/<title>[^<]{10,}<\/title>/.test(html)) fail(file, '<title> is missing or too short');
   if (!/<meta name="description" content="[^"]{20,}"/.test(html))
     fail(file, 'meta description is missing or too short');
@@ -189,6 +189,8 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
       '%%GENERIC_CLASS%%',
       '%%NUMBERED_CLASS%%',
       '%%TELEGRAM_CLASS%%',
+      '%%DISCOUNT_CLASS%%',
+      '%%DISCOUNT%%',
     ]) {
       if (!thanks.includes(mark)) fail(`${prefix}thanks/index.html`, `the mark ${mark} is missing`);
     }
@@ -197,6 +199,10 @@ for (const [lang, prefix] of Object.entries(LOCALES)) {
     const html = checkPage(`${prefix}${page}/index.html`, lang, { indexable: false });
     if (html) checkInternalLinks(`${prefix}${page}/index.html`, html);
   }
+  // The personal account is a service page too: noindex, its own CSP, never in the sitemap. It has
+  // a heading per view — signed out, signed in — and shows one view at a time.
+  const account = checkPage(`${prefix}account/index.html`, lang, { indexable: false, headings: 2 });
+  if (account) checkInternalLinks(`${prefix}account/index.html`, account);
   const privacy = read(`${prefix}privacy/index.html`);
   if (privacy) {
     // A draft policy is noindex; a published one must be indexable.
@@ -265,7 +271,8 @@ if (sitemap) {
   }
   for (const loc of locs) {
     const path = new URL(loc).pathname;
-    if (/\/(404|play|api)\//.test(path)) fail('sitemap.xml', `service page listed: ${path}`);
+    if (/\/(404|play|api|account)\//.test(path))
+      fail('sitemap.xml', `service page listed: ${path}`);
     if (!existsSync(join(dist, path, 'index.html')))
       fail('sitemap.xml', `listed page does not exist: ${path}`);
   }

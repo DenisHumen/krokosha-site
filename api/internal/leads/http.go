@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"html"
 	"log/slog"
@@ -16,12 +17,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DenisHumen/krokosha-site/api/internal/achievements"
 	"github.com/DenisHumen/krokosha-site/api/internal/analytics"
 	"github.com/DenisHumen/krokosha-site/api/internal/cache"
 	"github.com/DenisHumen/krokosha-site/api/internal/config"
+	"github.com/DenisHumen/krokosha-site/api/internal/loyalty"
 	"github.com/DenisHumen/krokosha-site/api/internal/server"
 )
 
@@ -35,6 +39,16 @@ const (
 type Sessions interface {
 	CurrentSession(ctx context.Context, ip net.IP, userAgent string) (analytics.SessionSummary, error)
 }
+
+// Accounts tells whose personal account the browser is signed in to (clients.Handler): the
+// request joins the account, and gets the account's discount. 0 — nobody is signed in.
+type Accounts interface {
+	Account(r *http.Request) (clientID int64, everyEgg bool)
+}
+
+type noAccounts struct{}
+
+func (noAccounts) Account(*http.Request) (int64, bool) { return 0, false }
 
 // Options configure the public side of the requests.
 type Options struct {
@@ -55,7 +69,9 @@ type Options struct {
 	TelegramURL func(lead *Lead) string
 	// OnCreated is called after a request was stored: the outbox worker is told to hurry.
 	OnCreated func(lead *Lead)
-	Now       func() time.Time
+	// Accounts: whose personal account sends the form; nil — the site has no accounts.
+	Accounts Accounts
+	Now      func() time.Time
 }
 
 // Handler is the public API of the contact form.
@@ -74,12 +90,16 @@ func NewHandler(opts Options) *Handler {
 	if opts.OnCreated == nil {
 		opts.OnCreated = func(*Lead) {}
 	}
+	if opts.Accounts == nil {
+		opts.Accounts = noAccounts{}
+	}
 	return &Handler{opts: opts}
 }
 
 // Register adds the routes.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/leads/challenge", h.challenge)
+	mux.HandleFunc("POST /api/leads/offer", h.offer)
 	mux.HandleFunc("POST /api/leads", h.submit)
 	mux.HandleFunc("GET /api/leads/thanks", h.thanks)
 	mux.HandleFunc("GET /api/leads/telegram", h.telegram)
@@ -208,6 +228,15 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sub, fieldErrors := Parse(r.PostFormValue, form)
+	// The receipt of every easter egg claims the one-time discount; a receipt that does not verify
+	// claims nothing, and nobody is told why.
+	if receipt, err := achievements.Verify(h.opts.Secret, strings.TrimSpace(r.PostFormValue("eggs"))); err == nil && receipt.ID == achievements.All {
+		sub.EggsReceipt, sub.EggsSpan = strings.TrimSpace(r.PostFormValue("eggs")), receipt.Span
+	}
+	// A signed-in client: the request joins the account.
+	if clientID, everyEgg := h.opts.Accounts.Account(r); clientID > 0 {
+		sub.ClientID, sub.Trusted, sub.EggsByAccount = clientID, true, everyEgg
+	}
 	files, fileErr := incomingFiles(r, acceptsFiles)
 	if fileErr != nil {
 		if fieldErrors == nil {
@@ -285,11 +314,79 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		if telegram != "" {
 			body["telegram_url"] = telegram
 		}
+		if discount, ok := shownDiscount(lead); ok {
+			body["discount"] = discount
+		}
 		server.WriteJSON(w, http.StatusCreated, body)
 		return
 	}
 	// Post, redirect, get: reloading the «thank you» page must not send the form again.
 	http.Redirect(w, r, "/api/leads/thanks?t="+url.QueryEscape(lead.PublicToken), http.StatusSeeOther)
+}
+
+// shownDiscount is what the sender is told of the discount their request got. A signed-in client
+// learns everything; somebody else only what their own request proves — the first request, the
+// eggs — and not a level or a personal discount of whoever's address they may have typed
+// (loyalty.Public). Spam learns nothing.
+func shownDiscount(lead *Lead) (map[string]any, bool) {
+	offer := lead.Discount
+	// Trusted is a sign-in; an account found by the typed address is not one.
+	if lead.Status == StatusSpam || offer.Percent <= 0 || (!lead.Trusted && !loyalty.Public(offer.Reason)) {
+		return nil, false
+	}
+	shown := map[string]any{"percent": offer.Percent, "reason": offer.Reason}
+	if offer.Reason == loyalty.ReasonTier || offer.Reason == loyalty.ReasonPersonal || offer.Reason == loyalty.ReasonManual {
+		shown["detail"] = offer.Detail
+	}
+	return shown, true
+}
+
+// offer tells the form what discount a request would get, before it is sent: the account's own for
+// a signed-in client, else what a first request gets, with the eggs if the browser has their
+// receipt. Nothing is spent; the request itself decides for good.
+func (h *Handler) offer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if parsed, err := url.Parse(origin); err != nil || !strings.EqualFold(parsed.Host, r.Host) {
+			server.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "cross-origin request"})
+			return
+		}
+	}
+	var body struct {
+		Eggs string `json:"eggs"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+		server.WriteJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "bad_request"})
+		return
+	}
+	ctx := r.Context()
+	eggs := false
+	if receipt, err := achievements.Verify(h.opts.Secret, body.Eggs); err == nil && receipt.ID == achievements.All {
+		used, err := h.opts.Store.EggsReceiptUsed(ctx, body.Eggs)
+		if err != nil {
+			h.opts.Log.Error("cannot check a receipt of the eggs", "error", err)
+		}
+		eggs = err == nil && !used
+	}
+	rules := h.opts.Store.Rules()
+	answer := map[string]any{"ok": true, "enabled": rules.Enabled, "signed_in": false}
+	var offer loyalty.Offer
+	if clientID, everyEgg := h.opts.Accounts.Account(r); clientID > 0 {
+		var err error
+		if offer, err = h.opts.Store.Preview(ctx, clientID, eggs || everyEgg); err != nil {
+			h.opts.Log.Error("cannot price a request", "error", err)
+			server.WriteJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "server_error"})
+			return
+		}
+		answer["signed_in"] = true
+	} else {
+		offer = loyalty.Decide(rules, loyalty.History{}, loyalty.Claim{Eggs: eggs}, loyalty.Personal{}, h.opts.Store.today())
+	}
+	answer["percent"], answer["reason"] = offer.Percent, offer.Reason
+	if offer.Reason == loyalty.ReasonTier || offer.Reason == loyalty.ReasonPersonal {
+		answer["detail"] = offer.Detail
+	}
+	server.WriteJSON(w, http.StatusOK, answer)
 }
 
 // incomingFile is a file of the form that passed the inspection.
@@ -383,6 +480,8 @@ const (
 	placeholderGenericClass  = "%%GENERIC_CLASS%%"  // → is-hidden
 	placeholderNumberedClass = "%%NUMBERED_CLASS%%" // → is-shown
 	placeholderTelegramClass = "%%TELEGRAM_CLASS%%" // → is-shown, when there is a bot to continue in
+	placeholderDiscountClass = "%%DISCOUNT_CLASS%%" // → is-shown, when the sender may be told of a discount
+	placeholderDiscount      = "%%DISCOUNT%%"       // → the percent
 )
 
 // thanks is where a form sent without JavaScript ends up. The page is the site's own — built by
@@ -410,12 +509,18 @@ func (h *Handler) thanks(w http.ResponseWriter, r *http.Request) {
 			telegramClass = "is-shown"
 		}
 	}
+	discountClass, discount := "", ""
+	if shown, ok := shownDiscount(lead); ok {
+		discountClass, discount = "is-shown", strconv.Itoa(shown["percent"].(int))
+	}
 	for mark, value := range map[string]string{
 		placeholderNumber:        html.EscapeString(lead.Number()),
 		placeholderTelegramURL:   html.EscapeString(telegram),
 		placeholderGenericClass:  "is-hidden",
 		placeholderNumberedClass: "is-shown",
 		placeholderTelegramClass: telegramClass,
+		placeholderDiscountClass: discountClass,
+		placeholderDiscount:      discount,
 	} {
 		page = bytes.ReplaceAll(page, []byte(mark), []byte(value))
 	}

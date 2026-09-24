@@ -116,3 +116,85 @@ test('typing sudo opens the terminal, which answers in the language of the page'
   await expect(terminal.locator('pre')).toContainText('root тут — Денис');
   await expect(page.locator('[data-eggs-caption]').first()).toHaveText(/^eggs 1\/\d+$/);
 });
+
+test.describe('achievements on the site', () => {
+  const SHARES = { konami: 24, sudo: 16, croc: 12, cat: 8, reboot: 6, console: 36, croc5: 3.2 };
+
+  test('a find is reported, comes back as a receipt and shows how rare it is', async ({ page }) => {
+    // A browser of a person: automated ones are not players (scripts/achievements.ts).
+    await page.addInitScript(() =>
+      Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false }),
+    );
+    const posted: string[] = [];
+    // A person's browser also sends the statistics of the page.
+    await page.route('**/api/e', (route) => route.fulfill({ status: 204 }));
+    await page.route('**/api/eggs', (route) =>
+      route.fulfill({ json: { updated: '2026-09-24T08:00:00Z', eggs: SHARES } }),
+    );
+    await page.route('**/api/eggs/*', (route) => {
+      const id = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+      posted.push(id);
+      if (id === 'hello') return route.fulfill({ json: {} });
+      return route.fulfill({ json: { receipt: `${id}.tlv0aa.c2lnbmVkLWJ5LXNlcnZlcg` } });
+    });
+    await page.goto('/');
+    await page.waitForFunction(() => 'krokosha' in window);
+    // Nobody is a player before the first find: nothing is sent, nothing is kept.
+    await page.waitForTimeout(300);
+    expect(posted).toEqual([]);
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+    await page.locator('body').click({ position: { x: 5, y: 200 } });
+    await page.evaluate(() =>
+      (window as unknown as { krokosha: { hello(): string } }).krokosha.hello(),
+    );
+    // The banner says how many players have it, as Steam does.
+    const banner = page.locator('#kro-achievement');
+    await expect(banner).toContainText('Almost a colleague');
+    await expect(banner).toContainText('36% of players have it');
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('krokosha:receipts')))
+      .toContain('"console":"console.tlv0aa.');
+    // The first find counts the player, once.
+    expect(posted).toEqual(['hello', 'console']);
+
+    // The counter opens the panel: what is found, when, and the share of each.
+    const caption = page.locator('footer [data-eggs-caption]');
+    await caption.scrollIntoViewIfNeeded();
+    await expect(caption).toHaveText('eggs 1/8');
+    await expect(caption).toHaveAttribute('aria-label', 'Achievements: 1 of 8');
+    await caption.click();
+    const panel = page.getByRole('dialog', { name: 'Achievements' });
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('[data-count]')).toHaveText('1 of 8');
+    const found = panel.locator('[data-achievement="console"]');
+    await expect(found).toHaveClass(/is-found/);
+    await expect(found.locator('[data-share]')).toHaveText('36%');
+    await expect(found.locator('[data-text]')).toBeVisible();
+    // Still to find: the name, not the answer; a rare one is marked when found.
+    const locked = panel.locator('[data-achievement="croc5"]');
+    await expect(locked).not.toHaveClass(/is-found/);
+    await expect(locked.locator('[data-text]')).toBeHidden();
+    await expect(locked.locator('[data-state]')).toHaveText('Not found yet');
+    await expect(locked.locator('[data-share]')).toHaveText('3.2%');
+    await expect(panel.locator('[data-discount]')).toHaveText(
+      'Find every egg — and get 20% off one request.',
+    );
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+  });
+
+  test('an automated browser sends nothing about the eggs', async ({ page }) => {
+    const asked: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/eggs')) asked.push(request.url());
+    });
+    await page.goto('/');
+    await page.waitForFunction(() => 'krokosha' in window);
+    await page.evaluate(() =>
+      (window as unknown as { krokosha: { hello(): string } }).krokosha.hello(),
+    );
+    await expect(page.locator('#kro-achievement')).toContainText('Almost a colleague');
+    await page.waitForTimeout(500);
+    expect(asked).toEqual([]);
+  });
+});

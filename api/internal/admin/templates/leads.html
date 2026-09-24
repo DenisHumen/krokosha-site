@@ -66,7 +66,7 @@
             {{range .Cards}}
               <article class="board-card" draggable="true" data-lead="{{.ID}}">
                 <p class="board-card-head"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a> <span class="muted">{{day .CreatedAt}}</span></p>
-                <p class="board-card-name">{{.Name}}</p>
+                <p class="board-card-name">{{.Name}}{{if eq .Kind "inquiry"}} <span class="tag">обращение</span>{{end}}{{if .Discount}} <span class="tag tag-ok">−{{.Discount}}%</span>{{end}}</p>
                 <p class="muted">{{direction .Direction}}{{if .Budget}} · {{.Budget}}{{end}}</p>
                 {{if .Assignee}}<p class="muted">взял(а) {{.Assignee}}</p>{{end}}
                 {{if .LastFromUser}}<p><span class="tag tag-warn">клиент ждёт ответа</span></p>{{end}}
@@ -91,7 +91,7 @@
                 <tr>
                   <td class="mono"><a href="{{path "/leads/" (print .ID)}}">#{{.Number}}</a></td>
                   <td class="mono">{{time .CreatedAt}}</td>
-                  <td><span class="status status-{{.Status}}">{{statusName .Status}}</span>{{if .LastFromUser}} <span class="tag tag-warn">ждёт ответа</span>{{end}}</td>
+                  <td><span class="status status-{{.Status}}">{{statusName .Status}}</span>{{if .LastFromUser}} <span class="tag tag-warn">ждёт ответа</span>{{end}}{{if eq .Kind "inquiry"}} <span class="tag">обращение</span>{{end}}{{if .Discount}} <span class="tag tag-ok">−{{.Discount}}%</span>{{end}}</td>
                   <td>{{.Name}}<span class="cell-sub">{{.ContactValue}}</span></td>
                   <td>{{direction .Direction}}{{if .Budget}}<span class="cell-sub">{{.Budget}}</span>{{end}}</td>
                   <td class="cell-excerpt"><span class="clamp">{{.Excerpt}}</span></td>

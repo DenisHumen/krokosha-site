@@ -57,7 +57,9 @@ type Summary struct {
 	Campaign      string
 	SpamScore     int
 	Messages      int
-	LastFromUser  bool // the last word is the client's: somebody should answer
+	LastFromUser  bool   // the last word is the client's: somebody should answer
+	Kind          string // request | inquiry
+	Discount      int    // the percent the request got
 }
 
 // Number of the request.
@@ -113,7 +115,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Summary, int, error)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT l.id, l.status, l.created_at, l.updated_at, l.name, l.contact_method, l.contact_value, l.direction,
 		       COALESCE(l.budget, ''), LEFT(l.description, 240), COALESCE(l.assignee, ''), COALESCE(l.source, ''),
-		       COALESCE(l.utm_campaign, l.utm_source, ''), l.spam_score,
+		       COALESCE(l.utm_campaign, l.utm_source, ''), l.spam_score, l.kind, l.discount_percent,
 		       (SELECT COUNT(*) FROM lead_messages m WHERE m.lead_id = l.id AND m.direction <> 'note'),
 		       COALESCE((SELECT m.direction FROM lead_messages m WHERE m.lead_id = l.id AND m.direction <> 'note' ORDER BY m.id DESC LIMIT 1), '')
 		FROM leads l WHERE `+condition+` ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?`,
@@ -127,7 +129,8 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Summary, int, error)
 		var item Summary
 		var last string
 		if err := rows.Scan(&item.ID, &item.Status, &item.CreatedAt, &item.UpdatedAt, &item.Name, &item.ContactMethod, &item.ContactValue,
-			&item.Direction, &item.Budget, &item.Excerpt, &item.Assignee, &item.Source, &item.Campaign, &item.SpamScore, &item.Messages, &last); err != nil {
+			&item.Direction, &item.Budget, &item.Excerpt, &item.Assignee, &item.Source, &item.Campaign, &item.SpamScore, &item.Kind, &item.Discount,
+			&item.Messages, &last); err != nil {
 			return nil, 0, err
 		}
 		// Only where an answer is still owed: a new request is waiting to be taken, a closed one
@@ -216,7 +219,7 @@ func (s *Store) Card(ctx context.Context, id int64) (*Card, error) {
 		return nil, err
 	}
 	card.Assignee, card.RejectReason = assignee.String, reason.String
-	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod); err != nil {
+	if card.ReplyVia, err = replyChannel(ctx, s.db, id, lead.ContactMethod, lead.ClientID); err != nil {
 		return nil, err
 	}
 
@@ -373,19 +376,21 @@ func (s *Store) AddNote(ctx context.Context, id int64, actor, text string) error
 
 // replyChannel says how an answer reaches the client: the way the client wrote last. Somebody who
 // left an email address and then continued in Telegram is answered in Telegram; before they write
-// anything, the contact of the form decides.
-func replyChannel(ctx context.Context, db interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}, id int64, method string) (string, error) {
+// anything, the contact of the form decides. A client with a personal account who left only a phone
+// is answered in the account: the answer is there at once, and the client is told about it.
+func replyChannel(ctx context.Context, db querier, id int64, method string, clientID int64) (string, error) {
 	var last string
 	err := db.QueryRowContext(ctx, `SELECT channel FROM lead_messages WHERE lead_id = ? AND direction = 'in' AND channel IN ('telegram', 'email') ORDER BY id DESC LIMIT 1`, id).Scan(&last)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return method, nil
+		last = method
 	case err != nil:
 		return "", err
 	case last == ChannelEmail && method != MethodEmail:
-		return method, nil // a letter from somebody whose address the form does not have: see the mail step
+		last = method // a letter from somebody whose address the form does not have: see the mail step
+	}
+	if last == MethodPhone && clientID > 0 {
+		return ChannelSite, nil
 	}
 	return last, nil
 }
@@ -407,19 +412,23 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	defer func() { _ = tx.Rollback() }()
 
 	var status, method string
-	if err := tx.QueryRowContext(ctx, `SELECT status, contact_method FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&status, &method); err != nil {
+	var clientID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT status, contact_method, client_id FROM leads WHERE id = ? FOR UPDATE`, id).Scan(&status, &method, &clientID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
 		return 0, err
 	}
-	channel, err := replyChannel(ctx, tx, id, method)
+	channel, err := replyChannel(ctx, tx, id, method, clientID.Int64)
 	if err != nil {
 		return 0, err
 	}
 	delivery := sql.NullString{String: "queued", Valid: true}
-	if channel == MethodPhone {
+	switch channel {
+	case MethodPhone:
 		delivery = sql.NullString{} // nothing to deliver: the call has happened
+	case ChannelSite:
+		delivery.String = "sent" // it is in the account the moment it is stored; the notice about it is a task of its own
 	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO lead_messages (lead_id, created_at, direction, channel, author, body, delivery) VALUES (?, ?, 'out', ?, ?, ?, ?)`,
 		id, now, channel, actor, cut(text, 8000), delivery)
@@ -442,7 +451,21 @@ func (s *Store) Reply(ctx context.Context, id int64, actor, text string) (messag
 	if err := event(ctx, tx, id, now, actor, "replied", status, next, ""); err != nil {
 		return 0, err
 	}
-	if channel != MethodPhone {
+	switch channel {
+	case MethodPhone:
+	case ChannelSite:
+		// The client is told where the answer is: by the address or in the Telegram of the account.
+		notice, err := accountChannel(ctx, tx, clientID.Int64)
+		if err != nil {
+			return 0, err
+		}
+		if notice != "" {
+			if err := outbox.Enqueue(ctx, tx, now, outbox.NewTask{Channel: notice, Kind: TaskSiteReply, LeadID: id,
+				DedupeKey: fmt.Sprintf("lead:%d:site:%d", id, messageID), Payload: TaskPayload{LeadID: id, MessageID: messageID}}); err != nil {
+				return 0, err
+			}
+		}
+	default:
 		outboxChannel := outbox.ChannelEmail
 		if channel == MethodTelegram {
 			outboxChannel = outbox.ChannelTelegram
