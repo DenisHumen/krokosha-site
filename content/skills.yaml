@@ -1,7 +1,7 @@
 # Дерево навыков: категория → группа → навык.
-# confirmed: true  — подтверждено в брифе.
-# confirmed: false — добавлено как типичное, ждёт подтверждения Дениса (на сайте скрыто, пока flags.skills.show_unconfirmed = false).
-# title / note — строка (одинаково на всех языках) или словарь { en, uk, ru }. note: null — без подписи.
+# confirmed: true  - подтверждено в брифе.
+# confirmed: false - добавлено как типичное, ждёт подтверждения Дениса (на сайте скрыто, пока flags.skills.show_unconfirmed = false).
+# title / note - строка (одинаково на всех языках) или словарь { en, uk, ru }. note: null - без подписи.
 # Весь текст дерева попадает в HTML сразу (SEO), раскрытие только визуальное.
 # TODO(Денис): пройтись по confirmed: false и поставить true / удалить.
 
@@ -12,7 +12,7 @@
     - id: net-hardware
       title: { en: "Network hardware", uk: "Мережеве обладнання", ru: "Сетевое оборудование" }
       children:
-        # Вендоры подтверждены Денисом 2026-09-18, порядок — его.
+        # Вендоры подтверждены Денисом 2026-09-18, порядок - его.
         - { id: cisco,     title: "Cisco",            note: "Catalyst · Nexus · ISR/ASR", confirmed: true }
         - { id: arista,    title: "Arista",           note: null, confirmed: true }
         - { id: juniper,   title: "Juniper",          note: null, confirmed: true }
@@ -51,7 +51,7 @@
           title: { en: "Structured cabling", uk: "СКС", ru: "СКС" }
           note: { en: null, uk: "структуровані кабельні системи", ru: "структурированные кабельные системы" }
           confirmed: false
-    # TODO(Денис): «Patch» — что имелось в виду (Q4): Proxmox? pfSense? патч-панели/СКС? Добавить в нужную группу.
+    # TODO(Денис): «Patch» - что имелось в виду (Q4): Proxmox? pfSense? патч-панели/СКС? Добавить в нужную группу.
 
 - id: servers
   title: { en: "Servers", uk: "Сервери", ru: "Серверы" }
@@ -164,7 +164,7 @@
         - { id: rust,       title: "Rust",       note: null, confirmed: true }
         - { id: typescript, title: "TypeScript", note: null, confirmed: true }
         - { id: shell,      title: "Shell",      note: null, confirmed: true }
-    # Автоматизация бизнеса и Web3 — по проектам Дениса (OpenCRM, Telegram-боты, Shopify, ETHmachine), 2026-10-02.
+    # Автоматизация бизнеса и Web3 - по проектам Дениса (OpenCRM, Telegram-боты, Shopify, ETHmachine), 2026-10-02.
     - id: biz-automation
       title: { en: "Business automation", uk: "Автоматизація бізнесу", ru: "Автоматизация бизнеса" }
       children:

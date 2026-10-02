@@ -1,8 +1,8 @@
 # Основные данные и тексты сайта. Правится без изменения кода.
-# TODO(Денис) — заполнить или подтвердить. «# черновик» — текст написан по брифу, ждёт правки.
+# TODO(Денис) - заполнить или подтвердить. «# черновик» - текст написан по брифу, ждёт правки.
 #
 # Языки: en (основной, адрес /), uk (/uk/), ru (/ru/).
-# Любое текстовое поле — либо строка (одинаково на всех языках: MikroTik, GitHub…),
+# Любое текстовое поле - либо строка (одинаково на всех языках: MikroTik, GitHub…),
 # либо словарь { en: …, uk: …, ru: … }. CI будет проверять, что у словаря заполнены все три языка.
 # Плейсхолдеры в фигурных скобках ({years}, {id}, {email}…) подставляет сборка.
 
@@ -36,7 +36,7 @@ i18n:
     - { code: uk, label: "UA", path: "/uk/" }
     - { code: ru, label: "RU", path: "/ru/" }
 
-# Формы множественного числа (правила CLDR): en — [one, other]; uk, ru — [one, few, many].
+# Формы множественного числа (правила CLDR): en - [one, other]; uk, ru - [one, few, many].
 # Сборка выбирает форму по числу: 1 рік / 2 роки / 8 років.
 plurals:
   years:
@@ -76,7 +76,7 @@ socials:
   - id: github
     label: GitHub
     url: https://github.com/DenisHumen
-  # Другие соцсети (LinkedIn / Upwork / X…) — добавить сюда
+  # Другие соцсети (LinkedIn / Upwork / X…) - добавить сюда
 
 nav:
   - { number: "01", anchor: services, label: { en: "Services", uk: "Послуги", ru: "Услуги" } }
@@ -88,9 +88,9 @@ nav:
 hero:                                   # черновик
   headline:
     muted:
-      en: "Networks, servers, automation —"
-      uk: "Мережі, сервери, автоматизація —"
-      ru: "Сети, серверы, автоматизация —"
+      en: "Networks, servers, automation -"
+      uk: "Мережі, сервери, автоматизація -"
+      ru: "Сети, серверы, автоматизация -"
     strong:
       en: "infrastructure and software that just work"
       uk: "інфраструктура та софт, які просто працюють"
@@ -99,7 +99,7 @@ hero:                                   # черновик
     en: "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, automate business processes and build software for crypto-asset operations."
     uk: "Інженер інфраструктури з України. Проєктую та налаштовую мережі, сервери й кластери, автоматизую бізнес-процеси та пишу софт для операцій із криптоактивами."
     ru: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую бизнес-процессы и пишу софт для операций с криптоактивами."
-  # Выводится рядом с числом: «8+ years in infrastructure». {years} — слово из plurals.years в нужной форме.
+  # Выводится рядом с числом: «8+ years in infrastructure». {years} - слово из plurals.years в нужной форме.
   experience_label:
     en: "{years} in infrastructure"
     uk: "{years} в інфраструктурі"
@@ -120,7 +120,7 @@ hero:                                   # черновик
     email:    { en: "Email", uk: "Пошта", ru: "Почта" }
     discuss:  { en: "Discuss a project", uk: "Обговорити проєкт", ru: "Обсудить проект" }
 
-# Секция «Что я делаю». id — якоря для рекламных объявлений (B7): /#networks, /#servers, /#devops
+# Секция «Что я делаю». id - якоря для рекламных объявлений (B7): /#networks, /#servers, /#devops
 services:                               # черновик; в текстах только подтверждённые навыки
   - id: networks
     number: "01"
@@ -162,9 +162,9 @@ services:                               # черновик; в текстах т
       uk: "CRM / ERP · Telegram-боти · інтеграції через API"
       ru: "CRM / ERP · Telegram-боты · интеграции по API"
     text:
-      en: "CRM and warehouse systems, Telegram bots for approvals and monitoring, integrations with mail, telephony, websites and online stores — I turn manual routine into a system that runs by itself."
-      uk: "CRM і складський облік, Telegram-боти для погоджень і моніторингу, інтеграції з поштою, телефонією, сайтами та інтернет-магазинами — перетворюю ручну рутину на систему, яка працює сама."
-      ru: "CRM и складской учёт, Telegram-боты для согласований и мониторинга, интеграции с почтой, телефонией, сайтами и интернет-магазинами — превращаю ручную рутину в систему, которая работает сама."
+      en: "CRM and warehouse systems, Telegram bots for approvals and monitoring, integrations with mail, telephony, websites and online stores - I turn manual routine into a system that runs by itself."
+      uk: "CRM і складський облік, Telegram-боти для погоджень і моніторингу, інтеграції з поштою, телефонією, сайтами та інтернет-магазинами - перетворюю ручну рутину на систему, яка працює сама."
+      ru: "CRM и складской учёт, Telegram-боты для согласований и мониторинга, интеграции с почтой, телефонией, сайтами и интернет-магазинами - превращаю ручную рутину в систему, которая работает сама."
   - id: web3
     number: "06"
     title: { en: "Web3 automation & crypto-asset management", uk: "Web3-автоматизація та управління криптоактивами", ru: "Web3-автоматизация и управление криптоактивами" }
@@ -194,14 +194,14 @@ projects:
     ru: "Большинство проектов частные, поэтому ссылки на репозитории доступны не для всех."
   private_heading: { en: "Commercial & private projects", uk: "Комерційні та приватні проєкти", ru: "Коммерческие и приватные проекты" }
   private_note:
-    en: "Under NDA — the code isn't public, happy to walk you through it on a call."
-    uk: "Під NDA — код не публікується, можу розповісти на дзвінку."
-    ru: "Под NDA — код не публикуется, могу рассказать на созвоне."
+    en: "Under NDA - the code isn't public, happy to walk you through it on a call."
+    uk: "Під NDA - код не публікується, можу розповісти на дзвінку."
+    ru: "Под NDA - код не публикуется, могу рассказать на созвоне."
   show_all_label: { en: "All repositories", uk: "Усі репозиторії", ru: "Все репозитории" }
   error_note:
-    en: "GitHub is unavailable right now — showing the last saved version."
-    uk: "GitHub зараз недоступний — показано останню збережену версію."
-    ru: "GitHub сейчас недоступен — показана последняя сохранённая версия."
+    en: "GitHub is unavailable right now - showing the last saved version."
+    uk: "GitHub зараз недоступний - показано останню збережену версію."
+    ru: "GitHub сейчас недоступен - показана последняя сохранённая версия."
   labels:
     archived: { en: "archived", uk: "архів", ru: "архив" }
     updated:  { en: "Updated", uk: "Оновлено", ru: "Обновлено" }
@@ -214,21 +214,21 @@ curtain:                                # тёмная панель-занаве
     uk: "Потрібна мережа, сервер чи автоматизація, яка просто працює?"
     ru: "Нужна сеть, сервер или автоматизация, которая просто работает?"
   text:
-    en: "Tell me about the task — I'll reply and propose a solution."
-    uk: "Розкажіть про задачу — відповім і запропоную рішення."
-    ru: "Расскажите о задаче — отвечу и предложу решение."
+    en: "Tell me about the task - I'll reply and propose a solution."
+    uk: "Розкажіть про задачу - відповім і запропоную рішення."
+    ru: "Расскажите о задаче - отвечу и предложу решение."
   cta: { en: "Discuss a project", uk: "Обговорити проєкт", ru: "Обсудить проект" }
 
 contacts:
   heading: { en: "Contact", uk: "Контакти", ru: "Контакты" }
   text:                                 # черновик
     en: "Telegram is the fastest. For a task with details, use the form below."
-    uk: "Найшвидше — в Telegram. Для задачі з деталями — форма нижче."
-    ru: "Быстрее всего — в Telegram. Для задачи с деталями — форма ниже."
+    uk: "Найшвидше - в Telegram. Для задачі з деталями - форма нижче."
+    ru: "Быстрее всего - в Telegram. Для задачи с деталями - форма ниже."
   form:
     enabled: true
-    attachments: false                  # B10.1: вложения выключены по умолчанию. true — в форме появится поле «Файлы»
-    reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»; пока не задано — фраза не показывается
+    attachments: false                  # B10.1: вложения выключены по умолчанию. true - в форме появится поле «Файлы»
+    reply_within_hours: TODO(Денис)     # «Отвечу в течение N часов»; пока не задано - фраза не показывается
     labels:
       name:           { en: "Name", uk: "Ім'я", ru: "Имя" }
       contact_method: { en: "How to reach you", uk: "Як зв'язатися", ru: "Как связаться" }
@@ -246,7 +246,7 @@ contacts:
         en: "up to 3 files of 10 MB each: PDF, PNG, JPG, TXT, DOCX"
         uk: "до 3 файлів по 10 МБ: PDF, PNG, JPG, TXT, DOCX"
         ru: "до 3 файлов по 10 МБ: PDF, PNG, JPG, TXT, DOCX"
-      consent:        # {privacy_link} — ссылка на /privacy с текстом privacy_link_text
+      consent:        # {privacy_link} - ссылка на /privacy с текстом privacy_link_text
         en: "I consent to data processing under the {privacy_link}"
         uk: "Даю згоду на обробку даних відповідно до {privacy_link}"
         ru: "Даю согласие на обработку данных согласно {privacy_link}"
@@ -280,11 +280,11 @@ contacts:
         uk: "Забагато заявок. Спробуйте пізніше або напишіть на пошту: {email}"
         ru: "Слишком много заявок. Попробуйте позже или напишите на почту: {email}"
       # Скидка заявки (loyalty ниже): форма узнаёт её заранее у /api/leads/offer и показывает над
-      # кнопкой как «−10 %» и одну из строк discount_*; {tier} — название уровня.
+      # кнопкой как «−10 %» и одну из строк discount_*; {tier} - название уровня.
       discount_welcome:  { en: "off your first request", uk: "на першу заявку", ru: "на первую заявку" }
       discount_eggs:     { en: "for finding every easter egg", uk: "за всі знайдені пасхалки", ru: "за все найденные пасхалки" }
-      discount_tier:     { en: "— {tier} level", uk: "— рівень «{tier}»", ru: "— уровень «{tier}»" }
-      discount_personal: { en: "— your personal discount", uk: "— ваша персональна знижка", ru: "— ваша персональная скидка" }
+      discount_tier:     { en: "- {tier} level", uk: "- рівень «{tier}»", ru: "- уровень «{tier}»" }
+      discount_personal: { en: "- your personal discount", uk: "- ваша персональна знижка", ru: "- ваша персональная скидка" }
       discount_fixed:
         en: "A {percent}% discount is fixed on the request."
         uk: "На заявку зафіксовано знижку {percent}%."
@@ -332,14 +332,14 @@ contacts:
 
 # Скидки и уровни постоянных клиентов (api/internal/loyalty, docs/architecture.md, 2026-09-24).
 # Скидки не суммируются: на заявку ложится наибольшая и фиксируется в ней в момент отправки.
-# Уровень — по числу выполненных заказов ИЛИ по их сумме (её вносят в админке, закрывая заказ),
+# Уровень - по числу выполненных заказов ИЛИ по их сумме (её вносят в админке, закрывая заказ),
 # что наступит раньше; 0 выключает условие. Сервис подхватывает правку без перезапуска.
 loyalty:                                # черновик: проценты и пороги правятся здесь
   enabled: true
   currency: USD                         # в чём вносятся суммы заказов
-  welcome: 10                           # % на первую заявку — всем
-  eggs: 20                              # % на одну заявку — за все найденные пасхалки
-  big_order: 3000                       # заказ от этой суммы — ачивка «Крупный проект» (без скидки)
+  welcome: 10                           # % на первую заявку - всем
+  eggs: 20                              # % на одну заявку - за все найденные пасхалки
+  big_order: 3000                       # заказ от этой суммы - ачивка «Крупный проект» (без скидки)
   tiers:                                # по возрастанию: каждый уровень требует больше и даёт не меньше
     - id: silver
       name: { en: "Silver", uk: "Срібний", ru: "Серебряный" }
@@ -356,9 +356,9 @@ loyalty:                                # черновик: проценты и 
       orders: 6
       spent: 15000
       discount: 15
-  # Приоритет заявки в админке — цвет полосы в «Заявках»; на сайт не попадает. Клиент становится
-  # постоянным (средний) и ключевым (высокий) по числу выполненных заказов или по их сумме — что
-  # раньше; один заказ — «низкий», ни одного — «новый». Цвет строки — середина между этим и
+  # Приоритет заявки в админке - цвет полосы в «Заявках»; на сайт не попадает. Клиент становится
+  # постоянным (средний) и ключевым (высокий) по числу выполненных заказов или по их сумме - что
+  # раньше; один заказ - «низкий», ни одного - «новый». Цвет строки - середина между этим и
   # бюджетом заявки.
   priority:
     middle: { orders: 2, spent: 3000 }
@@ -375,7 +375,7 @@ ui:
   language:        { en: "Language", uk: "Мова", ru: "Язык" }
   skills_search:   { en: "Search skills", uk: "Пошук навичок", ru: "Поиск по навыкам" }
   skills_no_results: { en: "Nothing found", uk: "Нічого не знайдено", ru: "Ничего не найдено" }
-  # Заголовок дерева навыков: число — отдельно и приглушённо, {skills} — слово из plurals.skills.
+  # Заголовок дерева навыков: число - отдельно и приглушённо, {skills} - слово из plurals.skills.
   skills_headline: { en: "{skills}, one topology", uk: "{skills} в одній топології", ru: "{skills} в одной топологии" }
   menu:            { en: "Menu", uk: "Меню", ru: "Меню" }
   socials:         { en: "Social links", uk: "Соцмережі", ru: "Соцсети" }
@@ -390,8 +390,8 @@ not_found:                              # 404, черновик
     ru: "Страница, которую вы искали, не дошла до адресата."
   game_hint: { en: "Find the packet", uk: "Знайдіть пакет", ru: "Найдите пакет" }
   back: { en: "Back to home", uk: "На головну", ru: "На главную" }
-  # Игра «найди пакет» (флаг lost_packet_404). Технические подписи — «ping port 7 … timeout», «tries 3»,
-  # «SW-CORE-01» — часть оформления и одинаковы на всех языках; переводятся только слова для человека.
+  # Игра «найди пакет» (флаг lost_packet_404). Технические подписи - «ping port 7 … timeout», «tries 3»,
+  # «SW-CORE-01» - часть оформления и одинаковы на всех языках; переводятся только слова для человека.
   game:
     prompt: { en: "ping the ports", uk: "пінгуйте порти", ru: "пингуйте порты" }
     warm: { en: "warm", uk: "гаряче", ru: "горячо" }
@@ -400,7 +400,7 @@ not_found:                              # 404, черновик
       en: "packet found · 200 OK · route restored"
       uk: "пакет знайдено · 200 OK · маршрут відновлено"
       ru: "пакет найден · 200 OK · маршрут восстановлен"
-    port: { en: "port", uk: "порт", ru: "порт" }            # «port 7» — имя кнопки для экранного диктора
+    port: { en: "port", uk: "порт", ru: "порт" }            # «port 7» - имя кнопки для экранного диктора
 
 footer:
   copyright: "© {year} Krokosha"
@@ -411,19 +411,19 @@ footer:
     ru: "Здесь скоро кое-что появится."
   play_status: { en: "HATCH SEALED · ACCESS LATER", uk: "ЛЮК ЗАЧИНЕНО · ДОСТУП ПІЗНІШЕ", ru: "ЛЮК ЗАКРЫТ · ДОСТУП ПОЗЖЕ" }
 
-# Пасхалки (бриф A6; какие включены — flags.easter_eggs). Команды терминала и строки «BIOS» — на
-# английском, как в настоящей консоли; по-человечески сказанное — на языке страницы.
+# Пасхалки (бриф A6; какие включены - flags.easter_eggs). Команды терминала и строки «BIOS» - на
+# английском, как в настоящей консоли; по-человечески сказанное - на языке страницы.
 eggs:
   found: { en: "Easter egg found", uk: "Пасхалку знайдено", ru: "Пасхалка найдена" }   # читает экранный диктор перед названием ачивки
-  # Найденная пасхалка — ачивка: баннер как в Steam, название и строка описания (до двух строк).
-  # all — последняя, за все пасхалки сразу: золотая, как редкая ачивка Steam.
+  # Найденная пасхалка - ачивка: баннер как в Steam, название и строка описания (до двух строк).
+  # all - последняя, за все пасхалки сразу: золотая, как редкая ачивка Steam.
   achievements:
     konami:
       name: "↑↑↓↓←→←→BA"
       text: { en: "Night in the server room: all green", uk: "Ніч у серверній: усе зелене", ru: "Ночь в серверной: всё зелёное" }
     sudo:
       name: { en: "Superuser", uk: "Суперкористувач", ru: "Суперпользователь" }
-      text: { en: "Typed sudo and got a terminal", uk: "Набрали sudo — і отримали термінал", ru: "Набрали sudo — и получили терминал" }
+      text: { en: "Typed sudo and got a terminal", uk: "Набрали sudo - і отримали термінал", ru: "Набрали sudo - и получили терминал" }
     croc:
       name: { en: "Crocodile spotted", uk: "Крокодила помічено", ru: "Крокодил замечен" }
       text: { en: "It was peeking out from behind the footer", uk: "Він визирав з-за футера", ru: "Он выглядывал из-за футера" }
@@ -446,7 +446,7 @@ eggs:
       name: "root@krokosha"
       text: { en: "Every easter egg found", uk: "Знайдено всі пасхалки", ru: "Найдены все пасхалки" }
   # Редкость, как в Steam: доля игроков, нашедших ачивку (api/internal/achievements: пересчёт раз в
-  # 5 минут; пока игроков меньше 10, её не видно). Реже 10 % — редкая, золотая. {percent} — «3,4 %».
+  # 5 минут; пока игроков меньше 10, её не видно). Реже 10 % - редкая, золотая. {percent} - «3,4 %».
   rarity: { en: "{percent} of players have it", uk: "Є в {percent} гравців", ru: "Есть у {percent} игроков" }
   panel:                                # панель ачивок: открывается счётчиком «eggs 3/8»
     title: { en: "Achievements", uk: "Досягнення", ru: "Достижения" }
@@ -460,9 +460,9 @@ eggs:
       uk: "Рідкість з'явиться, щойно гравців набереться достатньо."
       ru: "Редкость появится, когда наберётся достаточно игроков."
     discount:
-      en: "Find every egg — and get {percent}% off one request."
-      uk: "Знайдіть усі пасхалки — і отримайте {percent}% знижки на одну заявку."
-      ru: "Найдите все пасхалки — и получите {percent}% скидки на одну заявку."
+      en: "Find every egg - and get {percent}% off one request."
+      uk: "Знайдіть усі пасхалки - і отримайте {percent}% знижки на одну заявку."
+      ru: "Найдите все пасхалки - и получите {percent}% скидки на одну заявку."
     discount_ready:
       en: "Every egg is found: {percent}% off your next request. It applies by itself when you send the form from this browser or signed in to your account."
       uk: "Усі пасхалки знайдено: {percent}% знижки на наступну заявку. Вона застосується сама, коли ви надішлете форму з цього браузера або увійшовши в кабінет."
@@ -477,10 +477,10 @@ eggs:
   croc: { en: "Crocodile", uk: "Крокодил", ru: "Крокодил" }
   console:
     en: "Reading the console? Almost a colleague already. krokosha.hello() · or type sudo on the page · or ↑↑↓↓←→←→BA"
-    uk: "Хто читає консоль — той уже майже колега. krokosha.hello() · або наберіть sudo на сторінці · або ↑↑↓↓←→←→BA"
-    ru: "Кто читает консоль — тот уже почти коллега. krokosha.hello() · или наберите sudo на странице · или ↑↑↓↓←→←→BA"
+    uk: "Хто читає консоль - той уже майже колега. krokosha.hello() · або наберіть sudo на сторінці · або ↑↑↓↓←→←→BA"
+    ru: "Кто читает консоль - тот уже почти коллега. krokosha.hello() · или наберите sudo на странице · или ↑↑↓↓←→←→BA"
   terminal:
-    whoami: { en: "guest (but curious). Denis is root here.", uk: "guest (але допитливий). root тут — Денис.", ru: "guest (но любопытный). root здесь — Денис." }
+    whoami: { en: "guest (but curious). Denis is root here.", uk: "guest (але допитливий). root тут - Денис.", ru: "guest (но любопытный). root здесь - Денис." }
     uptime: { en: "up {years}, 0 incidents caused by coffee", uk: "up {years}, 0 інцидентів через каву", ru: "up {years}, 0 инцидентов из-за кофе" }
     ping: { en: "he answers fast", uk: "він відповідає швидко", ru: "он отвечает быстро" }
     rm: { en: "nice try. Snapshot restored in 0.2 s", uk: "гарна спроба. Знімок відновлено за 0.2 с", ru: "хорошая попытка. Снапшот восстановлен за 0.2 с" }
@@ -488,7 +488,7 @@ eggs:
 # Личный кабинет клиента: /account/ (api/internal/clients, docs/architecture.md, 2026-09-24; дизайн v3).
 # Заявки и обращения, их статусы и переписка, скидка и уровень, ачивки, контакты,
 # способы входа, устройства. Вход без пароля: одноразовый код на почту или от Telegram-бота.
-# {…} — подставляет скрипт страницы (web/src/scripts/account.ts).
+# {…} - подставляет скрипт страницы (web/src/scripts/account.ts).
 account:
   title: { en: "Personal account", uk: "Особистий кабінет", ru: "Личный кабинет" }
   description:
@@ -497,9 +497,9 @@ account:
     ru: "Ваши заявки и обращения, их статусы и ответы, ваша скидка и уровень клиента."
   link: { en: "Personal account", uk: "Особистий кабінет", ru: "Личный кабинет" }   # кнопка в шапке
   no_script:
-    en: "The personal account needs JavaScript. A request can be sent without it — with the form on the main page."
-    uk: "Особистому кабінету потрібен JavaScript. Заявку можна надіслати й без нього — формою на головній."
-    ru: "Личному кабинету нужен JavaScript. Заявку можно отправить и без него — формой на главной."
+    en: "The personal account needs JavaScript. A request can be sent without it - with the form on the main page."
+    uk: "Особистому кабінету потрібен JavaScript. Заявку можна надіслати й без нього - формою на головній."
+    ru: "Личному кабинету нужен JavaScript. Заявку можно отправить и без него - формой на главной."
   loading: { en: "Checking the session…", uk: "Перевіряємо сесію…", ru: "Проверяем сессию…" }
   login:
     title: { en: "Sign in", uk: "Вхід", ru: "Вход" }
@@ -522,9 +522,9 @@ account:
       ru: "Он появится при первом входе, а заявки, отправленные раньше с той же почты или Telegram, присоединятся к нему."
     telegram_title: "Telegram"
     telegram_text:
-      en: "Open the bot and press «Start». The code comes in the chat — bring it back here."
-      uk: "Відкрийте бота й натисніть «Start». Код прийде в чат — поверніться з ним сюди."
-      ru: "Откройте бота и нажмите «Start». Код придёт в чат — вернитесь с ним сюда."
+      en: "Open the bot and press «Start». The code comes in the chat - bring it back here."
+      uk: "Відкрийте бота й натисніть «Start». Код прийде в чат - поверніться з ним сюди."
+      ru: "Откройте бота и нажмите «Start». Код придёт в чат - вернитесь с ним сюда."
     telegram_open: { en: "Open the bot", uk: "Відкрити бота", ru: "Открыть бота" }
     telegram_open_named: { en: "Open @{bot}", uk: "Відкрити @{bot}", ru: "Открыть @{bot}" }
     by_email: { en: "Sign in with email", uk: "Увійти поштою", ru: "Войти по почте" }
@@ -532,12 +532,12 @@ account:
     code_telegram: { en: "The code from Telegram", uk: "Код із Telegram", ru: "Код из Telegram" }
     sent_email:
       en: "The code went to {address}: type it here or press the button in the letter. No letter? Look in «Spam»."
-      uk: "Код надіслано на {address}: введіть його тут або натисніть кнопку в листі. Листа немає — загляньте в «Спам»."
-      ru: "Код отправлен на {address}: введите его здесь или нажмите кнопку в письме. Письма нет — загляните в «Спам»."
+      uk: "Код надіслано на {address}: введіть його тут або натисніть кнопку в листі. Листа немає - загляньте в «Спам»."
+      ru: "Код отправлен на {address}: введите его здесь или нажмите кнопку в письме. Письма нет - загляните в «Спам»."
     sent_telegram:
       en: "Press «Start» in the bot, and it will send the code."
-      uk: "Натисніть «Start» у боті — і він надішле код."
-      ru: "Нажмите «Start» в боте — и он пришлёт код."
+      uk: "Натисніть «Start» у боті - і він надішле код."
+      ru: "Нажмите «Start» в боте - и он пришлёт код."
     code: { en: "Code", uk: "Код", ru: "Код" }
     code_hint: { en: "The code is valid for 15 minutes.", uk: "Код діє 15 хвилин.", ru: "Код действует 15 минут." }
     resend_in: { en: "Send again in {time}", uk: "Надіслати знову через {time}", ru: "Отправить снова через {time}" }
@@ -545,7 +545,7 @@ account:
     submit: { en: "Sign in", uk: "Увійти", ru: "Войти" }
     back: { en: "Another way", uk: "Інший спосіб", ru: "Другой способ" }
     link: { en: "Signing you in…", uk: "Входимо…", ru: "Входим…" }
-    # Ссылка из письма или от бота сначала спрашивает: чужая ссылка открыла бы чужой кабинет. {account} — «d***s@gmail.com».
+    # Ссылка из письма или от бота сначала спрашивает: чужая ссылка открыла бы чужой кабинет. {account} - «d***s@gmail.com».
     link_ask:
       en: "This link signs in to the account of {account}."
       uk: "Це посилання веде до кабінету {account}."
@@ -560,22 +560,22 @@ account:
     bad_email: { en: "Check the email address", uk: "Перевірте адресу пошти", ru: "Проверьте адрес почты" }
     bad_code: { en: "The code does not fit or has expired", uk: "Код не підходить або застарів", ru: "Код не подходит или устарел" }
     throttled: { en: "Too many attempts. Please try again in an hour.", uk: "Забагато спроб. Спробуйте за годину.", ru: "Слишком много попыток. Попробуйте через час." }
-    no_bot: { en: "Signing in with Telegram is not available now: please use email.", uk: "Вхід через Telegram зараз недоступний — скористайтеся поштою.", ru: "Вход через Telegram сейчас недоступен — воспользуйтесь почтой." }
+    no_bot: { en: "Signing in with Telegram is not available now: please use email.", uk: "Вхід через Telegram зараз недоступний - скористайтеся поштою.", ru: "Вход через Telegram сейчас недоступен - воспользуйтесь почтой." }
     taken: { en: "This email or Telegram belongs to a disabled account. Please write to me.", uk: "Ця пошта чи Telegram належить вимкненому кабінету. Напишіть мені.", ru: "Эта почта или Telegram принадлежит отключённому кабинету. Напишите мне." }
     disabled: { en: "This account is disabled. Please write to me.", uk: "Цей кабінет вимкнено. Напишіть мені.", ru: "Этот кабинет отключён. Напишите мне." }
-    signed_out: { en: "The session has ended: please sign in again.", uk: "Сесія завершилася — увійдіть знову.", ru: "Сессия завершилась — войдите снова." }
+    signed_out: { en: "The session has ended: please sign in again.", uk: "Сесія завершилася - увійдіть знову.", ru: "Сессия завершилась - войдите снова." }
     bad_contact: { en: "This does not look like a contact of this kind", uk: "Це не схоже на контакт такого типу", ru: "Это не похоже на контакт такого типа" }
     too_many: { en: "No more contacts can be added", uk: "Більше контактів додати не можна", ru: "Больше контактов добавить нельзя" }
     empty: { en: "Write a few words", uk: "Напишіть кілька слів", ru: "Напишите несколько слов" }
     too_long: { en: "No more than 4000 characters", uk: "Не більше 4000 символів", ru: "Не больше 4000 символов" }
     last_way: { en: "Add an email first: without Telegram there would be no way in.", uk: "Спершу додайте пошту: без Telegram не буде як увійти.", ru: "Сначала добавьте почту: без Telegram будет не войти." }
-    no_way_back: { en: "Add an email or Telegram first: there is nowhere to answer.", uk: "Спершу додайте пошту або Telegram — нікуди відповісти.", ru: "Сначала добавьте почту или Telegram — некуда ответить." }
+    no_way_back: { en: "Add an email or Telegram first: there is nowhere to answer.", uk: "Спершу додайте пошту або Telegram - нікуди відповісти.", ru: "Сначала добавьте почту или Telegram - некуда ответить." }
     closed: { en: "The request is closed: ask about it in a new inquiry.", uk: "Заявку закрито: запитайте про неї новим зверненням.", ru: "Заявка закрыта: спросите о ней новым обращением." }
     file_type: { en: "{file} cannot be sent: photos, MP4 videos, PDF, DOCX and TXT are fine.", uk: "{file} не надіслати: підійдуть фото, відео MP4, PDF, DOCX і TXT.", ru: "{file} не отправить: подойдут фото, видео MP4, PDF, DOCX и TXT." }
     file_too_big: { en: "{file} is too big: photos up to 10 MB, videos up to 50 MB, documents up to 20 MB.", uk: "{file} завеликий: фото до 10 МБ, відео до 50 МБ, документи до 20 МБ.", ru: "{file} слишком большой: фото до 10 МБ, видео до 50 МБ, документы до 20 МБ." }
-    files_too_big: { en: "The files are over 50 MB together: send them in two messages.", uk: "Файли разом більші за 50 МБ — надішліть їх двома повідомленнями.", ru: "Файлы вместе больше 50 МБ — отправьте их двумя сообщениями." }
+    files_too_big: { en: "The files are over 50 MB together: send them in two messages.", uk: "Файли разом більші за 50 МБ - надішліть їх двома повідомленнями.", ru: "Файлы вместе больше 50 МБ - отправьте их двумя сообщениями." }
     too_many_files: { en: "No more than 5 files in a message.", uk: "Не більше 5 файлів в одному повідомленні.", ru: "Не больше 5 файлов в одном сообщении." }
-    files_disabled: { en: "Files are not accepted now: please send them by email.", uk: "Файли зараз не приймаються — надішліть їх листом.", ru: "Файлы сейчас не принимаются — отправьте их письмом." }
+    files_disabled: { en: "Files are not accepted now: please send them by email.", uk: "Файли зараз не приймаються - надішліть їх листом.", ru: "Файлы сейчас не принимаются - отправьте их письмом." }
     server: { en: "Something went wrong. Please try again a little later.", uk: "Щось пішло не так. Спробуйте трохи згодом.", ru: "Что-то пошло не так. Попробуйте чуть позже." }
     network: { en: "No connection to the site. Check the internet and try again.", uk: "Немає зв'язку із сайтом. Перевірте інтернет і спробуйте ще раз.", ru: "Нет связи с сайтом. Проверьте интернет и попробуйте ещё раз." }
   # Левая панель кабинета: разделы (они же заголовки экранов, кроме главной и профиля).
@@ -616,17 +616,17 @@ account:
     all: { en: "All requests", uk: "Усі заявки", ru: "Все заявки" }
     ask_title: { en: "A question or an idea?", uk: "Є питання чи ідея?", ru: "Есть вопрос или идея?" }
     ask_text:
-      en: "Write an inquiry — the answer comes here and {channel}"
-      uk: "Напишіть звернення — відповідь прийде сюди й {channel}"
-      ru: "Напишите обращение — ответ придёт сюда и {channel}"
+      en: "Write an inquiry - the answer comes here and {channel}"
+      uk: "Напишіть звернення - відповідь прийде сюди й {channel}"
+      ru: "Напишите обращение - ответ придёт сюда и {channel}"
     by_telegram: { en: "to Telegram", uk: "у Telegram", ru: "в Telegram" }
     by_email: { en: "by email", uk: "на пошту", ru: "на почту" }
     ask: { en: "Write", uk: "Написати", ru: "Написать" }
     eggs: { en: "eggs", uk: "пасхалок", ru: "пасхалок" }
     eggs_hint:
-      en: "Find them all — and get {percent}% off one request."
-      uk: "Знайдіть усі — й отримайте {percent}% знижки на одну заявку."
-      ru: "Найдите все — и получите {percent}% скидки на одну заявку."
+      en: "Find them all - and get {percent}% off one request."
+      uk: "Знайдіть усі - й отримайте {percent}% знижки на одну заявку."
+      ru: "Найдите все - и получите {percent}% скидки на одну заявку."
     eggs_ready:
       en: "All found: {percent}% off goes to your next request."
       uk: "Усі знайдено: знижка {percent}% ляже на наступну заявку."
@@ -665,21 +665,21 @@ account:
     yours: { en: "your level", uk: "ваш рівень", ru: "ваш уровень" }
     rules:
       en: "The first request is {welcome}% off. Every easter egg found on the site gives {eggs}% off one request. Levels come with completed orders or their total, whichever comes first. Discounts do not add up: the largest applies and is fixed on the request."
-      uk: "Перша заявка — зі знижкою {welcome}%. Усі знайдені на сайті пасхалки — {eggs}% на одну заявку. Рівні — за кількістю виконаних замовлень або їхньою сумою, що настане раніше. Знижки не сумуються: діє найбільша, і вона фіксується в заявці."
-      ru: "Первая заявка — со скидкой {welcome}%. Все найденные на сайте пасхалки — {eggs}% на одну заявку. Уровни — по числу выполненных заказов или их сумме, что наступит раньше. Скидки не суммируются: действует наибольшая, и она фиксируется в заявке."
+      uk: "Перша заявка - зі знижкою {welcome}%. Усі знайдені на сайті пасхалки - {eggs}% на одну заявку. Рівні - за кількістю виконаних замовлень або їхньою сумою, що настане раніше. Знижки не сумуються: діє найбільша, і вона фіксується в заявці."
+      ru: "Первая заявка - со скидкой {welcome}%. Все найденные на сайте пасхалки - {eggs}% на одну заявку. Уровни - по числу выполненных заказов или их сумме, что наступит раньше. Скидки не суммируются: действует наибольшая, и она фиксируется в заявке."
     reasons:
       welcome: { en: "first request", uk: "перша заявка", ru: "первая заявка" }
       eggs: { en: "all easter eggs", uk: "усі пасхалки", ru: "все пасхалки" }
       tier: { en: "level «{tier}»", uk: "рівень «{tier}»", ru: "уровень «{tier}»" }
       personal: { en: "personal", uk: "персональна", ru: "персональная" }
       manual: { en: "set by me", uk: "встановив я", ru: "назначил я" }
-  # Экран заявок — как мессенджер: список в одну строку и переписка открытой заявки.
+  # Экран заявок - как мессенджер: список в одну строку и переписка открытой заявки.
   requests:
     title: { en: "Requests and inquiries", uk: "Заявки й звернення", ru: "Заявки и обращения" }
     empty:
-      en: "Nothing here yet. Send a request with the form on the main page — it will appear here with its status."
-      uk: "Тут поки порожньо. Надішліть заявку формою на головній — вона з'явиться тут зі своїм статусом."
-      ru: "Здесь пока пусто. Отправьте заявку формой на главной — она появится здесь со своим статусом."
+      en: "Nothing here yet. Send a request with the form on the main page - it will appear here with its status."
+      uk: "Тут поки порожньо. Надішліть заявку формою на головній - вона з'явиться тут зі своїм статусом."
+      ru: "Здесь пока пусто. Отправьте заявку формой на главной - она появится здесь со своим статусом."
     search: { en: "Find a request", uk: "Знайти заявку", ru: "Найти заявку" }
     nothing: { en: "Nothing found.", uk: "Нічого не знайшлося.", ru: "Ничего не нашлось." }
     found: { en: "{shown} of {total}", uk: "{shown} з {total}", ru: "{shown} из {total}" }   # под списком, пока идёт поиск
@@ -708,8 +708,8 @@ account:
     message: { en: "Write a message…", uk: "Написати повідомлення…", ru: "Написать сообщение…" }
     keys:                               # подсказка на кнопке отправки
       en: "Enter sends, Shift+Enter starts a new line"
-      uk: "Enter — надіслати, Shift+Enter — новий рядок"
-      ru: "Enter — отправить, Shift+Enter — новая строка"
+      uk: "Enter - надіслати, Shift+Enter - новий рядок"
+      ru: "Enter - отправить, Shift+Enter - новая строка"
     send: { en: "Send", uk: "Надіслати", ru: "Отправить" }
     sent: { en: "Sent", uk: "Надіслано", ru: "Отправлено" }
     attach: { en: "File", uk: "Файл", ru: "Файл" }                   # кнопка «+ Файл» у поля сообщения
@@ -725,14 +725,14 @@ account:
     ask: { en: "A question about this request", uk: "Питання щодо цієї заявки", ru: "Вопрос по этой заявке" }
     missing: { en: "There is no such request in your account.", uk: "Такої заявки у вашому кабінеті немає.", ru: "Такой заявки в вашем кабинете нет." }
     choose: { en: "Choose a request in the list", uk: "Оберіть заявку в списку", ru: "Выберите заявку в списке" }
-  # Смена статуса в переписке — одной фразой.
+  # Смена статуса в переписке - одной фразой.
   events:
     new: { en: "The request is received", uk: "Заявку отримано", ru: "Заявка получена" }
     in_progress: { en: "The request is in progress", uk: "Заявку взято в роботу", ru: "Заявка взята в работу" }
     waiting_client: { en: "Waiting for your answer", uk: "Чекаємо на вашу відповідь", ru: "Ждём вашего ответа" }
     done: { en: "The request is done", uk: "Заявку виконано", ru: "Заявка выполнена" }
     rejected: { en: "The request is declined", uk: "Заявку відхилено", ru: "Заявка отклонена" }
-  statuses:                             # как статусы заявки видит клиент (в админке — свои названия)
+  statuses:                             # как статусы заявки видит клиент (в админке - свои названия)
     new: { en: "Under review", uk: "На розгляді", ru: "На рассмотрении" }
     in_progress: { en: "In progress", uk: "У роботі", ru: "В работе" }
     waiting_client: { en: "Waiting for your answer", uk: "Чекає на вашу відповідь", ru: "Ждёт вашего ответа" }
@@ -766,9 +766,9 @@ account:
       uk: "Звернення отримає номер і з'явиться у списку заявок."
       ru: "Обращение получит номер и появится в списке заявок."
     step_answer:
-      en: "The answer comes here, and I let you know by email or in Telegram — as chosen in the profile."
-      uk: "Відповідь прийде сюди, а я повідомлю поштою чи в Telegram — як обрано в профілі."
-      ru: "Ответ придёт сюда, а я сообщу почтой или в Telegram — как выбрано в профиле."
+      en: "The answer comes here, and I let you know by email or in Telegram - as chosen in the profile."
+      uk: "Відповідь прийде сюди, а я повідомлю поштою чи в Telegram - як обрано в профілі."
+      ru: "Ответ придёт сюда, а я сообщу почтой или в Telegram - как выбрано в профиле."
     step_parent:
       en: "If it is about a request, choose it above: the answer comes with the context."
       uk: "Якщо питання щодо заявки, оберіть її вгорі: відповідь буде з контекстом."
@@ -815,30 +815,30 @@ account:
     link_telegram: { en: "Link", uk: "Прив'язати", ru: "Привязать" }
     unlink: { en: "Unlink", uk: "Відв'язати", ru: "Отвязать" }
     cancel: { en: "Cancel", uk: "Скасувати", ru: "Отмена" }
-    # Один человек — один кабинет: способ входа, который уже открывает другой кабинет, объединяет их.
+    # Один человек - один кабинет: способ входа, который уже открывает другой кабинет, объединяет их.
     join_hint:
       en: "Signed in before with another email or with Telegram? Add that way here: the two accounts become one, with all requests and achievements."
       uk: "Входили раніше з іншою поштою чи через Telegram? Додайте цей спосіб тут: кабінети об'єднаються з усіма заявками та досягненнями."
       ru: "Входили раньше с другой почтой или через Telegram? Добавьте этот способ здесь: кабинеты объединятся со всеми заявками и достижениями."
     merged:
-      en: "Done: your other account joined this one — its requests and achievements are here now."
-      uk: "Готово: ваш другий кабінет приєднано до цього — його заявки та досягнення тепер тут."
-      ru: "Готово: ваш второй кабинет объединён с этим — его заявки и достижения теперь здесь."
+      en: "Done: your other account joined this one - its requests and achievements are here now."
+      uk: "Готово: ваш другий кабінет приєднано до цього - його заявки та досягнення тепер тут."
+      ru: "Готово: ваш второй кабинет объединён с этим - его заявки и достижения теперь здесь."
   sessions:
     title: { en: "Devices", uk: "Пристрої", ru: "Устройства" }
     current: { en: "This device", uk: "Цей пристрій", ru: "Это устройство" }
     now: { en: "now", uk: "зараз", ru: "сейчас" }
     end: { en: "Sign out", uk: "Вийти", ru: "Выйти" }
     end_all: { en: "Sign out on the others", uk: "Вийти на інших", ru: "Выйти на других" }
-  # Пасхалки сайта на экране ачивок: найденная — ◆ и название, ненайденная — ◇ и «???».
+  # Пасхалки сайта на экране ачивок: найденная - ◆ и название, ненайденная - ◇ и «???».
   eggs:
     heading: { en: "Easter eggs of the site", uk: "Пасхалки сайту", ru: "Пасхалки сайта" }
     reward: { en: "All {total} = {percent}% off", uk: "Усі {total} = знижка {percent}%", ru: "Все {total} = скидка {percent}%" }
     reward_used: { en: "The discount is used", uk: "Знижку використано", ru: "Скидка использована" }
     hidden: "???"
   # Ачивки за заказы (api/internal/clients/orders.go): первый выполненный заказ, второй, заказ от
-  # loyalty.big_order — в любом порядке — и за все три. Скидок не дают. Новую клиент видит баннером,
-  # как в Steam, когда открывает кабинет. {amount} — сумма, {percent} — «12 %».
+  # loyalty.big_order - в любом порядке - и за все три. Скидок не дают. Новую клиент видит баннером,
+  # как в Steam, когда открывает кабинет. {amount} - сумма, {percent} - «12 %».
   orders:
     title: { en: "Orders", uk: "Замовлення", ru: "Заказы" }
     found: { en: "Achievement unlocked", uk: "Досягнення отримано", ru: "Достижение получено" }
@@ -863,21 +863,21 @@ account:
   delete:
     title: { en: "Delete the account", uk: "Видалити кабінет", ru: "Удалить кабинет" }
     text:
-      en: "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period — see the privacy policy; to have them deleted earlier, write to me."
-      uk: "Кабінет, його контакти й пристрої видаляються одразу. Ваші заявки залишаються в мене на строк зберігання — див. політику конфіденційності; щоб видалити їх раніше, напишіть мені."
-      ru: "Кабинет, его контакты и устройства удаляются сразу. Ваши заявки остаются у меня на срок хранения — см. политику конфиденциальности; чтобы удалить их раньше, напишите мне."
+      en: "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period - see the privacy policy; to have them deleted earlier, write to me."
+      uk: "Кабінет, його контакти й пристрої видаляються одразу. Ваші заявки залишаються в мене на строк зберігання - див. політику конфіденційності; щоб видалити їх раніше, напишіть мені."
+      ru: "Кабинет, его контакты и устройства удаляются сразу. Ваши заявки остаются у меня на срок хранения - см. политику конфиденциальности; чтобы удалить их раньше, напишите мне."
     confirm: { en: "I understand: this cannot be undone", uk: "Розумію: це не можна скасувати", ru: "Понимаю: это нельзя отменить" }
     button: { en: "Delete", uk: "Видалити", ru: "Удалить" }
 
 # То, что видят поисковики и соцсети: <title>, описание в выдаче, карточка при отправке ссылки.
 # В site.json (данные для дизайна) не попадает.
-map:                                    # страница /map — карта интернета (docs/netmap.md)
+map:                                    # страница /map - карта интернета (docs/netmap.md)
   title: { en: "Map of the internet", uk: "Карта інтернету", ru: "Карта интернета" }
   status: "/MAP · BGP"
   lead:
-    en: "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go — network by network, where they meet and how long it takes."
-    uk: "Усі мережі інтернету та зв'язки між ними, щоночі наново з відкритих даних маршрутизації. Введіть дві адреси — карта намалює, яким шляхом, імовірно, підуть пакети: мережа за мережею, де вони стикуються і скільки це займе."
-    ru: "Все сети интернета и связи между ними, каждую ночь заново из открытых данных маршрутизации. Введите два адреса — карта нарисует, каким путём, вероятно, пойдут пакеты: сеть за сетью, где они стыкуются и сколько это займёт."
+    en: "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go - network by network, where they meet and how long it takes."
+    uk: "Усі мережі інтернету та зв'язки між ними, щоночі наново з відкритих даних маршрутизації. Введіть дві адреси - карта намалює, яким шляхом, імовірно, підуть пакети: мережа за мережею, де вони стикуються і скільки це займе."
+    ru: "Все сети интернета и связи между ними, каждую ночь заново из открытых данных маршрутизации. Введите два адреса - карта нарисует, каким путём, вероятно, пойдут пакеты: сеть за сетью, где они стыкуются и сколько это займёт."
   description:
     en: "An interactive map of the internet: 80 thousand networks, the links between them and the exchange points where they meet. Trace the likely route between any two IP addresses."
     uk: "Інтерактивна карта інтернету: 80 тисяч мереж, зв'язки між ними і точки обміну трафіком. Прокладіть імовірний маршрут між будь-якими двома IP-адресами."
@@ -894,16 +894,16 @@ map:                                    # страница /map — карта �
     globe: { en: "Globe", uk: "Глобус", ru: "Глобус" }
     core_hint:
       en: "The core: the largest networks in the middle, the smallest on the rim; the angle is where on Earth they are."
-      uk: "Ядро: найбільші мережі в центрі, найменші — на краю; кут — де на Землі вони є."
-      ru: "Ядро: крупнейшие сети в центре, самые маленькие — на краю; угол — где на Земле они находятся."
+      uk: "Ядро: найбільші мережі в центрі, найменші - на краю; кут - де на Землі вони є."
+      ru: "Ядро: крупнейшие сети в центре, самые маленькие - на краю; угол - где на Земле они находятся."
   controls:
     zoom_in: { en: "Zoom in", uk: "Наблизити", ru: "Приблизить" }
     zoom_out: { en: "Zoom out", uk: "Віддалити", ru: "Отдалить" }
     reset: { en: "Show the whole world", uk: "Показати весь світ", ru: "Показать весь мир" }
     hint:
-      en: "wheel — zoom · drag — move · dot — a network"
-      uk: "коліщатко — масштаб · тягніть — рух · точка — мережа"
-      ru: "колесо — масштаб · тяните — движение · точка — сеть"
+      en: "wheel - zoom · drag - move · dot - a network"
+      uk: "коліщатко - масштаб · тягніть - рух · точка - мережа"
+      ru: "колесо - масштаб · тяните - движение · точка - сеть"
   legend:
     network: { en: "a network (the bigger, the more networks it carries)", uk: "мережа (що більша, то більше мереж вона везе)", ru: "сеть (чем больше, тем больше сетей она везёт)" }
     exchange: { en: "an exchange point", uk: "точка обміну трафіком", ru: "точка обмена трафиком" }
@@ -952,12 +952,12 @@ map:                                    # страница /map — карта �
     not_measured: { en: "not measured", uk: "не вимірювалось", ru: "не измерялось" }
     anycast:
       en: "{ip} is anycast: the same address is served from many places, and the closest one answers."
-      uk: "{ip} — anycast: ту саму адресу обслуговують багато місць, відповідає найближче."
-      ru: "{ip} — anycast: один и тот же адрес обслуживают много мест, отвечает ближайшее."
+      uk: "{ip} - anycast: ту саму адресу обслуговують багато місць, відповідає найближче."
+      ru: "{ip} - anycast: один и тот же адрес обслуживают много мест, отвечает ближайшее."
     note:
       en: "The path is what the routing policies of the networks make likely; the delay is estimated from the distance along the cables, the ports are what the networks declare in PeeringDB. Real routers may choose another way, and loss can only be measured."
-      uk: "Шлях — те, що роблять імовірним правила маршрутизації мереж; затримка оцінена за відстанню вздовж кабелів, порти — те, що мережі вказали в PeeringDB. Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти."
-      ru: "Путь — то, что делают вероятным правила маршрутизации сетей; задержка оценена по расстоянию вдоль кабелей, порты — то, что сети указали в PeeringDB. Настоящие роутеры могут выбрать другой путь, а потери можно только измерить."
+      uk: "Шлях - те, що роблять імовірним правила маршрутизації мереж; затримка оцінена за відстанню вздовж кабелів, порти - те, що мережі вказали в PeeringDB. Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти."
+      ru: "Путь - то, что делают вероятным правила маршрутизации сетей; задержка оценена по расстоянию вдоль кабелей, порты - то, что сети указали в PeeringDB. Настоящие роутеры могут выбрать другой путь, а потери можно только измерить."
   trace:                                # замер пути с сервера сайта (/api/net/trace)
     measure: { en: "Measure from this site's server", uk: "Виміряти з сервера сайту", ru: "Измерить с сервера сайта" }
     measuring: { en: "Measuring: the probes take a few seconds…", uk: "Вимірюю: зонди йдуть кілька секунд…", ru: "Измеряю: зонды идут несколько секунд…" }
@@ -985,13 +985,13 @@ map:                                    # страница /map — карта �
       uk: "Адреса не відповіла на рукостискання портами 443 і 80."
       ru: "Адрес не ответил на рукопожатия портами 443 и 80."
     not_reached:
-      en: "The address itself did not answer the probes — many hosts do not; the handshakes tell the time to it."
-      uk: "Сама адреса не відповіла на зонди — багато хто не відповідає; час до неї показують рукостискання."
-      ru: "Сам адрес не ответил на зонды — многие не отвечают; время до него показывают рукопожатия."
+      en: "The address itself did not answer the probes - many hosts do not; the handshakes tell the time to it."
+      uk: "Сама адреса не відповіла на зонди - багато хто не відповідає; час до неї показують рукостискання."
+      ru: "Сам адрес не ответил на зонды - многие не отвечают; время до него показывают рукопожатия."
     note:
-      en: "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss — what the address itself answers does."
-      uk: "Це шлях із сервера сайту, а не від вас. Роутери відповідають на зонди, коли мають час: крок, що пропустив частину, ще не доводить втрат — доводить те, що відповідає сама адреса."
-      ru: "Это путь с сервера сайта, а не от вас. Роутеры отвечают на зонды, когда им есть время: шаг, пропустивший часть, ещё не доказывает потерь — доказывает то, что отвечает сам адрес."
+      en: "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss - what the address itself answers does."
+      uk: "Це шлях із сервера сайту, а не від вас. Роутери відповідають на зонди, коли мають час: крок, що пропустив частину, ще не доводить втрат - доводить те, що відповідає сама адреса."
+      ru: "Это путь с сервера сайта, а не от вас. Роутеры отвечают на зонды, когда им есть время: шаг, пропустивший часть, ещё не доказывает потерь - доказывает то, что отвечает сам адрес."
   network:
     heading: { en: "Network", uk: "Мережа", ru: "Сеть" }
     cone: { en: "networks in its cone", uk: "мереж у її конусі", ru: "сетей в её конусе" }
@@ -1009,10 +1009,10 @@ map:                                    # страница /map — карта �
       ru: "Этот адрес не в интернете: частные сети, NAT провайдера и документационные диапазоны не маршрутизируются."
     not_routed: { en: "Nobody announces this address right now.", uk: "Цю адресу зараз ніхто не анонсує.", ru: "Этот адрес сейчас никто не анонсирует." }
     no_path: { en: "These networks are not connected in the map.", uk: "Ці мережі не з'єднані на карті.", ru: "Эти сети не связаны на карте." }
-    busy: { en: "Too many requests — try again in a minute.", uk: "Забагато запитів — спробуйте за хвилину.", ru: "Слишком много запросов — попробуйте через минуту." }
-    not_ready: { en: "The map is being built — try again in a few minutes.", uk: "Карта будується — спробуйте за кілька хвилин.", ru: "Карта строится — попробуйте через несколько минут." }
-    network: { en: "The server did not answer — try again.", uk: "Сервер не відповів — спробуйте ще раз.", ru: "Сервер не ответил — попробуйте ещё раз." }
-    trace_failed: { en: "The measurement failed — try again later.", uk: "Виміряти не вдалося — спробуйте пізніше.", ru: "Измерить не удалось — попробуйте позже." }
+    busy: { en: "Too many requests - try again in a minute.", uk: "Забагато запитів - спробуйте за хвилину.", ru: "Слишком много запросов - попробуйте через минуту." }
+    not_ready: { en: "The map is being built - try again in a few minutes.", uk: "Карта будується - спробуйте за кілька хвилин.", ru: "Карта строится - попробуйте через несколько минут." }
+    network: { en: "The server did not answer - try again.", uk: "Сервер не відповів - спробуйте ще раз.", ru: "Сервер не ответил - попробуйте ещё раз." }
+    trace_failed: { en: "The measurement failed - try again later.", uk: "Виміряти не вдалося - спробуйте пізніше.", ru: "Измерить не удалось - попробуйте позже." }
   loading: { en: "Loading the map…", uk: "Завантажую карту…", ru: "Загружаю карту…" }
   no_webgl:
     en: "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them."
@@ -1022,15 +1022,15 @@ map:                                    # страница /map — карта �
   about:
     heading: { en: "How it works", uk: "Як це працює", ru: "Как это работает" }
     paragraphs:
-      - en: "The internet is some 80 thousand autonomous systems — providers, hosting, clouds, companies — and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away."
-        uk: "Інтернет — це близько 80 тисяч автономних систем: провайдери, хостинги, хмари, компанії. Кожна сама вирішує, з ким з'єднатися і чий трафік везти, і повідомляє про це іншим через BGP. Колектори, з якими говорять BGP багато мереж, відкривають свої таблиці: з них, з дослідження CAIDA про типи зв'язків і з PeeringDB, де мережі пишуть, де їх можна зустріти, карта будується щоночі. Записується лише те, що змінилося: нові зв'язки і ті, що зникли."
-        ru: "Интернет — это около 80 тысяч автономных систем: провайдеры, хостинги, облака, компании. Каждая сама решает, с кем соединиться и чей трафик везти, и сообщает об этом другим через BGP. Коллекторы, с которыми говорят BGP многие сети, открывают свои таблицы: из них, из исследования CAIDA о типах связей и из PeeringDB, где сети пишут, где их можно встретить, карта строится каждую ночь. Записывается только то, что изменилось: новые связи и пропавшие."
+      - en: "The internet is some 80 thousand autonomous systems - providers, hosting, clouds, companies - and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away."
+        uk: "Інтернет - це близько 80 тисяч автономних систем: провайдери, хостинги, хмари, компанії. Кожна сама вирішує, з ким з'єднатися і чий трафік везти, і повідомляє про це іншим через BGP. Колектори, з якими говорять BGP багато мереж, відкривають свої таблиці: з них, з дослідження CAIDA про типи зв'язків і з PeeringDB, де мережі пишуть, де їх можна зустріти, карта будується щоночі. Записується лише те, що змінилося: нові зв'язки і ті, що зникли."
+        ru: "Интернет - это около 80 тысяч автономных систем: провайдеры, хостинги, облака, компании. Каждая сама решает, с кем соединиться и чей трафик везти, и сообщает об этом другим через BGP. Коллекторы, с которыми говорят BGP многие сети, открывают свои таблицы: из них, из исследования CAIDA о типах связей и из PeeringDB, где сети пишут, где их можно встретить, карта строится каждую ночь. Записывается только то, что изменилось: новые связи и пропавшие."
       - en: "A route is the chain of networks their policies make likely: a network would rather hand traffic to a customer, who pays, than to a peer, and to a peer rather than to its own provider. Where two networks meet is seen from the exchange points and data centres they share. The delay is estimated from the distance: light in fibre covers about 200 km in a millisecond, and cables are longer than straight lines."
-        uk: "Маршрут — ланцюжок мереж, який роблять імовірним їхні правила: мережа охочіше віддає трафік клієнту, що платить, ніж піру, а піру — охочіше, ніж власному провайдеру. Де мережі стикуються, видно зі спільних точок обміну та дата-центрів. Затримку оцінено за відстанню: світло в оптиці проходить близько 200 км за мілісекунду, а кабелі довші за прямі."
-        ru: "Маршрут — цепочка сетей, которую делают вероятной их правила: сеть охотнее отдаёт трафик клиенту, который платит, чем пиру, а пиру — охотнее, чем собственному провайдеру. Где сети стыкуются, видно по общим точкам обмена и дата-центрам. Задержка оценена по расстоянию: свет в оптике проходит около 200 км за миллисекунду, а кабели длиннее прямых."
+        uk: "Маршрут - ланцюжок мереж, який роблять імовірним їхні правила: мережа охочіше віддає трафік клієнту, що платить, ніж піру, а піру - охочіше, ніж власному провайдеру. Де мережі стикуються, видно зі спільних точок обміну та дата-центрів. Затримку оцінено за відстанню: світло в оптиці проходить близько 200 км за мілісекунду, а кабелі довші за прямі."
+        ru: "Маршрут - цепочка сетей, которую делают вероятной их правила: сеть охотнее отдаёт трафик клиенту, который платит, чем пиру, а пиру - охотнее, чем собственному провайдеру. Где сети стыкуются, видно по общим точкам обмена и дата-центрам. Задержка оценена по расстоянию: свет в оптике проходит около 200 км за миллисекунду, а кабели длиннее прямых."
       - en: "Real routers may choose another way, and loss can only be measured. Measurements are coming: traceroute from this site's server and, through RIPE Atlas, from a probe in the sender's own network."
-        uk: "Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти. Скоро тут будуть виміри: traceroute із сервера сайту і, через RIPE Atlas, — із зонда в мережі відправника."
-        ru: "Настоящие роутеры могут выбрать другой путь, а потери можно только измерить. Скоро здесь будут замеры: traceroute с сервера сайта и, через RIPE Atlas, — с зонда в сети отправителя."
+        uk: "Реальні роутери можуть обрати інший шлях, а втрати можна лише виміряти. Скоро тут будуть виміри: traceroute із сервера сайту і, через RIPE Atlas, - із зонда в мережі відправника."
+        ru: "Настоящие роутеры могут выбрать другой путь, а потери можно только измерить. Скоро здесь будут замеры: traceroute с сервера сайта и, через RIPE Atlas, - с зонда в сети отправителя."
   credits:
     heading: { en: "Data", uk: "Дані", ru: "Данные" }
     items:
@@ -1054,30 +1054,30 @@ map:                                    # страница /map — карта �
         text: { en: "the outline of the land", uk: "обриси суходолу", ru: "очертания суши" }
     citation: "The CAIDA UCSD AS Relationships Dataset, https://catalog.caida.org/dataset/as_relationships_serial_2"
 
-seo:                                    # черновик; ключевые запросы — бриф B7, упомянуты только подтверждённые навыки
+seo:                                    # черновик; ключевые запросы - бриф B7, упомянуты только подтверждённые навыки
   title:                                # до ~60 символов
-    en: "Denis (Krokosha) — Infrastructure Engineer, DevOps, Automation"
-    uk: "Денис (Krokosha) — інженер інфраструктури, DevOps, автоматизація"
-    ru: "Денис (Krokosha) — инженер инфраструктуры, DevOps, автоматизация"
+    en: "Denis (Krokosha) - Infrastructure Engineer, DevOps, Automation"
+    uk: "Денис (Krokosha) - інженер інфраструктури, DevOps, автоматизація"
+    ru: "Денис (Krokosha) - инженер инфраструктуры, DevOps, автоматизация"
   description:                          # до ~160 символов; {experience} → «9 years» / «9 років» / «9 лет»
     en: "Infrastructure engineer from Ukraine: networks, servers, Docker, Kubernetes, business process automation and Web3 software. {experience} of hands-on work."
     uk: "Інженер інфраструктури з України: мережі, сервери, Docker, Kubernetes, автоматизація бізнес-процесів і Web3-софт. {experience} практики."
     ru: "Инженер инфраструктуры из Украины: сети, серверы, Docker, Kubernetes, автоматизация бизнес-процессов и Web3-софт. {experience} практики."
   og_image_alt:
-    en: "Krokosha — infrastructure, automation and Web3"
-    uk: "Krokosha — інфраструктура, автоматизація та Web3"
-    ru: "Krokosha — инфраструктура, автоматизация и Web3"
+    en: "Krokosha - infrastructure, automation and Web3"
+    uk: "Krokosha - інфраструктура, автоматизація та Web3"
+    ru: "Krokosha - инфраструктура, автоматизация и Web3"
   # Разметка schema.org (ProfessionalService): название услуги и где она оказывается.
   service_name:
-    en: "Krokosha — infrastructure engineering and automation"
-    uk: "Krokosha — інженерія інфраструктури та автоматизація"
-    ru: "Krokosha — инженерия инфраструктуры и автоматизация"
-  area_served:                          # TODO(Денис): подтвердить — в брифе «Украина + удалённо — уточнить»
+    en: "Krokosha - infrastructure engineering and automation"
+    uk: "Krokosha - інженерія інфраструктури та автоматизація"
+    ru: "Krokosha - инженерия инфраструктуры и автоматизация"
+  area_served:                          # TODO(Денис): подтвердить - в брифе «Украина + удалённо - уточнить»
     - { en: "Ukraine", uk: "Україна", ru: "Украина" }
     - { en: "Remote, worldwide", uk: "Віддалено, весь світ", ru: "Удалённо, весь мир" }
   country_code: UA
-  # Подтверждение владения для Google Search Console и Bing Webmaster Tools мета-тегом — если
-  # удобнее, чем TXT-запись в DNS (deploy/README.md, «Поисковики»). Пусто — тегов нет.
+  # Подтверждение владения для Google Search Console и Bing Webmaster Tools мета-тегом - если
+  # удобнее, чем TXT-запись в DNS (deploy/README.md, «Поисковики»). Пусто - тегов нет.
   # verification:
   #   google: "…"                       # content= из тега google-site-verification
   #   bing: "…"                         # content= из тега msvalidate.01

@@ -323,7 +323,7 @@
     },
     {
       "title": "Office infrastructure",
-      "description": "A MikroTik and UniFi network, two Proxmox nodes, automatic failover between internet providers and a CRM on the company's own server — documented and monitored, with a register of inherited risks.",
+      "description": "A MikroTik and UniFi network, two Proxmox nodes, automatic failover between internet providers and a CRM on the company's own server - documented and monitored, with a register of inherited risks.",
       "tags": [
         "MikroTik",
         "UniFi",
