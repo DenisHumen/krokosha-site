@@ -49,14 +49,14 @@
   ],
   "hero": {
     "headline": {
-      "muted": "Networks, servers, DevOps —",
-      "strong": "infrastructure that just works"
+      "muted": "Networks, servers, automation -",
+      "strong": "infrastructure and software that just work"
     },
-    "lead": "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, and automate the routine.",
+    "lead": "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, automate business processes and build software for crypto-asset operations.",
     "experience_label": "years in infrastructure",
     "captions": {
-      "left": "Networks · Servers · DevOps",
-      "center": "I design, build, configure and maintain.",
+      "left": "Networks · Servers · DevOps · Automation",
+      "center": "I design, build, automate and maintain.",
       "right": "[Scroll to explore]"
     },
     "link_caption": "link up · 10Gbps · full-duplex",
@@ -96,8 +96,22 @@
       "text": "Designing local networks for heavy load and high data rates."
     },
     {
-      "id": "tooling",
+      "id": "automation",
       "number": "05",
+      "title": "Business process automation",
+      "subtitle": "CRM / ERP · Telegram bots · API integrations",
+      "text": "CRM and warehouse systems, Telegram bots for approvals and monitoring, integrations with mail, telephony, websites and online stores - I turn manual routine into a system that runs by itself."
+    },
+    {
+      "id": "web3",
+      "number": "06",
+      "title": "Web3 automation & crypto-asset management",
+      "subtitle": "EVM · Solana · OKX · Binance · Bitget · MEXC · Relay",
+      "text": "Software for crypto-asset operations: balances across 29+ networks, batch transfers and fund consolidation, exchange withdrawals and cross-chain bridges. Dry run by default, every transaction checked before signing, fees accounted for."
+    },
+    {
+      "id": "tooling",
+      "number": "07",
       "title": "Tooling & development",
       "subtitle": "Python · Rust · TypeScript · Shell",
       "text": "In-house utilities and automation for infrastructure tasks."
@@ -111,9 +125,9 @@
     "heading": "Projects",
     "note": "Most of my projects are private, so repository links aren't available for all of them.",
     "private_heading": "Commercial & private projects",
-    "private_note": "Under NDA — the code isn't public, happy to walk you through it on a call.",
+    "private_note": "Under NDA - the code isn't public, happy to walk you through it on a call.",
     "show_all_label": "All repositories",
-    "error_note": "GitHub is unavailable right now — showing the last saved version.",
+    "error_note": "GitHub is unavailable right now - showing the last saved version.",
     "labels": {
       "archived": "archived",
       "updated": "Updated",
@@ -122,8 +136,8 @@
     }
   },
   "curtain": {
-    "heading": "Need a network, server or cluster that just works?",
-    "text": "Tell me about the task — I'll reply and propose a solution.",
+    "heading": "Need a network, server or automation that just works?",
+    "text": "Tell me about the task - I'll reply and propose a solution.",
     "cta": "Discuss a project"
   },
   "contacts": {
@@ -167,8 +181,8 @@
         "rate_limited": "Too many requests. Please try again later or email me: {email}",
         "discount_welcome": "off your first request",
         "discount_eggs": "for finding every easter egg",
-        "discount_tier": "— {tier} level",
-        "discount_personal": "— your personal discount",
+        "discount_tier": "- {tier} level",
+        "discount_personal": "- your personal discount",
         "discount_fixed": "A {percent}% discount is fixed on the request.",
         "signed_in": "You are signed in: the request will appear in your personal account.",
         "track": "Follow it in your account"
@@ -200,6 +214,14 @@
         {
           "id": "highload-lan",
           "label": "High-load LAN"
+        },
+        {
+          "id": "automation",
+          "label": "Business automation"
+        },
+        {
+          "id": "web3",
+          "label": "Web3 / crypto"
         },
         {
           "id": "development",
@@ -325,7 +347,7 @@
       "found_on": "Found {date}",
       "rare": "Rare",
       "counting": "Rarity appears once enough players are counted.",
-      "discount": "Find every egg — and get {percent}% off one request.",
+      "discount": "Find every egg - and get {percent}% off one request.",
       "discount_ready": "Every egg is found: {percent}% off your next request. It applies by itself when you send the form from this browser or signed in to your account.",
       "discount_used": "The discount for the eggs has gone to a request.",
       "account": "Keep them in your account",
@@ -375,7 +397,7 @@
     "title": "Personal account",
     "description": "Your requests and inquiries, their statuses and answers, your discount and client level.",
     "link": "Personal account",
-    "no_script": "The personal account needs JavaScript. A request can be sent without it — with the form on the main page.",
+    "no_script": "The personal account needs JavaScript. A request can be sent without it - with the form on the main page.",
     "loading": "Checking the session…",
     "login": {
       "title": "Sign in",
@@ -391,7 +413,7 @@
       "no_account": "No account yet?",
       "note": "It appears with the first sign-in, and the requests sent earlier from the same email or Telegram join it.",
       "telegram_title": "Telegram",
-      "telegram_text": "Open the bot and press «Start». The code comes in the chat — bring it back here.",
+      "telegram_text": "Open the bot and press «Start». The code comes in the chat - bring it back here.",
       "telegram_open": "Open the bot",
       "telegram_open_named": "Open @{bot}",
       "by_email": "Sign in with email",
@@ -472,12 +494,12 @@
       "latest": "Latest requests",
       "all": "All requests",
       "ask_title": "A question or an idea?",
-      "ask_text": "Write an inquiry — the answer comes here and {channel}",
+      "ask_text": "Write an inquiry - the answer comes here and {channel}",
       "by_telegram": "to Telegram",
       "by_email": "by email",
       "ask": "Write",
       "eggs": "eggs",
-      "eggs_hint": "Find them all — and get {percent}% off one request.",
+      "eggs_hint": "Find them all - and get {percent}% off one request.",
       "eggs_ready": "All found: {percent}% off goes to your next request.",
       "eggs_used": "The discount for the eggs has gone to a request.",
       "project": "Discuss a new project",
@@ -520,7 +542,7 @@
     },
     "requests": {
       "title": "Requests and inquiries",
-      "empty": "Nothing here yet. Send a request with the form on the main page — it will appear here with its status.",
+      "empty": "Nothing here yet. Send a request with the form on the main page - it will appear here with its status.",
       "search": "Find a request",
       "nothing": "Nothing found.",
       "found": "{shown} of {total}",
@@ -598,7 +620,7 @@
       "sent": "Inquiry {id} sent",
       "how": "How it works",
       "step_number": "The inquiry gets a number and appears among your requests.",
-      "step_answer": "The answer comes here, and I let you know by email or in Telegram — as chosen in the profile.",
+      "step_answer": "The answer comes here, and I let you know by email or in Telegram - as chosen in the profile.",
       "step_parent": "If it is about a request, choose it above: the answer comes with the context."
     },
     "contacts": {
@@ -647,7 +669,7 @@
       "unlink": "Unlink",
       "cancel": "Cancel",
       "join_hint": "Signed in before with another email or with Telegram? Add that way here: the two accounts become one, with all requests and achievements.",
-      "merged": "Done: your other account joined this one — its requests and achievements are here now."
+      "merged": "Done: your other account joined this one - its requests and achievements are here now."
     },
     "sessions": {
       "title": "Devices",
@@ -690,7 +712,7 @@
     },
     "delete": {
       "title": "Delete the account",
-      "text": "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period — see the privacy policy; to have them deleted earlier, write to me.",
+      "text": "The account, its contacts and devices are deleted at once. Your requests stay with me for their storage period - see the privacy policy; to have them deleted earlier, write to me.",
       "confirm": "I understand: this cannot be undone",
       "button": "Delete"
     }
@@ -698,7 +720,7 @@
   "map": {
     "title": "Map of the internet",
     "status": "/MAP · BGP",
-    "lead": "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go — network by network, where they meet and how long it takes.",
+    "lead": "Every network of the internet and the links between them, rebuilt every night from open routing data. Enter two addresses: the map draws the way packets are likely to go - network by network, where they meet and how long it takes.",
     "description": "An interactive map of the internet: 80 thousand networks, the links between them and the exchange points where they meet. Trace the likely route between any two IP addresses.",
     "stats": {
       "networks": "networks",
@@ -717,7 +739,7 @@
       "zoom_in": "Zoom in",
       "zoom_out": "Zoom out",
       "reset": "Show the whole world",
-      "hint": "wheel — zoom · drag — move · dot — a network"
+      "hint": "wheel - zoom · drag - move · dot - a network"
     },
     "legend": {
       "network": "a network (the bigger, the more networks it carries)",
@@ -816,8 +838,8 @@
       "exchange": "exchange point",
       "tcp": "TCP handshakes with port {port}: {answered} of {sent}, {ms} ms",
       "no_tcp": "The address answered no handshake on ports 443 and 80.",
-      "not_reached": "The address itself did not answer the probes — many hosts do not; the handshakes tell the time to it.",
-      "note": "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss — what the address itself answers does."
+      "not_reached": "The address itself did not answer the probes - many hosts do not; the handshakes tell the time to it.",
+      "note": "This is the way from this site's server, not from you. Routers answer probes when they have time for it: a hop that skipped some of them does not prove loss - what the address itself answers does."
     },
     "network": {
       "heading": "Network",
@@ -834,10 +856,10 @@
       "private_address": "This address is not on the internet: private networks, carrier NAT and documentation ranges are not routed.",
       "not_routed": "Nobody announces this address right now.",
       "no_path": "These networks are not connected in the map.",
-      "busy": "Too many requests — try again in a minute.",
-      "not_ready": "The map is being built — try again in a few minutes.",
-      "network": "The server did not answer — try again.",
-      "trace_failed": "The measurement failed — try again later."
+      "busy": "Too many requests - try again in a minute.",
+      "not_ready": "The map is being built - try again in a few minutes.",
+      "network": "The server did not answer - try again.",
+      "trace_failed": "The measurement failed - try again later."
     },
     "loading": "Loading the map…",
     "no_webgl": "Your browser cannot draw the map (WebGL is off). Routes still work: the table below shows them.",
@@ -845,7 +867,7 @@
     "about": {
       "heading": "How it works",
       "paragraphs": [
-        "The internet is some 80 thousand autonomous systems — providers, hosting, clouds, companies — and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away.",
+        "The internet is some 80 thousand autonomous systems - providers, hosting, clouds, companies - and each decides whom to connect to and whose traffic to carry. They tell each other about it with BGP. Collectors that many networks talk BGP to keep their tables open: from them, from CAIDA's research into the kinds of links and from PeeringDB, where networks tell where they can be met, the map is rebuilt every night. Only what changed is written: new links, and links that went away.",
         "A route is the chain of networks their policies make likely: a network would rather hand traffic to a customer, who pays, than to a peer, and to a peer rather than to its own provider. Where two networks meet is seen from the exchange points and data centres they share. The delay is estimated from the distance: light in fibre covers about 200 km in a millisecond, and cables are longer than straight lines.",
         "Real routers may choose another way, and loss can only be measured. Measurements are coming: traceroute from this site's server and, through RIPE Atlas, from a probe in the sender's own network."
       ]

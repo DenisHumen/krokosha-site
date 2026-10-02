@@ -113,7 +113,7 @@ test('typing sudo opens the terminal, which answers in the language of the page'
   await expect(page.locator('#kro-achievement')).toContainText('Суперкористувач');
   await terminal.locator('input').fill('whoami');
   await terminal.locator('input').press('Enter');
-  await expect(terminal.locator('pre')).toContainText('root тут — Денис');
+  await expect(terminal.locator('pre')).toContainText('root тут - Денис');
   await expect(page.locator('[data-eggs-caption]').first()).toHaveText(/^eggs 1\/\d+$/);
 });
 
@@ -177,7 +177,7 @@ test.describe('achievements on the site', () => {
     await expect(locked.locator('[data-state]')).toHaveText('Not found yet');
     await expect(locked.locator('[data-share]')).toHaveText('3.2%');
     await expect(panel.locator('[data-discount]')).toHaveText(
-      'Find every egg — and get 20% off one request.',
+      'Find every egg - and get 20% off one request.',
     );
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();

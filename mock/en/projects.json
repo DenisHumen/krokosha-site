@@ -311,10 +311,60 @@
   ],
   "private": [
     {
-      "title": "TODO",
-      "description": "TODO",
-      "tags": [],
+      "title": "Stable link for a trading workstation",
+      "description": "Traced market-data drop-outs to packet loss on a transit route and moved the feed into a WireGuard split tunnel via a VPS, with a self-healing watchdog. Disconnects fell from 16 in 20 hours to 0–1 a day, packet loss from 13–27% to 0%.",
+      "tags": [
+        "WireGuard",
+        "MikroTik",
+        "Windows",
+        "VPS"
+      ],
       "note": "NDA"
+    },
+    {
+      "title": "Office infrastructure",
+      "description": "A MikroTik and UniFi network, two Proxmox nodes, automatic failover between internet providers and a CRM on the company's own server - documented and monitored, with a register of inherited risks.",
+      "tags": [
+        "MikroTik",
+        "UniFi",
+        "Proxmox",
+        "vlb"
+      ],
+      "note": "NDA"
+    },
+    {
+      "title": "Online store for a fashion brand",
+      "description": "A Shopify store built from a 44-screen Figma design, with the whole setup scripted through the Admin API: 146 products, 31 collections, pages and shipping are restored in one run.",
+      "tags": [
+        "Shopify",
+        "Liquid",
+        "Admin API",
+        "Node.js"
+      ],
+      "note": "NDA"
+    },
+    {
+      "title": "Order sourcing for a design studio",
+      "description": "Collects new orders from a freelance marketplace every day, filters them by configurable rules and sends them to a manager in Telegram for approval; XLSX, PDF and DOCX exports and an audit trail.",
+      "tags": [
+        "Python",
+        "aiogram",
+        "Playwright",
+        "SQLite"
+      ],
+      "note": "NDA"
+    },
+    {
+      "title": "Crypto-asset consolidation at scale",
+      "description": "Collects tokens and native coins from hundreds of wallets into one, closes DeFi positions and swaps through Relay and LI.FI. A move happens only if it pays off after fees; every quote is verified before signing.",
+      "tags": [
+        "Python",
+        "Node.js",
+        "viem",
+        "Relay",
+        "LI.FI"
+      ],
+      "note": "private"
     }
   ],
   "syncedAt": "2026-09-18T12:00:00Z",

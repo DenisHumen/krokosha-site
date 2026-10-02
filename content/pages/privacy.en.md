@@ -1,7 +1,7 @@
 ---
 title: Privacy policy
 updated: TODO   # publication date
-status: draft   # DRAFT based on brief B5/B10 — legal review and a check against the real implementation before publishing
+status: draft   # DRAFT based on brief B5/B10 - legal review and a check against the real implementation before publishing
 ---
 
 ## In short
@@ -19,8 +19,8 @@ To understand which sections are useful, the site collects anonymous statistics 
 - pages and sections viewed, scroll depth, time on page;
 - clicks on contact buttons and social links;
 - traffic source (referrer, ad UTM tags);
-- device type, browser and OS — in general terms;
-- country and city — derived from the IP address on the server; the IP itself is stored only in truncated form.
+- device type, browser and OS - in general terms;
+- country and city - derived from the IP address on the server; the IP itself is stored only in truncated form.
 
 Visitors are distinguished by a hash of the IP address and browser with a salt that changes every day. It can't be used to identify you or to link visits across different days.
 
@@ -28,7 +28,7 @@ Not collected: keystrokes, form input, session recordings, browser fingerprints.
 
 If **Do Not Track** or **Global Privacy Control** is enabled in your browser, no statistics are sent at all.
 
-Detailed page-view records are kept for 12 months and then deleted; only daily totals remain (how many visits, from which countries, which sections were viewed) — nothing in them relates to an individual visitor.
+Detailed page-view records are kept for 12 months and then deleted; only daily totals remain (how many visits, from which countries, which sections were viewed) - nothing in them relates to an individual visitor.
 
 ## Server logs
 
@@ -42,7 +42,7 @@ Anonymous information about the visit is attached to the request: where you came
 
 The request is available only to Denis and to people Denis has personally given access to work with requests. Notifications about it are delivered to Telegram and email.
 
-If the conversation continues — you reply to an email or write to the bot in Telegram — your messages and the files you attach are stored with the request. An email that cannot be matched to any request is kept for no longer than 30 days.
+If the conversation continues - you reply to an email or write to the bot in Telegram - your messages and the files you attach are stored with the request. An email that cannot be matched to any request is kept for no longer than 30 days.
 
 If you are signed in to the personal account, the request appears there: you can see its status and the whole conversation with its files, and reply. The files are handed out to you alone, once you are signed in.
 
@@ -50,14 +50,14 @@ Requests and correspondence are kept for 24 months, then deleted or anonymized.
 
 ## Personal account
 
-The account is optional: a request can be sent without it. It is created at the first sign-in — with a one-time code from an email or from the site's Telegram bot; there are no passwords.
+The account is optional: a request can be sent without it. It is created at the first sign-in - with a one-time code from an email or from the site's Telegram bot; there are no passwords.
 
-What is stored is what you entered or what signing in needs: your email address and/or your Telegram — the account number and username; name, company, the language of letters and the preferred way to reach you; the contacts and social networks you added yourself — Denis sees them to get in touch with you; the devices you signed in from — browser and system in general terms, a truncated IP address, the time of the last visit; the easter eggs you found and the achievements for orders; a personal discount, if one is set.
+What is stored is what you entered or what signing in needs: your email address and/or your Telegram - the account number and username; name, company, the language of letters and the preferred way to reach you; the contacts and social networks you added yourself - Denis sees them to get in touch with you; the devices you signed in from - browser and system in general terms, a truncated IP address, the time of the last visit; the easter eggs you found and the achievements for orders; a personal discount, if one is set.
 
 The account's cookies are strictly necessary ones only:
 
-- `__Host-kc` — the sign-in session: up to 90 days, ending sooner if you have not visited for 30 days or signed out;
-- `__Host-kl` — for 15 minutes while you type a code: a code works only in the browser that asked for it.
+- `__Host-kc` - the sign-in session: up to 90 days, ending sooner if you have not visited for 30 days or signed out;
+- `__Host-kl` - for 15 minutes while you type a code: a code works only in the browser that asked for it.
 
 The codes and sign-in links themselves are not stored: the server keeps a random number they can be checked against.
 
@@ -67,11 +67,11 @@ You can delete the account in the account itself: the account, contacts, devices
 
 ## Easter eggs and achievements
 
-The site has hidden easter eggs. The ones you find are kept in your browser (localStorage): the list of finds, receipts of them signed by the server (the receipt of "every egg" gives a one-time discount on a request) and service notes — whether the browser was counted as a player, which request the discount went to, whether you signed in to the account. Until you find something, nothing is written to your browser.
+The site has hidden easter eggs. The ones you find are kept in your browser (localStorage): the list of finds, receipts of them signed by the server (the receipt of "every egg" gives a one-time discount on a request) and service notes - whether the browser was counted as a player, which request the discount went to, whether you signed in to the account. Until you find something, nothing is written to your browser.
 
-To show rarity the way Steam does — the share of players who found each egg — the server counts how many browsers found at least one egg and how many times each one was found. Only daily numbers are stored, without addresses or identifiers; against abuse, a hash of the address with the site's secret is used and lives no longer than an hour. With Do Not Track or Global Privacy Control enabled, finds are not counted (receipts are still issued); robots and automated browsers are not counted either.
+To show rarity the way Steam does - the share of players who found each egg - the server counts how many browsers found at least one egg and how many times each one was found. Only daily numbers are stored, without addresses or identifiers; against abuse, a hash of the address with the site's secret is used and lives no longer than an hour. With Do Not Track or Global Privacy Control enabled, finds are not counted (receipts are still issued); robots and automated browsers are not counted either.
 
-If you are signed in to the account, the eggs you find are kept there too — so they are available on your other devices.
+If you are signed in to the account, the eggs you find are kept there too - so they are available on your other devices.
 
 ## Advertising
 
@@ -80,7 +80,7 @@ Advertising pixels (Google Ads, Meta) are not used on this site at the moment. I
 
 ## Your rights
 
-You can request a copy of your data, its correction or deletion — email denis@krokosha.com. Requests are handled within a reasonable time; deletion covers the request, correspondence and attachments.
+You can request a copy of your data, its correction or deletion - email denis@krokosha.com. Requests are handled within a reasonable time; deletion covers the request, correspondence and attachments.
 
 ## Changes
 

@@ -90,7 +90,7 @@
             "id": "vlan",
             "title": "VLAN",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "lacp",
@@ -119,8 +119,8 @@
           {
             "id": "vpn",
             "title": "VPN",
-            "note": "WireGuard, IPsec, OpenVPN",
-            "confirmed": false
+            "note": "WireGuard",
+            "confirmed": true
           },
           {
             "id": "qos",
@@ -223,13 +223,13 @@
             "id": "proxmox",
             "title": "Proxmox VE",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "esxi",
             "title": "VMware ESXi",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "kvm",
@@ -241,7 +241,7 @@
             "id": "hyperv",
             "title": "Hyper-V",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           }
         ]
       }
@@ -369,7 +369,7 @@
             "id": "ansible",
             "title": "Ansible",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "terraform",
@@ -381,19 +381,19 @@
             "id": "github-actions",
             "title": "GitHub Actions",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "prometheus",
             "title": "Prometheus",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "grafana",
             "title": "Grafana",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "zabbix",
@@ -424,7 +424,7 @@
             "id": "debian-ubuntu",
             "title": "Debian / Ubuntu",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "rhel",
@@ -454,7 +454,7 @@
             "id": "dns-dhcp",
             "title": "DNS / DHCP",
             "note": null,
-            "confirmed": false
+            "confirmed": true
           },
           {
             "id": "gpo",
@@ -509,6 +509,102 @@
             "id": "shell",
             "title": "Shell",
             "note": null,
+            "confirmed": true
+          }
+        ]
+      },
+      {
+        "id": "biz-automation",
+        "title": "Business automation",
+        "children": [
+          {
+            "id": "crm-erp",
+            "title": "CRM / ERP",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "telegram-bots",
+            "title": "Telegram bots",
+            "note": "aiogram · python-telegram-bot",
+            "confirmed": true
+          },
+          {
+            "id": "fastapi",
+            "title": "FastAPI",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "react",
+            "title": "React",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "mysql",
+            "title": "MySQL",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "redis",
+            "title": "Redis",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "playwright",
+            "title": "Playwright",
+            "note": "browser automation",
+            "confirmed": true
+          },
+          {
+            "id": "shopify",
+            "title": "Shopify",
+            "note": "Liquid · Admin API",
+            "confirmed": true
+          }
+        ]
+      },
+      {
+        "id": "web3",
+        "title": "Web3",
+        "children": [
+          {
+            "id": "evm",
+            "title": "EVM networks",
+            "note": "Ethereum · Base · Arbitrum · Optimism · zkSync",
+            "confirmed": true
+          },
+          {
+            "id": "solana",
+            "title": "Solana",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "web3-libs",
+            "title": "web3.py · viem",
+            "note": null,
+            "confirmed": true
+          },
+          {
+            "id": "cex-api",
+            "title": "Exchange APIs",
+            "note": "OKX · Binance · Bitget · MEXC",
+            "confirmed": true
+          },
+          {
+            "id": "bridges",
+            "title": "Cross-chain bridges",
+            "note": "Relay · LI.FI",
+            "confirmed": true
+          },
+          {
+            "id": "defi",
+            "title": "DeFi",
+            "note": "Aave V3 · Uniswap V3 · Stargate",
             "confirmed": true
           }
         ]
