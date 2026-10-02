@@ -177,7 +177,7 @@ test.describe('achievements on the site', () => {
     await expect(locked.locator('[data-state]')).toHaveText('Not found yet');
     await expect(locked.locator('[data-share]')).toHaveText('3.2%');
     await expect(panel.locator('[data-discount]')).toHaveText(
-      'Find every egg — and get 20% off one request.',
+      'Find every egg - and get 20% off one request.',
     );
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();

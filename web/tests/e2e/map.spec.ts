@@ -284,7 +284,7 @@ test.describe('the map of the internet', () => {
     const button = page.getByRole('button', { name: "Measure from this site's server" });
     await button.click();
     await expect(page.locator('[data-map-status]')).toHaveText(
-      'The measurement failed — try again later.',
+      'The measurement failed - try again later.',
     );
     await expect(button).toBeEnabled();
     await expect(page.locator('[data-trace-result]')).toBeHidden();
