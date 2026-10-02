@@ -14,9 +14,9 @@ profile:
   name: { en: "Denis", uk: "Денис", ru: "Денис" }
   nickname: Krokosha
   role:
-    en: "Network & Infrastructure Engineer · DevOps"
-    uk: "Мережевий та інфраструктурний інженер · DevOps"
-    ru: "Сетевой и инфраструктурный инженер · DevOps"
+    en: "Network & Infrastructure Engineer · DevOps · Automation & Web3"
+    uk: "Мережевий та інфраструктурний інженер · DevOps · Автоматизація та Web3"
+    ru: "Сетевой и инфраструктурный инженер · DevOps · Автоматизация и Web3"
   location: { en: "Ukraine", uk: "Україна", ru: "Украина" }
   # Дата начала карьеры, формат YYYY-MM-DD. Стаж = полные годы от этой даты, считается при каждой сборке
   # (таймер каждые 6 ч), поэтому число растёт само в день годовщины: 2026-09-17 → 8, 2026-09-18 → 9.
@@ -88,17 +88,17 @@ nav:
 hero:                                   # черновик
   headline:
     muted:
-      en: "Networks, servers, DevOps —"
-      uk: "Мережі, сервери, DevOps —"
-      ru: "Сети, серверы, DevOps —"
+      en: "Networks, servers, automation —"
+      uk: "Мережі, сервери, автоматизація —"
+      ru: "Сети, серверы, автоматизация —"
     strong:
-      en: "infrastructure that just works"
-      uk: "інфраструктура, яка просто працює"
-      ru: "инфраструктура, которая просто работает"
+      en: "infrastructure and software that just work"
+      uk: "інфраструктура та софт, які просто працюють"
+      ru: "инфраструктура и софт, которые просто работают"
   lead:
-    en: "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, and automate the routine."
-    uk: "Інженер інфраструктури з України. Проєктую та налаштовую мережі, сервери й кластери, автоматизую рутину."
-    ru: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую рутину."
+    en: "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, automate business processes and build software for crypto-asset operations."
+    uk: "Інженер інфраструктури з України. Проєктую та налаштовую мережі, сервери й кластери, автоматизую бізнес-процеси та пишу софт для операцій із криптоактивами."
+    ru: "Инженер инфраструктуры из Украины. Проектирую и настраиваю сети, серверы и кластеры, автоматизирую бизнес-процессы и пишу софт для операций с криптоактивами."
   # Выводится рядом с числом: «8+ years in infrastructure». {years} — слово из plurals.years в нужной форме.
   experience_label:
     en: "{years} in infrastructure"
@@ -106,13 +106,13 @@ hero:                                   # черновик
     ru: "{years} в инфраструктуре"
   captions:
     left:
-      en: "Networks · Servers · DevOps"
-      uk: "Мережі · Сервери · DevOps"
-      ru: "Сети · Серверы · DevOps"
+      en: "Networks · Servers · DevOps · Automation"
+      uk: "Мережі · Сервери · DevOps · Автоматизація"
+      ru: "Сети · Серверы · DevOps · Автоматизация"
     center:
-      en: "I design, build, configure and maintain."
-      uk: "Проєктую, збираю, налаштовую та супроводжую."
-      ru: "Проектирую, собираю, настраиваю и сопровождаю."
+      en: "I design, build, automate and maintain."
+      uk: "Проєктую, збираю, автоматизую та супроводжую."
+      ru: "Проектирую, собираю, автоматизирую и сопровождаю."
     right: { en: "[Scroll to explore]", uk: "[Гортайте вниз]", ru: "[Листайте вниз]" }
   link_caption: "link up · 10Gbps · full-duplex"   # подпись в момент касания рук (A8)
   cta:
@@ -154,8 +154,27 @@ services:                               # черновик; в текстах т
       en: "Designing local networks for heavy load and high data rates."
       uk: "Проєктування локальних мереж під високе навантаження та великі швидкості передачі даних."
       ru: "Проектирование локальных сетей под высокую нагрузку и большие скорости передачи данных."
-  - id: tooling
+  - id: automation
     number: "05"
+    title: { en: "Business process automation", uk: "Автоматизація бізнес-процесів", ru: "Автоматизация бизнес-процессов" }
+    subtitle:
+      en: "CRM / ERP · Telegram bots · API integrations"
+      uk: "CRM / ERP · Telegram-боти · інтеграції через API"
+      ru: "CRM / ERP · Telegram-боты · интеграции по API"
+    text:
+      en: "CRM and warehouse systems, Telegram bots for approvals and monitoring, integrations with mail, telephony, websites and online stores — I turn manual routine into a system that runs by itself."
+      uk: "CRM і складський облік, Telegram-боти для погоджень і моніторингу, інтеграції з поштою, телефонією, сайтами та інтернет-магазинами — перетворюю ручну рутину на систему, яка працює сама."
+      ru: "CRM и складской учёт, Telegram-боты для согласований и мониторинга, интеграции с почтой, телефонией, сайтами и интернет-магазинами — превращаю ручную рутину в систему, которая работает сама."
+  - id: web3
+    number: "06"
+    title: { en: "Web3 automation & crypto-asset management", uk: "Web3-автоматизація та управління криптоактивами", ru: "Web3-автоматизация и управление криптоактивами" }
+    subtitle: "EVM · Solana · OKX · Binance · Bitget · MEXC · Relay"
+    text:
+      en: "Software for crypto-asset operations: balances across 29+ networks, batch transfers and fund consolidation, exchange withdrawals and cross-chain bridges. Dry run by default, every transaction checked before signing, fees accounted for."
+      uk: "Софт для операцій із криптоактивами: баланси в 29+ мережах, масові перекази та консолідація коштів, виведення на біржі та кросчейн-бриджі. Пробний прогін за замовчуванням, перевірка кожної транзакції перед підписом, облік комісій."
+      ru: "Софт для операций с криптоактивами: балансы в 29+ сетях, массовые переводы и консолидация средств, вывод на биржи и кросс-чейн бриджи. Пробный прогон по умолчанию, проверка каждой транзакции перед подписью, учёт комиссий."
+  - id: tooling
+    number: "07"
     title: { en: "Tooling & development", uk: "Розробка інструментів", ru: "Разработка инструментов" }
     subtitle: "Python · Rust · TypeScript · Shell"
     text:
@@ -191,9 +210,9 @@ projects:
 
 curtain:                                # тёмная панель-занавес (A9), черновик
   heading:
-    en: "Need a network, server or cluster that just works?"
-    uk: "Потрібна мережа, сервер чи кластер, який просто працює?"
-    ru: "Нужна сеть, сервер или кластер, который просто работает?"
+    en: "Need a network, server or automation that just works?"
+    uk: "Потрібна мережа, сервер чи автоматизація, яка просто працює?"
+    ru: "Нужна сеть, сервер или автоматизация, которая просто работает?"
   text:
     en: "Tell me about the task — I'll reply and propose a solution."
     uk: "Розкажіть про задачу — відповім і запропоную рішення."
@@ -290,6 +309,8 @@ contacts:
       - { id: servers,      label: { en: "Servers, storage, clusters", uk: "Сервери, СЗД, кластери", ru: "Серверы, СХД, кластеры" } }
       - { id: devops,       label: "DevOps" }
       - { id: highload-lan, label: { en: "High-load LAN", uk: "Високонавантажена локальна мережа", ru: "Высоконагруженная ЛВС" } }
+      - { id: automation,   label: { en: "Business automation", uk: "Автоматизація бізнесу", ru: "Автоматизация бизнеса" } }
+      - { id: web3,         label: { en: "Web3 / crypto", uk: "Web3 / крипто", ru: "Web3 / крипто" } }
       - { id: development,  label: { en: "Development", uk: "Розробка", ru: "Разработка" } }
       - { id: other,        label: { en: "Other", uk: "Інше", ru: "Другое" } }
     contact_methods:
@@ -1035,22 +1056,22 @@ map:                                    # страница /map — карта �
 
 seo:                                    # черновик; ключевые запросы — бриф B7, упомянуты только подтверждённые навыки
   title:                                # до ~60 символов
-    en: "Denis (Krokosha) — Network & Infrastructure Engineer, DevOps"
-    uk: "Денис (Krokosha) — мережевий та інфраструктурний інженер, DevOps"
-    ru: "Денис (Krokosha) — сетевой и инфраструктурный инженер, DevOps"
+    en: "Denis (Krokosha) — Infrastructure Engineer, DevOps, Automation"
+    uk: "Денис (Krokosha) — інженер інфраструктури, DevOps, автоматизація"
+    ru: "Денис (Krokosha) — инженер инфраструктуры, DevOps, автоматизация"
   description:                          # до ~160 символов; {experience} → «9 years» / «9 років» / «9 лет»
-    en: "Network and infrastructure engineer from Ukraine: MikroTik and Cisco, servers and storage, Docker, Kubernetes, Nginx, high-speed LANs. {experience} of hands-on work."
-    uk: "Інженер мереж та інфраструктури з України: MikroTik і Cisco, сервери та СЗД, Docker, Kubernetes, Nginx, швидкісні локальні мережі. {experience} практики."
-    ru: "Инженер сетей и инфраструктуры из Украины: MikroTik и Cisco, серверы и СХД, Docker, Kubernetes, Nginx, скоростные локальные сети. {experience} практики."
+    en: "Infrastructure engineer from Ukraine: networks, servers, Docker, Kubernetes, business process automation and Web3 software. {experience} of hands-on work."
+    uk: "Інженер інфраструктури з України: мережі, сервери, Docker, Kubernetes, автоматизація бізнес-процесів і Web3-софт. {experience} практики."
+    ru: "Инженер инфраструктуры из Украины: сети, серверы, Docker, Kubernetes, автоматизация бизнес-процессов и Web3-софт. {experience} практики."
   og_image_alt:
-    en: "Krokosha — network and infrastructure engineering"
-    uk: "Krokosha — мережі та інфраструктура"
-    ru: "Krokosha — сети и инфраструктура"
+    en: "Krokosha — infrastructure, automation and Web3"
+    uk: "Krokosha — інфраструктура, автоматизація та Web3"
+    ru: "Krokosha — инфраструктура, автоматизация и Web3"
   # Разметка schema.org (ProfessionalService): название услуги и где она оказывается.
   service_name:
-    en: "Krokosha — network and infrastructure engineering"
-    uk: "Krokosha — інженерія мереж та інфраструктури"
-    ru: "Krokosha — инженерия сетей и инфраструктуры"
+    en: "Krokosha — infrastructure engineering and automation"
+    uk: "Krokosha — інженерія інфраструктури та автоматизація"
+    ru: "Krokosha — инженерия инфраструктуры и автоматизация"
   area_served:                          # TODO(Денис): подтвердить — в брифе «Украина + удалённо — уточнить»
     - { en: "Ukraine", uk: "Україна", ru: "Украина" }
     - { en: "Remote, worldwide", uk: "Віддалено, весь світ", ru: "Удалённо, весь мир" }

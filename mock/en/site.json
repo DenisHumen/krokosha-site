@@ -49,14 +49,14 @@
   ],
   "hero": {
     "headline": {
-      "muted": "Networks, servers, DevOps —",
-      "strong": "infrastructure that just works"
+      "muted": "Networks, servers, automation —",
+      "strong": "infrastructure and software that just work"
     },
-    "lead": "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, and automate the routine.",
+    "lead": "Infrastructure engineer from Ukraine. I design and configure networks, servers and clusters, automate business processes and build software for crypto-asset operations.",
     "experience_label": "years in infrastructure",
     "captions": {
-      "left": "Networks · Servers · DevOps",
-      "center": "I design, build, configure and maintain.",
+      "left": "Networks · Servers · DevOps · Automation",
+      "center": "I design, build, automate and maintain.",
       "right": "[Scroll to explore]"
     },
     "link_caption": "link up · 10Gbps · full-duplex",
@@ -96,8 +96,22 @@
       "text": "Designing local networks for heavy load and high data rates."
     },
     {
-      "id": "tooling",
+      "id": "automation",
       "number": "05",
+      "title": "Business process automation",
+      "subtitle": "CRM / ERP · Telegram bots · API integrations",
+      "text": "CRM and warehouse systems, Telegram bots for approvals and monitoring, integrations with mail, telephony, websites and online stores — I turn manual routine into a system that runs by itself."
+    },
+    {
+      "id": "web3",
+      "number": "06",
+      "title": "Web3 automation & crypto-asset management",
+      "subtitle": "EVM · Solana · OKX · Binance · Bitget · MEXC · Relay",
+      "text": "Software for crypto-asset operations: balances across 29+ networks, batch transfers and fund consolidation, exchange withdrawals and cross-chain bridges. Dry run by default, every transaction checked before signing, fees accounted for."
+    },
+    {
+      "id": "tooling",
+      "number": "07",
       "title": "Tooling & development",
       "subtitle": "Python · Rust · TypeScript · Shell",
       "text": "In-house utilities and automation for infrastructure tasks."
@@ -122,7 +136,7 @@
     }
   },
   "curtain": {
-    "heading": "Need a network, server or cluster that just works?",
+    "heading": "Need a network, server or automation that just works?",
     "text": "Tell me about the task — I'll reply and propose a solution.",
     "cta": "Discuss a project"
   },
@@ -200,6 +214,14 @@
         {
           "id": "highload-lan",
           "label": "High-load LAN"
+        },
+        {
+          "id": "automation",
+          "label": "Business automation"
+        },
+        {
+          "id": "web3",
+          "label": "Web3 / crypto"
         },
         {
           "id": "development",

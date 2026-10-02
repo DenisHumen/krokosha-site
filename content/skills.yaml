@@ -28,12 +28,12 @@
     - id: net-tech
       title: { en: "Network technologies", uk: "Мережеві технології", ru: "Сетевые технологии" }
       children:
-        - { id: vlan,  title: "VLAN",  note: null, confirmed: false }
+        - { id: vlan,  title: "VLAN",  note: null, confirmed: true }
         - { id: lacp,  title: "LACP",  note: null, confirmed: false }
         - { id: stp,   title: "STP",   note: null, confirmed: false }
         - { id: ospf,  title: "OSPF",  note: null, confirmed: false }
         - { id: bgp,   title: "BGP",   note: null, confirmed: false }
-        - { id: vpn,   title: "VPN",   note: "WireGuard, IPsec, OpenVPN", confirmed: false }
+        - { id: vpn,   title: "VPN",   note: "WireGuard", confirmed: true }
         - { id: qos,   title: "QoS",   note: null, confirmed: false }
         - { id: hs-ethernet, title: "10/25/40/100GbE", note: null, confirmed: false }
     - id: highload-lan
@@ -78,10 +78,10 @@
           title: { en: "Cluster systems", uk: "Кластерні системи", ru: "Кластерные системы" }
           note: { en: "complex cluster systems", uk: "складні кластерні системи", ru: "сложные кластерные системы" }
           confirmed: true
-        - { id: proxmox,  title: "Proxmox VE",  note: null, confirmed: false }
-        - { id: esxi,     title: "VMware ESXi", note: null, confirmed: false }
+        - { id: proxmox,  title: "Proxmox VE",  note: null, confirmed: true }
+        - { id: esxi,     title: "VMware ESXi", note: null, confirmed: true }
         - { id: kvm,      title: "KVM",         note: null, confirmed: false }
-        - { id: hyperv,   title: "Hyper-V",     note: null, confirmed: false }
+        - { id: hyperv,   title: "Hyper-V",     note: null, confirmed: true }
 
 - id: storage
   title: { en: "Storage", uk: "Зберігання", ru: "Хранение" }
@@ -121,11 +121,11 @@
     - id: automation
       title: { en: "Automation & monitoring", uk: "Автоматизація та моніторинг", ru: "Автоматизация и мониторинг" }
       children:
-        - { id: ansible,        title: "Ansible",        note: null, confirmed: false }
+        - { id: ansible,        title: "Ansible",        note: null, confirmed: true }
         - { id: terraform,      title: "Terraform",      note: null, confirmed: false }
-        - { id: github-actions, title: "GitHub Actions", note: null, confirmed: false }
-        - { id: prometheus,     title: "Prometheus",     note: null, confirmed: false }
-        - { id: grafana,        title: "Grafana",        note: null, confirmed: false }
+        - { id: github-actions, title: "GitHub Actions", note: null, confirmed: true }
+        - { id: prometheus,     title: "Prometheus",     note: null, confirmed: true }
+        - { id: grafana,        title: "Grafana",        note: null, confirmed: true }
         - { id: zabbix,         title: "Zabbix",         note: null, confirmed: false }
 
 - id: os
@@ -136,7 +136,7 @@
       title: Linux
       children:
         - { id: linux-admin,   title: "Linux",           note: null, confirmed: true }
-        - { id: debian-ubuntu, title: "Debian / Ubuntu", note: null, confirmed: false }
+        - { id: debian-ubuntu, title: "Debian / Ubuntu", note: null, confirmed: true }
         - id: rhel
           title: { en: "RHEL family", uk: "Родина RHEL", ru: "RHEL-семейство" }
           note: null
@@ -146,7 +146,7 @@
       children:
         - { id: windows-server, title: "Windows / Windows Server", note: null, confirmed: true }
         - { id: ad,       title: "Active Directory", note: null, confirmed: false }
-        - { id: dns-dhcp, title: "DNS / DHCP",       note: null, confirmed: false }
+        - { id: dns-dhcp, title: "DNS / DHCP",       note: null, confirmed: true }
         - { id: gpo,      title: "GPO",              note: null, confirmed: false }
     - id: macos
       title: macOS
@@ -164,3 +164,39 @@
         - { id: rust,       title: "Rust",       note: null, confirmed: true }
         - { id: typescript, title: "TypeScript", note: null, confirmed: true }
         - { id: shell,      title: "Shell",      note: null, confirmed: true }
+    # Автоматизация бизнеса и Web3 — по проектам Дениса (OpenCRM, Telegram-боты, Shopify, ETHmachine), 2026-10-02.
+    - id: biz-automation
+      title: { en: "Business automation", uk: "Автоматизація бізнесу", ru: "Автоматизация бизнеса" }
+      children:
+        - { id: crm-erp,  title: "CRM / ERP", note: null, confirmed: true }
+        - id: telegram-bots
+          title: { en: "Telegram bots", uk: "Telegram-боти", ru: "Telegram-боты" }
+          note: "aiogram · python-telegram-bot"
+          confirmed: true
+        - { id: fastapi,  title: "FastAPI",  note: null, confirmed: true }
+        - { id: react,    title: "React",    note: null, confirmed: true }
+        - { id: mysql,    title: "MySQL",    note: null, confirmed: true }
+        - { id: redis,    title: "Redis",    note: null, confirmed: true }
+        - id: playwright
+          title: "Playwright"
+          note: { en: "browser automation", uk: "автоматизація браузера", ru: "автоматизация браузера" }
+          confirmed: true
+        - { id: shopify,  title: "Shopify",  note: "Liquid · Admin API", confirmed: true }
+    - id: web3
+      title: "Web3"
+      children:
+        - id: evm
+          title: { en: "EVM networks", uk: "EVM-мережі", ru: "EVM-сети" }
+          note: "Ethereum · Base · Arbitrum · Optimism · zkSync"
+          confirmed: true
+        - { id: solana,   title: "Solana",          note: null, confirmed: true }
+        - { id: web3-libs, title: "web3.py · viem", note: null, confirmed: true }
+        - id: cex-api
+          title: { en: "Exchange APIs", uk: "API бірж", ru: "API бирж" }
+          note: "OKX · Binance · Bitget · MEXC"
+          confirmed: true
+        - id: bridges
+          title: { en: "Cross-chain bridges", uk: "Кросчейн-бриджі", ru: "Кросс-чейн бриджи" }
+          note: "Relay · LI.FI"
+          confirmed: true
+        - { id: defi,     title: "DeFi",            note: "Aave V3 · Uniswap V3 · Stargate", confirmed: true }
